@@ -64,6 +64,7 @@ func (r *Router) setupRoutes() {
 		api.PUT("/specs/:id/enable", r.handler.EnableSpec)
 		api.PUT("/specs/:id/disable", r.handler.DisableSpec)
 		api.PUT("/specs/:id/tracing", r.handler.ToggleTracing)
+		api.PUT("/specs/:id/example-fallback", r.handler.ToggleExampleFallback)
 
 		// Operations
 		api.GET("/specs/:id/operations", r.handler.ListOperations)

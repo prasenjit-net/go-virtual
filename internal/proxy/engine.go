@@ -188,7 +188,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If no matching config found, try to use example response from OpenAPI spec
-	if matchedConfig == nil && matchedRoute.operation.ExampleResponse != nil {
+	// Only if UseExampleFallback is enabled for the spec
+	if matchedConfig == nil && matchedRoute.spec.UseExampleFallback && matchedRoute.operation.ExampleResponse != nil {
 		example := matchedRoute.operation.ExampleResponse
 		
 		// Set headers from example

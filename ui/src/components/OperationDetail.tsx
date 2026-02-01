@@ -15,8 +15,8 @@ import {
     Info
 } from 'lucide-react'
 import clsx from 'clsx'
-import { operationsApi, responsesApi } from '../services/api'
-import type { Operation, ResponseConfig } from '../types'
+import { operationsApi, responsesApi, specsApi } from '../services/api'
+import type { Operation, ResponseConfig, Spec } from '../types'
 import ResponseConfigEditor from './ResponseDesigner/ResponseConfigEditor'
 
 const methodColors: Record<string, string> = {
@@ -40,6 +40,12 @@ export default function OperationDetail() {
         enabled: !!operationId,
     })
 
+    const { data: spec, isLoading: specLoading } = useQuery<Spec>({
+        queryKey: ['spec', operation?.specId],
+        queryFn: () => specsApi.get(operation!.specId),
+        enabled: !!operation?.specId,
+    })
+
     const { data: responses, isLoading: respLoading } = useQuery<ResponseConfig[]>({
         queryKey: ['responses', operationId],
         queryFn: () => responsesApi.listByOperation(operationId!),
@@ -61,7 +67,7 @@ export default function OperationDetail() {
         },
     })
 
-    if (opLoading || respLoading) {
+    if (opLoading || respLoading || specLoading) {
         return (
             <div className="p-8">
                 <div className="animate-pulse space-y-4">
@@ -310,19 +316,45 @@ export default function OperationDetail() {
 
             {/* Example Response Fallback Info */}
             {operation.exampleResponse && (
-                <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-6">
+                <div className={clsx(
+                    "mt-6 rounded-xl p-6",
+                    spec?.useExampleFallback
+                        ? "bg-amber-50 border border-amber-200"
+                        : "bg-gray-50 border border-gray-200"
+                )}>
                     <div className="flex items-start">
-                        <Sparkles className="w-5 h-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" />
+                        <Sparkles className={clsx(
+                            "w-5 h-5 mt-0.5 mr-3 flex-shrink-0",
+                            spec?.useExampleFallback ? "text-amber-600" : "text-gray-400"
+                        )} />
                         <div className="flex-1">
-                            <h3 className="text-sm font-semibold text-amber-800 mb-1">
-                                Fallback: Example Response from Spec
-                            </h3>
-                            <p className="text-sm text-amber-700 mb-4">
-                                If no configured response matches, this example response from the OpenAPI spec will be returned.
+                            <div className="flex items-center justify-between mb-1">
+                                <h3 className={clsx(
+                                    "text-sm font-semibold",
+                                    spec?.useExampleFallback ? "text-amber-800" : "text-gray-600"
+                                )}>
+                                    Fallback: Example Response from Spec
+                                </h3>
+                                {!spec?.useExampleFallback && (
+                                    <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                                        Disabled at spec level
+                                    </span>
+                                )}
+                            </div>
+                            <p className={clsx(
+                                "text-sm mb-4",
+                                spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"
+                            )}>
+                                {spec?.useExampleFallback
+                                    ? "If no configured response matches, this example response from the OpenAPI spec will be returned."
+                                    : "Example fallback is disabled for this spec. Enable it in the spec settings to use this response."}
                             </p>
-                            <div className="bg-white rounded-lg border border-amber-200 p-4 space-y-3">
+                            <div className={clsx(
+                                "bg-white rounded-lg p-4 space-y-3",
+                                spec?.useExampleFallback ? "border border-amber-200" : "border border-gray-200 opacity-60"
+                            )}>
                                 <div className="flex items-center gap-4 text-sm">
-                                    <span className="text-amber-700">Status:</span>
+                                    <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Status:</span>
                                     <span className={clsx(
                                         'px-2 py-0.5 rounded text-xs font-medium',
                                         operation.exampleResponse.statusCode >= 200 && operation.exampleResponse.statusCode < 300
@@ -334,17 +366,20 @@ export default function OperationDetail() {
                                 </div>
                                 {operation.exampleResponse.headers && Object.keys(operation.exampleResponse.headers).length > 0 && (
                                     <div className="text-sm">
-                                        <span className="text-amber-700">Headers:</span>
-                                        <div className="mt-1 font-mono text-xs bg-amber-50 rounded p-2">
+                                        <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Headers:</span>
+                                        <div className={clsx(
+                                            "mt-1 font-mono text-xs rounded p-2",
+                                            spec?.useExampleFallback ? "bg-amber-50" : "bg-gray-50"
+                                        )}>
                                             {Object.entries(operation.exampleResponse.headers).map(([key, value]) => (
-                                                <div key={key}><span className="text-amber-600">{key}:</span> {value}</div>
+                                                <div key={key}><span className={spec?.useExampleFallback ? "text-amber-600" : "text-gray-400"}>{key}:</span> {value}</div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                                 {operation.exampleResponse.body && (
                                     <div className="text-sm">
-                                        <span className="text-amber-700">Body:</span>
+                                        <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Body:</span>
                                         <pre className="mt-1 bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48">
                                             {operation.exampleResponse.body}
                                         </pre>
@@ -364,7 +399,7 @@ export default function OperationDetail() {
                         <strong>Response Matching Order:</strong>
                         <ol className="list-decimal list-inside mt-1 space-y-0.5">
                             <li>First enabled response with matching conditions (by priority)</li>
-                            {operation.exampleResponse && (
+                            {operation.exampleResponse && spec?.useExampleFallback && (
                                 <li>Example response from OpenAPI spec (status {operation.exampleResponse.statusCode})</li>
                             )}
                             <li>404 Not Found</li>

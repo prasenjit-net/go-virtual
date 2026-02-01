@@ -8,6 +8,7 @@ export interface Spec {
     basePath: string;
     enabled: boolean;
     tracing: boolean;
+    useExampleFallback: boolean;
     createdAt: string;
     updatedAt: string;
     operationCount?: number;

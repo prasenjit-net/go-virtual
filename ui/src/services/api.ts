@@ -67,6 +67,15 @@ export const specsApi = {
         });
         return handleResponse<any>(response);
     },
+
+    toggleExampleFallback: async (id: string, enabled: boolean) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/example-fallback`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        return handleResponse<any>(response);
+    },
 };
 
 // Operations API

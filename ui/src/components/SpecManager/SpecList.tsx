@@ -9,7 +9,8 @@ import {
     ToggleRight,
     Trash2,
     Activity,
-    ExternalLink
+    ExternalLink,
+    Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi } from '../../services/api'
@@ -36,6 +37,14 @@ export default function SpecList() {
     const toggleTracingMutation = useMutation({
         mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
             specsApi.toggleTracing(id, !enabled),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['specs'] })
+        },
+    })
+
+    const toggleExampleFallbackMutation = useMutation({
+        mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
+            specsApi.toggleExampleFallback(id, !enabled),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['specs'] })
         },
@@ -126,6 +135,21 @@ export default function SpecList() {
                                 </div>
 
                                 <div className="flex items-center gap-4">
+                                    {/* Example Fallback Toggle */}
+                                    <button
+                                        onClick={() => toggleExampleFallbackMutation.mutate({ id: spec.id, enabled: spec.useExampleFallback })}
+                                        className={clsx(
+                                            'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                                            spec.useExampleFallback
+                                                ? 'bg-amber-100 text-amber-700'
+                                                : 'bg-gray-100 text-gray-500'
+                                        )}
+                                        title={spec.useExampleFallback ? 'Disable example fallback' : 'Enable example fallback'}
+                                    >
+                                        <Sparkles className="w-4 h-4" />
+                                        Fallback
+                                    </button>
+
                                     {/* Tracing Toggle */}
                                     <button
                                         onClick={() => toggleTracingMutation.mutate({ id: spec.id, enabled: spec.tracing })}

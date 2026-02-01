@@ -47,16 +47,17 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 	now := time.Now()
 
 	spec := &models.Spec{
-		ID:          specID,
-		Name:        doc.Info.Title,
-		Version:     doc.Info.Version,
-		Description: doc.Info.Description,
-		Content:     content,
-		BasePath:    normalizeBasePath(basePath),
-		Enabled:     true,
-		Tracing:     false,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:                 specID,
+		Name:               doc.Info.Title,
+		Version:            doc.Info.Version,
+		Description:        doc.Info.Description,
+		Content:            content,
+		BasePath:           normalizeBasePath(basePath),
+		Enabled:            true,
+		Tracing:            false,
+		UseExampleFallback: true, // Enable example fallback by default
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 
 	// Extract operations

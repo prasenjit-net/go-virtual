@@ -283,6 +283,36 @@ func (h *Handler) ToggleTracing(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tracing": spec.Tracing})
 }
 
+// ToggleExampleFallback toggles example fallback responses for a spec
+func (h *Handler) ToggleExampleFallback(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		// Toggle if no body
+		spec.UseExampleFallback = !spec.UseExampleFallback
+	} else {
+		spec.UseExampleFallback = input.Enabled
+	}
+
+	spec.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"useExampleFallback": spec.UseExampleFallback})
+}
+
 // ListOperations returns all operations for a spec
 func (h *Handler) ListOperations(c *gin.Context) {
 	specID := c.Param("id")
