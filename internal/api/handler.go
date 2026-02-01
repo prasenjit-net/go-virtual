@@ -46,16 +46,17 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 	for i, spec := range specs {
 		ops, _ := h.store.GetOperationsBySpec(spec.ID)
 		result[i] = map[string]interface{}{
-			"id":              spec.ID,
-			"name":            spec.Name,
-			"version":         spec.Version,
-			"description":     spec.Description,
-			"basePath":        spec.BasePath,
-			"enabled":         spec.Enabled,
-			"tracing":         spec.Tracing,
-			"createdAt":       spec.CreatedAt,
-			"updatedAt":       spec.UpdatedAt,
-			"operationCount":  len(ops),
+			"id":                 spec.ID,
+			"name":               spec.Name,
+			"version":            spec.Version,
+			"description":        spec.Description,
+			"basePath":           spec.BasePath,
+			"enabled":            spec.Enabled,
+			"tracing":            spec.Tracing,
+			"useExampleFallback": spec.UseExampleFallback,
+			"createdAt":          spec.CreatedAt,
+			"updatedAt":          spec.UpdatedAt,
+			"operationCount":     len(ops),
 		}
 	}
 
@@ -309,6 +310,9 @@ func (h *Handler) ToggleExampleFallback(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Reload routes to apply the change
+	h.proxyEngine.ReloadRoutes()
 
 	c.JSON(http.StatusOK, gin.H{"useExampleFallback": spec.UseExampleFallback})
 }
