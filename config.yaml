@@ -1,0 +1,15 @@
+server:
+  port: 8080
+  host: "0.0.0.0"
+
+storage:
+  type: "file"       # "memory" or "file"
+  path: "./data"     # Path for file storage
+
+tracing:
+  maxTraces: 1000    # Max traces to keep in memory
+  retention: "24h"   # Trace retention period
+
+logging:
+  level: "info"
+  format: "json"
