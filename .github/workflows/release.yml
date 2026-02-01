@@ -1,0 +1,188 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-ui:
+    name: Build UI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Build
+        working-directory: ui
+        run: npm run build
+
+      - name: Upload UI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+          retention-days: 1
+
+  build-binaries:
+    name: Build Binaries
+    needs: build-ui
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+          - goos: windows
+            goarch: amd64
+            suffix: windows-amd64.exe
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Download UI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -ldflags="-s -w -X main.version=${{ github.ref_name }}" \
+            -o go-virtual-${{ matrix.suffix }} ./cmd/server
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-virtual-${{ matrix.suffix }}
+          path: go-virtual-${{ matrix.suffix }}
+          retention-days: 1
+
+  release:
+    name: Create Release
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: go-virtual-*
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ github.ref_name }}^ 2>/dev/null || echo "")
+          
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "First release - showing all commits"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges | head -50)
+          else
+            echo "Generating changelog from $PREVIOUS_TAG to ${{ github.ref_name }}"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges $PREVIOUS_TAG..${{ github.ref_name }})
+          fi
+          
+          # Write changelog to file
+          echo "$COMMITS" > changelog.txt
+          
+          # Output for GitHub Actions (handle multiline)
+          {
+            echo 'commits<<EOF'
+            cat changelog.txt
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Go-Virtual ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          generate_release_notes: false
+          body: |
+            ## Go-Virtual ${{ github.ref_name }}
+            
+            API proxy/mock service for OpenAPI 3 specifications with configurable responses, templating, and real-time tracing.
+            
+            ### 🚀 Features
+            - **OpenAPI 3 Support**: Parse and virtualize any OpenAPI 3 specification
+            - **Condition-Based Responses**: Match responses based on path, query, header, or body conditions
+            - **Response Templating**: Dynamic responses using request data with template variables
+            - **Priority-Based Matching**: Configure response priority for complex scenarios
+            - **Example Fallback**: Use spec examples as fallback when no response matches
+            - **Real-Time Tracing**: WebSocket-based live request/response tracing
+            - **Statistics Dashboard**: Monitor performance and request metrics
+            - **Embedded Admin UI**: Single binary with built-in React admin interface
+            
+            ### 📦 Downloads
+            
+            | Platform | Architecture | Download |
+            |----------|--------------|----------|
+            | Linux | amd64 | `go-virtual-linux-amd64` |
+            | Linux | arm64 | `go-virtual-linux-arm64` |
+            | macOS | amd64 (Intel) | `go-virtual-darwin-amd64` |
+            | macOS | arm64 (Apple Silicon) | `go-virtual-darwin-arm64` |
+            | Windows | amd64 | `go-virtual-windows-amd64.exe` |
+            
+            ### 🏃 Quick Start
+            
+            ```bash
+            # Download and make executable (Linux/macOS)
+            chmod +x go-virtual-*
+            
+            # Run the server
+            ./go-virtual-linux-amd64 -port 8080
+            
+            # Access the admin UI
+            open http://localhost:8080/_ui/
+            ```
+            
+            ### 📝 What's Changed
+            
+            ${{ steps.changelog.outputs.commits }}
+            
+            ---
+            
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.previous_tag || 'initial' }}...${{ github.ref_name }}
+          files: |
+            artifacts/*
