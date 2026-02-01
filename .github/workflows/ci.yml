@@ -40,7 +40,7 @@ jobs:
         run: go build -v ./...
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: go test -v -race ./...
 
   build-ui:
     name: Build UI
@@ -86,7 +86,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.22'
           cache: true
 
       - name: Download UI artifacts
