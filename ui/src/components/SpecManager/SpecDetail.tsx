@@ -3,7 +3,8 @@ import { useQuery } from '@tanstack/react-query'
 import {
     ArrowLeft,
     FileCode2,
-    ChevronRight
+    ChevronRight,
+    Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi, operationsApi } from '../../services/api'
@@ -138,6 +139,12 @@ export default function SpecDetail() {
                                             </div>
                                         </div>
                                         <div className="flex items-center text-gray-400">
+                                            {op.hasExampleResponse && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 mr-2" title="Has example response from spec">
+                                                    <Sparkles className="w-3 h-3 mr-1" />
+                                                    Example
+                                                </span>
+                                            )}
                                             <span className="text-sm mr-2">
                                                 {op.responseCount} response{op.responseCount !== 1 ? 's' : ''}
                                             </span>

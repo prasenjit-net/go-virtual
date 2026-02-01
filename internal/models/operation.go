@@ -24,12 +24,13 @@ type ExampleResponse struct {
 
 // OperationSummary is a lightweight version for listings
 type OperationSummary struct {
-	ID            string `json:"id"`
-	SpecID        string `json:"specId"`
-	Method        string `json:"method"`
-	Path          string `json:"path"`
-	FullPath      string `json:"fullPath"`
-	OperationID   string `json:"operationId"`
-	Summary       string `json:"summary"`
-	ResponseCount int    `json:"responseCount"`
+	ID                 string `json:"id"`
+	SpecID             string `json:"specId"`
+	Method             string `json:"method"`
+	Path               string `json:"path"`
+	FullPath           string `json:"fullPath"`
+	OperationID        string `json:"operationId"`
+	Summary            string `json:"summary"`
+	ResponseCount      int    `json:"responseCount"`
+	HasExampleResponse bool   `json:"hasExampleResponse"`
 }

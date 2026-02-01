@@ -10,7 +10,9 @@ import {
     ToggleRight,
     Edit2,
     ChevronDown,
-    ChevronRight
+    ChevronRight,
+    Sparkles,
+    Info
 } from 'lucide-react'
 import clsx from 'clsx'
 import { operationsApi, responsesApi } from '../services/api'
@@ -304,6 +306,71 @@ export default function OperationDetail() {
                         </button>
                     </div>
                 )}
+            </div>
+
+            {/* Example Response Fallback Info */}
+            {operation.exampleResponse && (
+                <div className="mt-6 bg-amber-50 border border-amber-200 rounded-xl p-6">
+                    <div className="flex items-start">
+                        <Sparkles className="w-5 h-5 text-amber-600 mt-0.5 mr-3 flex-shrink-0" />
+                        <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-amber-800 mb-1">
+                                Fallback: Example Response from Spec
+                            </h3>
+                            <p className="text-sm text-amber-700 mb-4">
+                                If no configured response matches, this example response from the OpenAPI spec will be returned.
+                            </p>
+                            <div className="bg-white rounded-lg border border-amber-200 p-4 space-y-3">
+                                <div className="flex items-center gap-4 text-sm">
+                                    <span className="text-amber-700">Status:</span>
+                                    <span className={clsx(
+                                        'px-2 py-0.5 rounded text-xs font-medium',
+                                        operation.exampleResponse.statusCode >= 200 && operation.exampleResponse.statusCode < 300
+                                            ? 'bg-green-100 text-green-700'
+                                            : 'bg-gray-100 text-gray-700'
+                                    )}>
+                                        {operation.exampleResponse.statusCode}
+                                    </span>
+                                </div>
+                                {operation.exampleResponse.headers && Object.keys(operation.exampleResponse.headers).length > 0 && (
+                                    <div className="text-sm">
+                                        <span className="text-amber-700">Headers:</span>
+                                        <div className="mt-1 font-mono text-xs bg-amber-50 rounded p-2">
+                                            {Object.entries(operation.exampleResponse.headers).map(([key, value]) => (
+                                                <div key={key}><span className="text-amber-600">{key}:</span> {value}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {operation.exampleResponse.body && (
+                                    <div className="text-sm">
+                                        <span className="text-amber-700">Body:</span>
+                                        <pre className="mt-1 bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48">
+                                            {operation.exampleResponse.body}
+                                        </pre>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Response Priority Info */}
+            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+                <div className="flex items-start">
+                    <Info className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+                    <div className="text-sm text-blue-700">
+                        <strong>Response Matching Order:</strong>
+                        <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                            <li>First enabled response with matching conditions (by priority)</li>
+                            {operation.exampleResponse && (
+                                <li>Example response from OpenAPI spec (status {operation.exampleResponse.statusCode})</li>
+                            )}
+                            <li>404 Not Found</li>
+                        </ol>
+                    </div>
+                </div>
             </div>
 
             {/* Editor Modal */}

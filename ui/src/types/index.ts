@@ -32,6 +32,13 @@ export interface Operation {
     description: string;
     tags: string[];
     responses?: ResponseConfig[];
+    exampleResponse?: ExampleResponse;
+}
+
+export interface ExampleResponse {
+    statusCode: number;
+    headers?: Record<string, string>;
+    body: string;
 }
 
 export interface OperationSummary {
@@ -43,6 +50,7 @@ export interface OperationSummary {
     operationId: string;
     summary: string;
     responseCount: number;
+    hasExampleResponse: boolean;
 }
 
 // Response config types

@@ -298,14 +298,15 @@ func (h *Handler) ListOperations(c *gin.Context) {
 	for i, op := range ops {
 		responses, _ := h.store.GetResponseConfigsByOperation(op.ID)
 		summaries[i] = models.OperationSummary{
-			ID:            op.ID,
-			SpecID:        op.SpecID,
-			Method:        op.Method,
-			Path:          op.Path,
-			FullPath:      op.FullPath,
-			OperationID:   op.OperationID,
-			Summary:       op.Summary,
-			ResponseCount: len(responses),
+			ID:                 op.ID,
+			SpecID:             op.SpecID,
+			Method:             op.Method,
+			Path:               op.Path,
+			FullPath:           op.FullPath,
+			OperationID:        op.OperationID,
+			Summary:            op.Summary,
+			ResponseCount:      len(responses),
+			HasExampleResponse: op.ExampleResponse != nil,
 		}
 	}
 
