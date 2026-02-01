@@ -9,6 +9,7 @@ on:
 jobs:
   test-go:
     name: Test Go Backend
+    needs: build-ui
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -19,6 +20,12 @@ jobs:
         with:
           go-version: '1.21'
           cache: true
+
+      - name: Download UI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
 
       - name: Download dependencies
         run: go mod download
@@ -70,7 +77,7 @@ jobs:
 
   build-binary:
     name: Build Binary
-    needs: [test-go, build-ui]
+    needs: test-go
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
