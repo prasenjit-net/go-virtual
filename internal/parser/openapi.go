@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -111,11 +112,94 @@ func (p *Parser) extractOperations(doc *openapi3.T, specID, basePath string) []*
 				Tags:        op.Tags,
 			}
 
+			// Extract example response from spec (try 200, 201, then default)
+			operation.ExampleResponse = extractExampleResponseFromOp(op)
+
 			operations = append(operations, operation)
 		}
 	}
 
 	return operations
+}
+
+// extractExampleResponseFromOp extracts an example success response from an OpenAPI operation
+func extractExampleResponseFromOp(op *openapi3.Operation) *models.ExampleResponse {
+	if op.Responses == nil {
+		return nil
+	}
+
+	// Try success status codes in order of preference
+	successCodes := []int{200, 201, 202, 204}
+	
+	for _, statusCode := range successCodes {
+		response := op.Responses.Status(statusCode)
+		if response == nil || response.Value == nil {
+			continue
+		}
+
+		example := &models.ExampleResponse{
+			StatusCode: statusCode,
+			Headers:    make(map[string]string),
+		}
+
+		// Extract headers
+		for name, header := range response.Value.Headers {
+			if header.Value != nil && header.Value.Example != nil {
+				example.Headers[name] = fmt.Sprintf("%v", header.Value.Example)
+			}
+		}
+
+		// Extract body example from JSON content
+		for mediaType, content := range response.Value.Content {
+			if strings.Contains(mediaType, "json") {
+				example.Headers["Content-Type"] = mediaType
+				
+				if content.Example != nil {
+					// Direct example
+					example.Body = formatExample(content.Example)
+				} else if len(content.Examples) > 0 {
+					// Named examples - use first one
+					for _, ex := range content.Examples {
+						if ex.Value != nil && ex.Value.Value != nil {
+							example.Body = formatExample(ex.Value.Value)
+							break
+						}
+					}
+				} else if content.Schema != nil && content.Schema.Value != nil {
+					// Generate from schema
+					example.Body = generateExampleFromSchema(content.Schema.Value)
+				}
+				
+				if example.Body != "" {
+					return example
+				}
+				break
+			}
+		}
+
+		// Even without body, return if we have a valid status (e.g., 204 No Content)
+		if statusCode == 204 {
+			return example
+		}
+	}
+
+	return nil
+}
+
+// formatExample converts an example value to a JSON string
+func formatExample(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case []byte:
+		return string(val)
+	default:
+		// Try to marshal as JSON
+		if data, err := json.Marshal(val); err == nil {
+			return string(data)
+		}
+		return fmt.Sprintf("%v", val)
+	}
 }
 
 // normalizeBasePath ensures the base path is properly formatted

@@ -172,38 +172,86 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
-	if err != nil || len(responseConfigs) == 0 {
-		// No response configs, return default 200
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "No response configured"}`))
-		return
-	}
-
-	// Find matching response config by priority
+	
+	// Find matching response config by priority (only if configs exist)
 	var matchedConfig *models.ResponseConfig
-	for _, cfg := range responseConfigs {
-		if !cfg.Enabled {
-			continue
-		}
-		if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
-			matchedConfig = cfg
-			break
-		}
-	}
-
-	if matchedConfig == nil {
-		// No matching config, use first enabled one as default
+	if err == nil && len(responseConfigs) > 0 {
 		for _, cfg := range responseConfigs {
-			if cfg.Enabled {
+			if !cfg.Enabled {
+				continue
+			}
+			if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
 				matchedConfig = cfg
 				break
 			}
 		}
 	}
 
+	// If no matching config found, try to use example response from OpenAPI spec
+	if matchedConfig == nil && matchedRoute.operation.ExampleResponse != nil {
+		example := matchedRoute.operation.ExampleResponse
+		
+		// Set headers from example
+		for key, value := range example.Headers {
+			w.Header().Set(key, value)
+		}
+		
+		// Set default content-type if not set
+		if w.Header().Get("Content-Type") == "" && example.Body != "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		
+		// Write response
+		w.WriteHeader(example.StatusCode)
+		if example.Body != "" {
+			w.Write([]byte(example.Body))
+		}
+		
+		// Calculate duration and record stats
+		duration := time.Since(startTime)
+		isError := example.StatusCode >= 400
+		e.statsCollector.RecordRequest(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			duration,
+			isError,
+		)
+		
+		// Record trace if enabled
+		if matchedRoute.spec.Tracing {
+			trace := &models.Trace{
+				SpecID:        matchedRoute.spec.ID,
+				SpecName:      matchedRoute.spec.Name,
+				OperationID:   matchedRoute.operation.ID,
+				OperationPath: matchedRoute.operation.Path,
+				Timestamp:     startTime,
+				Duration:      duration.Nanoseconds(),
+				MatchedConfig: "spec-example",
+				Request: models.TraceRequest{
+					Method:  r.Method,
+					URL:     r.URL.String(),
+					Path:    r.URL.Path,
+					Query:   r.URL.Query(),
+					Headers: r.Header,
+					Body:    requestBody,
+				},
+				Response: models.TraceResponse{
+					StatusCode: example.StatusCode,
+					Headers:    headersToMap(w.Header()),
+					Body:       example.Body,
+				},
+			}
+			e.tracingService.RecordTrace(trace)
+		}
+		return
+	}
+
+	// If still no match and no example, return error
 	if matchedConfig == nil {
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"error": "No matching response configuration"}`))
+		w.Write([]byte(`{"error": "No matching response configuration and no example in spec"}`))
 		return
 	}
 
