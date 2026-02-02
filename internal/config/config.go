@@ -17,8 +17,18 @@ type Config struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port int    `yaml:"port"`
-	Host string `yaml:"host"`
+	Port int       `yaml:"port"`
+	Host string    `yaml:"host"`
+	TLS  TLSConfig `yaml:"tls"`
+}
+
+// TLSConfig holds TLS configuration
+type TLSConfig struct {
+	Enabled      bool   `yaml:"enabled"`       // Enable TLS
+	CertFile     string `yaml:"certFile"`      // Path to certificate file
+	KeyFile      string `yaml:"keyFile"`       // Path to private key file
+	AutoGenerate bool   `yaml:"autoGenerate"`  // Auto-generate self-signed cert if not configured
+	StorePath    string `yaml:"storePath"`     // Path to store auto-generated certs
 }
 
 // StorageConfig holds storage configuration
@@ -45,6 +55,11 @@ func Default() *Config {
 		Server: ServerConfig{
 			Port: 8080,
 			Host: "0.0.0.0",
+			TLS: TLSConfig{
+				Enabled:      false,
+				AutoGenerate: true,
+				StorePath:    "./certs",
+			},
 		},
 		Storage: StorageConfig{
 			Type: "memory",

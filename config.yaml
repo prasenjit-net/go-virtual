@@ -1,6 +1,12 @@
 server:
   port: 8080
   host: "0.0.0.0"
+  tls:
+    enabled: false          # Enable TLS support
+    certFile: ""            # Path to certificate file (optional)
+    keyFile: ""             # Path to private key file (optional)
+    autoGenerate: true      # Auto-generate self-signed cert if not configured
+    storePath: "./certs"    # Path to store auto-generated certificates
 
 storage:
   type: "file"       # "memory" or "file"

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +20,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/tlsutil"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
@@ -26,6 +29,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "Path to configuration file")
 	devMode := flag.Bool("dev", false, "Enable development mode (serve UI from filesystem)")
 	port := flag.Int("port", 0, "Override server port")
+	enableTLS := flag.Bool("tls", false, "Enable TLS (overrides config)")
 	flag.Parse()
 
 	// Load configuration
@@ -38,6 +42,11 @@ func main() {
 	// Override port if specified
 	if *port > 0 {
 		cfg.Server.Port = *port
+	}
+
+	// Override TLS if specified via flag
+	if *enableTLS {
+		cfg.Server.TLS.Enabled = true
 	}
 
 	// Initialize storage
@@ -81,22 +90,18 @@ func main() {
 	// Create HTTP server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	server := &http.Server{
-		Addr:         addr,
 		Handler:      router.Handler(),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in goroutine
-	go func() {
-		log.Printf("Starting Go-Virtual server on %s", addr)
-		log.Printf("Admin UI available at http://%s/_ui/", addr)
-		log.Printf("Admin API available at http://%s/_api/", addr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
-		}
-	}()
+	// Start server
+	if cfg.Server.TLS.Enabled {
+		startTLSServer(server, addr, cfg)
+	} else {
+		startHTTPServer(server, addr)
+	}
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
@@ -114,4 +119,77 @@ func main() {
 	}
 
 	log.Println("Server stopped")
+}
+
+// startHTTPServer starts a plain HTTP server
+func startHTTPServer(server *http.Server, addr string) {
+	server.Addr = addr
+	go func() {
+		log.Printf("Starting Go-Virtual server on %s", addr)
+		log.Printf("Admin UI available at http://%s/_ui/", addr)
+		log.Printf("Admin API available at http://%s/_api/", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+}
+
+// startTLSServer starts a server that handles both HTTP and HTTPS on the same port
+func startTLSServer(server *http.Server, addr string, cfg *config.Config) {
+	// Get or generate TLS certificate
+	certManager := tlsutil.NewCertificateManager(
+		cfg.Server.TLS.CertFile,
+		cfg.Server.TLS.KeyFile,
+		cfg.Server.TLS.StorePath,
+	)
+
+	cert, err := certManager.GetCertificate(cfg.Server.TLS.AutoGenerate)
+	if err != nil {
+		log.Fatalf("Failed to get TLS certificate: %v", err)
+	}
+
+	certPath, keyPath := certManager.GetCertificatePaths()
+	log.Printf("Using TLS certificate: %s", certPath)
+	log.Printf("Using TLS private key: %s", keyPath)
+
+	// Create TLS config
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{*cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	// Create base listener
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		log.Fatalf("Failed to create listener: %v", err)
+	}
+
+	// Create multiplexed listener for HTTP and HTTPS on same port
+	muxListener := tlsutil.NewMuxListener(listener, tlsConfig)
+
+	// Start HTTP server (for redirects or plain HTTP if needed)
+	httpServer := &http.Server{
+		Handler:      server.Handler,
+		ReadTimeout:  server.ReadTimeout,
+		WriteTimeout: server.WriteTimeout,
+		IdleTimeout:  server.IdleTimeout,
+	}
+
+	go func() {
+		log.Printf("Starting Go-Virtual server on %s (HTTP & HTTPS)", addr)
+		log.Printf("Admin UI available at https://%s/_ui/ (or http://%s/_ui/)", addr, addr)
+		log.Printf("Admin API available at https://%s/_api/ (or http://%s/_api/)", addr, addr)
+
+		// Serve HTTPS
+		go func() {
+			if err := server.Serve(muxListener.HTTPSListener()); err != nil && err != http.ErrServerClosed {
+				log.Printf("HTTPS server error: %v", err)
+			}
+		}()
+
+		// Serve HTTP
+		if err := httpServer.Serve(muxListener.HTTPListener()); err != nil && err != http.ErrServerClosed {
+			log.Printf("HTTP server error: %v", err)
+		}
+	}()
 }
