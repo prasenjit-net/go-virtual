@@ -38,9 +38,38 @@ jobs:
           path: ui/dist
           retention-days: 1
 
+  test-go:
+    name: Test Go Backend
+    needs: build-ui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Download UI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -v -race ./...
+
   build-binaries:
     name: Build Binaries
-    needs: build-ui
+    needs: [build-ui, test-go]
     runs-on: ubuntu-latest
     strategy:
       matrix:

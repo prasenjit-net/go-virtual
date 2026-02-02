@@ -55,6 +55,9 @@ func (e *Engine) ProcessHeaders(headers map[string]string, ctx *Context) map[str
 
 // resolveVariable resolves a single variable to its value
 func (e *Engine) resolveVariable(varName string, ctx *Context) string {
+	// Handle optional leading dot (e.g., both "path.id" and ".path.id" are valid)
+	varName = strings.TrimPrefix(varName, ".")
+	
 	parts := strings.SplitN(varName, ".", 2)
 	if len(parts) < 1 {
 		return ""
