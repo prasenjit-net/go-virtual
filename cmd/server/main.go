@@ -98,8 +98,9 @@ func main() {
 	}
 
 	// Start server
+	var cleanup func(context.Context) error
 	if cfg.Server.TLS.Enabled {
-		startTLSServer(server, addr, cfg)
+		cleanup = startTLSServer(server, addr, cfg)
 	} else {
 		startHTTPServer(server, addr)
 	}
@@ -112,11 +113,19 @@ func main() {
 	log.Println("Shutting down server...")
 
 	// Graceful shutdown with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// For TLS mode, close the mux listener first to unblock Accept() calls
+	if cleanup != nil {
+		if err := cleanup(ctx); err != nil {
+			log.Printf("Cleanup error: %v", err)
+		}
+	}
+
+	// Shutdown main server
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Printf("Server shutdown error: %v", err)
 	}
 
 	log.Println("Server stopped")
@@ -136,7 +145,8 @@ func startHTTPServer(server *http.Server, addr string) {
 }
 
 // startTLSServer starts a server that handles both HTTP and HTTPS on the same port
-func startTLSServer(server *http.Server, addr string, cfg *config.Config) {
+// Returns a cleanup function that should be called during shutdown
+func startTLSServer(server *http.Server, addr string, cfg *config.Config) func(context.Context) error {
 	// Resolve TLS store path - default to <storage.path>/certs if not configured
 	tlsStorePath := cfg.Server.TLS.StorePath
 	if tlsStorePath == "" {
@@ -199,4 +209,12 @@ func startTLSServer(server *http.Server, addr string, cfg *config.Config) {
 			log.Printf("HTTP server error: %v", err)
 		}
 	}()
+
+	// Return cleanup function
+	return func(ctx context.Context) error {
+		// Close the mux listener first to unblock Accept() calls
+		muxListener.Close()
+		// Shutdown the HTTP server (HTTPS server is shut down by main)
+		return httpServer.Shutdown(ctx)
+	}
 }

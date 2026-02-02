@@ -2,7 +2,6 @@ package tlsutil
 
 import (
 	"crypto/tls"
-	"io"
 	"net"
 	"sync"
 	"time"
@@ -122,6 +121,19 @@ func (ml *MuxListener) HTTPSListener() net.Listener {
 func (ml *MuxListener) Close() error {
 	ml.closeOnce.Do(func() {
 		close(ml.closed)
+		// Drain and close connection channels to unblock any Accept() calls
+		go func() {
+			for conn := range ml.httpConns {
+				conn.Close()
+			}
+		}()
+		go func() {
+			for conn := range ml.httpsConns {
+				conn.Close()
+			}
+		}()
+		close(ml.httpConns)
+		close(ml.httpsConns)
 	})
 	return ml.inner.Close()
 }
@@ -155,10 +167,13 @@ type chanListener struct {
 
 func (cl *chanListener) Accept() (net.Conn, error) {
 	select {
-	case conn := <-cl.conns:
+	case conn, ok := <-cl.conns:
+		if !ok {
+			return nil, net.ErrClosed
+		}
 		return conn, nil
 	case <-cl.closed:
-		return nil, io.EOF
+		return nil, net.ErrClosed
 	}
 }
 

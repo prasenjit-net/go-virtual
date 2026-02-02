@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Activity,
     Trash2,
-    Pause,
     Search,
     ChevronRight,
     Clock,
@@ -22,7 +21,7 @@ const methodColors: Record<string, string> = {
 }
 
 export default function TraceViewer() {
-    const [isLive, setIsLive] = useState(true)
+    const [isLive, setIsLive] = useState(false)
     const [liveTraces, setLiveTraces] = useState<Trace[]>([])
     const [selectedTrace, setSelectedTrace] = useState<Trace | null>(null)
     const [specFilter, setSpecFilter] = useState('')
@@ -35,11 +34,27 @@ export default function TraceViewer() {
         queryFn: specsApi.list,
     })
 
-    const { data: storedTraces } = useQuery<Trace[]>({
+    const { data: storedTraces, refetch: refetchStoredTraces } = useQuery<Trace[]>({
         queryKey: ['traces', specFilter],
         queryFn: () => tracesApi.list({ specId: specFilter || undefined }),
         enabled: !isLive,
     })
+
+    // When switching from live to paused, refetch stored traces
+    const handleToggleLive = () => {
+        if (isLive) {
+            // Switching to paused - refetch stored traces to include just-captured ones
+            setIsLive(false)
+            // Small delay to ensure server has stored the traces
+            setTimeout(() => {
+                refetchStoredTraces()
+            }, 100)
+        } else {
+            // Switching to live - clear live traces and start fresh
+            setLiveTraces([])
+            setIsLive(true)
+        }
+    }
 
     const clearMutation = useMutation({
         mutationFn: () => tracesApi.clear(specFilter || undefined),
@@ -121,13 +136,14 @@ export default function TraceViewer() {
                     </div>
                     <div className="flex items-center gap-3">
                         <button
-                            onClick={() => setIsLive(!isLive)}
+                            onClick={handleToggleLive}
                             className={clsx(
                                 'flex items-center px-4 py-2 rounded-lg font-medium transition-colors',
                                 isLive
-                                    ? 'bg-green-100 text-green-700'
-                                    : 'bg-gray-100 text-gray-600'
+                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                             )}
+                            title={isLive ? 'Switch to history mode' : 'Switch to live streaming'}
                         >
                             {isLive ? (
                                 <>
@@ -136,8 +152,8 @@ export default function TraceViewer() {
                                 </>
                             ) : (
                                 <>
-                                    <Pause className="w-5 h-5 mr-2" />
-                                    Paused
+                                    <Activity className="w-5 h-5 mr-2" />
+                                    Go Live
                                 </>
                             )}
                         </button>
