@@ -58,7 +58,7 @@ func Default() *Config {
 			TLS: TLSConfig{
 				Enabled:      false,
 				AutoGenerate: true,
-				StorePath:    "./certs",
+				StorePath:    "", // Empty means use storage.path/certs
 			},
 		},
 		Storage: StorageConfig{

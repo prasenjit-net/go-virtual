@@ -56,6 +56,15 @@ temp/
 *.db
 *.sqlite
 
+# Auto-generated TLS certificates
+/certs/
+*.crt
+*.key
+*.pem
+
+# Built binaries in root
+/server
+
 # OS generated
 Thumbs.db
 ehthumbs.db

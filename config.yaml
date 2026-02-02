@@ -6,7 +6,7 @@ server:
     certFile: ""            # Path to certificate file (optional)
     keyFile: ""             # Path to private key file (optional)
     autoGenerate: true      # Auto-generate self-signed cert if not configured
-    storePath: "./certs"    # Path to store auto-generated certificates
+    storePath: ""           # Path to store auto-generated certs (default: <storage.path>/certs)
 
 storage:
   type: "file"       # "memory" or "file"

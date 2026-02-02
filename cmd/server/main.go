@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -136,11 +137,17 @@ func startHTTPServer(server *http.Server, addr string) {
 
 // startTLSServer starts a server that handles both HTTP and HTTPS on the same port
 func startTLSServer(server *http.Server, addr string, cfg *config.Config) {
+	// Resolve TLS store path - default to <storage.path>/certs if not configured
+	tlsStorePath := cfg.Server.TLS.StorePath
+	if tlsStorePath == "" {
+		tlsStorePath = filepath.Join(cfg.Storage.Path, "certs")
+	}
+
 	// Get or generate TLS certificate
 	certManager := tlsutil.NewCertificateManager(
 		cfg.Server.TLS.CertFile,
 		cfg.Server.TLS.KeyFile,
-		cfg.Server.TLS.StorePath,
+		tlsStorePath,
 	)
 
 	cert, err := certManager.GetCertificate(cfg.Server.TLS.AutoGenerate)
