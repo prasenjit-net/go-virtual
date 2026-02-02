@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -51,6 +52,14 @@ type LoggingConfig struct {
 
 // Default returns the default configuration
 func Default() *Config {
+	// Get current working directory for default data path
+	// Use filepath.Join for cross-platform compatibility (Windows, Linux, macOS)
+	cwd, err := os.Getwd()
+	if err != nil {
+		cwd = "."
+	}
+	defaultDataPath := filepath.Join(cwd, "data")
+
 	return &Config{
 		Server: ServerConfig{
 			Port: 8080,
@@ -62,8 +71,8 @@ func Default() *Config {
 			},
 		},
 		Storage: StorageConfig{
-			Type: "memory",
-			Path: "./data",
+			Type: "file",
+			Path: defaultDataPath,
 		},
 		Tracing: TracingConfig{
 			MaxTraces: 1000,
@@ -86,6 +95,15 @@ func Load(path string) (*Config, error) {
 	cfg := Default()
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
+	}
+
+	// Convert relative storage path to absolute using current working directory
+	// This ensures consistent behavior across all platforms
+	if cfg.Storage.Path != "" && !filepath.IsAbs(cfg.Storage.Path) {
+		cwd, err := os.Getwd()
+		if err == nil {
+			cfg.Storage.Path = filepath.Join(cwd, cfg.Storage.Path)
+		}
 	}
 
 	return cfg, nil
