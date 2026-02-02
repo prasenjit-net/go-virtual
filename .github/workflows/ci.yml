@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
-          cache: true
+          cache: false
 
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
@@ -87,7 +87,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: true
+          cache: false
 
       - name: Download UI artifacts
         uses: actions/download-artifact@v4
