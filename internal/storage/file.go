@@ -71,6 +71,9 @@ func (f *FileStorage) loadAll() error {
 			continue
 		}
 
+		// Reset tracing to disabled on load - tracing should not persist across restarts
+		spec.Tracing = false
+
 		f.memory.specs[spec.ID] = &spec
 	}
 

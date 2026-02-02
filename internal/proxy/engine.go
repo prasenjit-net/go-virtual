@@ -145,21 +145,23 @@ func (e *Engine) Handler() http.Handler {
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	// Read request body early for tracing (we need it even for unmatched requests)
+	var requestBody string
+	if r.Body != nil {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		requestBody = string(bodyBytes)
+	}
+
 	// Find matching route
 	e.mu.RLock()
 	matchedRoute, pathParams := e.matchRoute(r.Method, r.URL.Path)
 	e.mu.RUnlock()
 
 	if matchedRoute == nil {
+		// Record trace for unmatched request if any spec has tracing enabled
+		e.recordUnmatchedTrace(r, requestBody, startTime)
 		http.NotFound(w, r)
 		return
-	}
-
-	// Read request body
-	var requestBody string
-	if r.Body != nil {
-		bodyBytes, _ := io.ReadAll(r.Body)
-		requestBody = string(bodyBytes)
 	}
 
 	// Build request data for condition evaluation
@@ -395,4 +397,52 @@ func (e *Engine) GetRegisteredRoutes() map[string][]string {
 		}
 	}
 	return result
+}
+
+// recordUnmatchedTrace records a trace for requests that don't match any operation
+// This helps debug requests that are failing to match
+func (e *Engine) recordUnmatchedTrace(r *http.Request, requestBody string, startTime time.Time) {
+	// Check if any spec has tracing enabled
+	specs, err := e.store.GetEnabledSpecs()
+	if err != nil {
+		return
+	}
+
+	var tracingEnabled bool
+	for _, spec := range specs {
+		if spec.Tracing {
+			tracingEnabled = true
+			break
+		}
+	}
+
+	if !tracingEnabled {
+		return
+	}
+
+	duration := time.Since(startTime)
+
+	trace := &models.Trace{
+		SpecID:        "",
+		SpecName:      "[Unmatched]",
+		OperationID:   "",
+		OperationPath: "",
+		Timestamp:     startTime,
+		Duration:      duration.Nanoseconds(),
+		MatchedConfig: "no-match",
+		Request: models.TraceRequest{
+			Method:  r.Method,
+			URL:     r.URL.String(),
+			Path:    r.URL.Path,
+			Query:   r.URL.Query(),
+			Headers: r.Header,
+			Body:    requestBody,
+		},
+		Response: models.TraceResponse{
+			StatusCode: http.StatusNotFound,
+			Headers:    map[string][]string{"Content-Type": {"text/plain; charset=utf-8"}},
+			Body:       "404 page not found\n",
+		},
+	}
+	e.tracingService.RecordTrace(trace)
 }
