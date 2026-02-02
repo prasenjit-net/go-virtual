@@ -8,12 +8,18 @@ import (
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
+// subscriber wraps a channel with closed state tracking
+type subscriber struct {
+	ch     chan *models.Trace
+	closed bool
+}
+
 // Service manages request/response tracing
 type Service struct {
-	mu         sync.RWMutex
-	traces     []*models.Trace
-	maxTraces  int
-	subscribers map[string]chan *models.Trace
+	mu          sync.RWMutex
+	traces      []*models.Trace
+	maxTraces   int
+	subscribers map[string]*subscriber
 }
 
 // NewService creates a new tracing service
@@ -25,7 +31,7 @@ func NewService(maxTraces int) *Service {
 	return &Service{
 		traces:      make([]*models.Trace, 0),
 		maxTraces:   maxTraces,
-		subscribers: make(map[string]chan *models.Trace),
+		subscribers: make(map[string]*subscriber),
 	}
 }
 
@@ -51,22 +57,19 @@ func (s *Service) RecordTrace(trace *models.Trace) {
 		s.traces = s.traces[len(s.traces)-s.maxTraces:]
 	}
 
-	// Get subscribers snapshot
-	subscribers := make([]chan *models.Trace, 0, len(s.subscribers))
-	for _, ch := range s.subscribers {
-		subscribers = append(subscribers, ch)
+	// Notify subscribers (non-blocking) while holding the lock
+	// This ensures we don't send to closed channels
+	for _, sub := range s.subscribers {
+		if !sub.closed {
+			select {
+			case sub.ch <- trace:
+			default:
+				// Channel full, skip
+			}
+		}
 	}
 
 	s.mu.Unlock()
-
-	// Notify subscribers (non-blocking)
-	for _, ch := range subscribers {
-		select {
-		case ch <- trace:
-		default:
-			// Channel full, skip
-		}
-	}
 }
 
 // GetTraces returns traces matching the filter
@@ -155,7 +158,7 @@ func (s *Service) Subscribe() (string, chan *models.Trace) {
 
 	id := uuid.New().String()
 	ch := make(chan *models.Trace, 100)
-	s.subscribers[id] = ch
+	s.subscribers[id] = &subscriber{ch: ch, closed: false}
 
 	return id, ch
 }
@@ -165,8 +168,9 @@ func (s *Service) Unsubscribe(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if ch, ok := s.subscribers[id]; ok {
-		close(ch)
+	if sub, ok := s.subscribers[id]; ok {
+		sub.closed = true
+		close(sub.ch)
 		delete(s.subscribers, id)
 	}
 }
