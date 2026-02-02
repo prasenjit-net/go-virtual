@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -69,6 +71,20 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 	}, nil
 }
 
+// ParseOperations parses operations from spec content for an existing spec
+// This is used when regenerating operations from stored specs
+func (p *Parser) ParseOperations(content string, specID string, basePath string) ([]*models.Operation, error) {
+	loader := openapi3.NewLoader()
+	loader.IsExternalRefsAllowed = true
+
+	doc, err := loader.LoadFromData([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse OpenAPI spec: %w", err)
+	}
+
+	return p.extractOperations(doc, specID, normalizeBasePath(basePath)), nil
+}
+
 // extractOperations extracts all operations from the OpenAPI document
 func (p *Parser) extractOperations(doc *openapi3.T, specID, basePath string) []*models.Operation {
 	var operations []*models.Operation
@@ -94,7 +110,9 @@ func (p *Parser) extractOperations(doc *openapi3.T, specID, basePath string) []*
 				continue
 			}
 
-			opID := uuid.New().String()
+			// Generate deterministic operation ID based on spec, method, and path
+			// This allows operations to be regenerated from spec while maintaining stable IDs
+			opID := generateOperationID(specID, method, pathPattern)
 			operationID := op.OperationID
 			if operationID == "" {
 				// Generate operation ID if not provided
@@ -305,6 +323,17 @@ func (p *Parser) ExtractExampleResponse(content string, method, pathPattern stri
 	}
 
 	return headers, body, nil
+}
+
+// generateOperationID generates a deterministic operation ID based on spec, method, and path
+// This allows operations to be regenerated from spec while maintaining stable IDs
+// that response configs can reference
+func generateOperationID(specID, method, path string) string {
+	// Create a deterministic hash from spec ID + method + path
+	data := fmt.Sprintf("%s:%s:%s", specID, method, path)
+	hash := sha256.Sum256([]byte(data))
+	// Use first 16 bytes to create a UUID-like string
+	return hex.EncodeToString(hash[:16])
 }
 
 // generateExampleFromSchema generates a basic example from an OpenAPI schema
