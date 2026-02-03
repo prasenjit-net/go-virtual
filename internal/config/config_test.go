@@ -23,11 +23,15 @@ func TestDefault(t *testing.T) {
 	}
 
 	// Storage defaults
-	if cfg.Storage.Type != "memory" {
-		t.Errorf("Expected default storage type 'memory', got %q", cfg.Storage.Type)
+	if cfg.Storage.Type != "file" {
+		t.Errorf("Expected default storage type 'file', got %q", cfg.Storage.Type)
 	}
-	if cfg.Storage.Path != "./data" {
-		t.Errorf("Expected default storage path './data', got %q", cfg.Storage.Path)
+	// Default path should be an absolute path ending with "data"
+	if !filepath.IsAbs(cfg.Storage.Path) {
+		t.Errorf("Expected default storage path to be absolute, got %q", cfg.Storage.Path)
+	}
+	if filepath.Base(cfg.Storage.Path) != "data" {
+		t.Errorf("Expected default storage path to end with 'data', got %q", cfg.Storage.Path)
 	}
 
 	// Tracing defaults
@@ -132,8 +136,8 @@ server:
 	if cfg.Server.Host != "0.0.0.0" {
 		t.Errorf("Expected default host '0.0.0.0', got %q", cfg.Server.Host)
 	}
-	if cfg.Storage.Type != "memory" {
-		t.Errorf("Expected default storage type 'memory', got %q", cfg.Storage.Type)
+	if cfg.Storage.Type != "file" {
+		t.Errorf("Expected default storage type 'file', got %q", cfg.Storage.Type)
 	}
 }
 
