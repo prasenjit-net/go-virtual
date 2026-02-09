@@ -32,10 +32,10 @@ export default function Dashboard() {
         return (
             <div className="p-8">
                 <div className="animate-pulse space-y-6">
-                    <div className="h-8 bg-gray-200 rounded w-48"></div>
+                    <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-48"></div>
                     <div className="grid grid-cols-4 gap-6">
                         {[1, 2, 3, 4].map((i) => (
-                            <div key={i} className="h-32 bg-gray-200 rounded-xl"></div>
+                            <div key={i} className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
                         ))}
                     </div>
                 </div>
@@ -46,7 +46,7 @@ export default function Dashboard() {
     if (error) {
         return (
             <div className="p-8">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 dark:bg-red-950/40 dark:border-red-900/40 dark:text-red-300">
                     Failed to load statistics: {(error as Error).message}
                 </div>
             </div>
@@ -87,8 +87,8 @@ export default function Dashboard() {
     return (
         <div className="p-8">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-                <p className="text-gray-500 mt-1">
+                <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Dashboard</h1>
+                <p className="text-gray-500 dark:text-slate-400 mt-1">
                     Monitor your API proxy performance and statistics
                 </p>
             </div>
@@ -98,15 +98,15 @@ export default function Dashboard() {
                 {statCards.map((stat) => (
                     <div
                         key={stat.label}
-                        className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                        className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6"
                     >
                         <div className="flex items-center">
                             <div className={`p-3 rounded-lg ${stat.bgColor}`}>
                                 <stat.icon className={`w-6 h-6 ${stat.color}`} />
                             </div>
                             <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-500">{stat.label}</p>
-                                <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                                <p className="text-sm font-medium text-gray-500 dark:text-slate-400">{stat.label}</p>
+                                <p className="text-2xl font-bold text-gray-900 dark:text-slate-100">{stat.value}</p>
                             </div>
                         </div>
                     </div>
@@ -115,8 +115,8 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 {/* Requests Chart */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">
                         Requests (Last 24 Hours)
                     </h3>
                     <div className="h-64">
@@ -146,8 +146,8 @@ export default function Dashboard() {
                 </div>
 
                 {/* Top Operations */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">
                         Top Operations
                     </h3>
                     <div className="h-64">
@@ -174,31 +174,31 @@ export default function Dashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Server Info */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4 flex items-center">
                         <TrendingUp className="w-5 h-5 mr-2 text-green-600" />
                         Server Status
                     </h3>
                     <div className="space-y-4">
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                            <span className="text-gray-500">Uptime</span>
-                            <span className="font-medium text-gray-900">{stats?.uptime}</span>
+                        <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-slate-800">
+                            <span className="text-gray-500 dark:text-slate-400">Uptime</span>
+                            <span className="font-medium text-gray-900 dark:text-slate-100">{stats?.uptime}</span>
                         </div>
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                            <span className="text-gray-500">Requests/sec</span>
-                            <span className="font-medium text-gray-900">
+                        <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-slate-800">
+                            <span className="text-gray-500 dark:text-slate-400">Requests/sec</span>
+                            <span className="font-medium text-gray-900 dark:text-slate-100">
                                 {stats?.requestsPerSecond.toFixed(2)}
                             </span>
                         </div>
-                        <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                            <span className="text-gray-500">Total Errors</span>
+                        <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-slate-800">
+                            <span className="text-gray-500 dark:text-slate-400">Total Errors</span>
                             <span className="font-medium text-red-600">
                                 {stats?.totalErrors.toLocaleString()}
                             </span>
                         </div>
                         <div className="flex justify-between items-center py-2">
-                            <span className="text-gray-500">Error Rate</span>
-                            <span className="font-medium text-gray-900">
+                            <span className="text-gray-500 dark:text-slate-400">Error Rate</span>
+                            <span className="font-medium text-gray-900 dark:text-slate-100">
                                 {stats?.totalRequests
                                     ? ((stats.totalErrors / stats.totalRequests) * 100).toFixed(2)
                                     : 0}
@@ -209,8 +209,8 @@ export default function Dashboard() {
                 </div>
 
                 {/* Recent Errors */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4 flex items-center">
                         <AlertTriangle className="w-5 h-5 mr-2 text-yellow-600" />
                         Recent Errors
                     </h3>
@@ -219,22 +219,22 @@ export default function Dashboard() {
                             {stats.recentErrors.slice(0, 5).map((error, i) => (
                                 <div
                                     key={i}
-                                    className="p-3 bg-red-50 rounded-lg border border-red-100"
+                                    className="p-3 bg-red-50 dark:bg-red-950/30 rounded-lg border border-red-100 dark:border-red-900/40"
                                 >
                                     <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm font-medium text-red-700">
+                                        <span className="text-sm font-medium text-red-700 dark:text-red-300">
                                             {error.method} {error.path}
                                         </span>
-                                        <span className="text-xs text-red-500">
+                                        <span className="text-xs text-red-500 dark:text-red-400">
                                             {new Date(error.timestamp).toLocaleTimeString()}
                                         </span>
                                     </div>
-                                    <p className="text-sm text-red-600">{error.error}</p>
+                                    <p className="text-sm text-red-600 dark:text-red-300">{error.error}</p>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <div className="text-center py-8 text-gray-500">
+                        <div className="text-center py-8 text-gray-500 dark:text-slate-400">
                             No errors recorded
                         </div>
                     )}

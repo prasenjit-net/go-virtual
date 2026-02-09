@@ -61,9 +61,9 @@ export default function SpecList() {
         return (
             <div className="p-8">
                 <div className="animate-pulse space-y-4">
-                    <div className="h-8 bg-gray-200 rounded w-48"></div>
-                    <div className="h-32 bg-gray-200 rounded-xl"></div>
-                    <div className="h-32 bg-gray-200 rounded-xl"></div>
+                    <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-48"></div>
+                    <div className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
+                    <div className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
                 </div>
             </div>
         )
@@ -72,7 +72,7 @@ export default function SpecList() {
     if (error) {
         return (
             <div className="p-8">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 dark:bg-red-950/40 dark:border-red-900/40 dark:text-red-300">
                     Failed to load specs: {(error as Error).message}
                 </div>
             </div>
@@ -83,8 +83,8 @@ export default function SpecList() {
         <div className="p-8">
             <div className="flex items-center justify-between mb-8">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">API Specifications</h1>
-                    <p className="text-gray-500 mt-1">
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">API Specifications</h1>
+                    <p className="text-gray-500 dark:text-slate-400 mt-1">
                         Manage your OpenAPI 3 specifications and configure virtual responses
                     </p>
                 </div>
@@ -102,33 +102,33 @@ export default function SpecList() {
                     {specs.map((spec) => (
                         <div
                             key={spec.id}
-                            className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+                            className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6"
                         >
                             <div className="flex items-start justify-between">
                                 <div className="flex items-start">
-                                    <div className="p-3 bg-primary-100 rounded-lg">
+                                    <div className="p-3 bg-primary-100/80 dark:bg-primary-900/40 rounded-lg">
                                         <FileCode2 className="w-6 h-6 text-primary-600" />
                                     </div>
                                     <div className="ml-4">
                                         <Link
                                             to={`/specs/${spec.id}`}
-                                            className="text-lg font-semibold text-gray-900 hover:text-primary-600 flex items-center"
+                                            className="text-lg font-semibold text-gray-900 dark:text-slate-100 hover:text-primary-600 flex items-center"
                                         >
                                             {spec.name}
                                             <ExternalLink className="w-4 h-4 ml-2" />
                                         </Link>
-                                        <p className="text-sm text-gray-500 mt-1">
+                                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                                             {spec.description || 'No description'}
                                         </p>
                                         <div className="flex items-center gap-4 mt-3 text-sm">
-                                            <span className="text-gray-500">
-                                                Version: <span className="font-medium text-gray-700">{spec.version}</span>
+                                            <span className="text-gray-500 dark:text-slate-400">
+                                                Version: <span className="font-medium text-gray-700 dark:text-slate-200">{spec.version}</span>
                                             </span>
-                                            <span className="text-gray-500">
-                                                Base Path: <code className="font-mono bg-gray-100 px-1 rounded">{spec.basePath || '/'}</code>
+                                            <span className="text-gray-500 dark:text-slate-400">
+                                                Base Path: <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">{spec.basePath || '/'}</code>
                                             </span>
-                                            <span className="text-gray-500">
-                                                Operations: <span className="font-medium text-gray-700">{spec.operationCount}</span>
+                                            <span className="text-gray-500 dark:text-slate-400">
+                                                Operations: <span className="font-medium text-gray-700 dark:text-slate-200">{spec.operationCount}</span>
                                             </span>
                                         </div>
                                     </div>
@@ -141,8 +141,8 @@ export default function SpecList() {
                                         className={clsx(
                                             'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                                             spec.useExampleFallback
-                                                ? 'bg-amber-100 text-amber-700'
-                                                : 'bg-gray-100 text-gray-500'
+                                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                                : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
                                         )}
                                         title={spec.useExampleFallback ? 'Disable example fallback' : 'Enable example fallback'}
                                     >
@@ -156,8 +156,8 @@ export default function SpecList() {
                                         className={clsx(
                                             'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                                             spec.tracing
-                                                ? 'bg-yellow-100 text-yellow-700'
-                                                : 'bg-gray-100 text-gray-500'
+                                                ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+                                                : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
                                         )}
                                         title={spec.tracing ? 'Disable tracing' : 'Enable tracing'}
                                     >
@@ -171,8 +171,8 @@ export default function SpecList() {
                                         className={clsx(
                                             'flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                                             spec.enabled
-                                                ? 'bg-green-100 text-green-700'
-                                                : 'bg-gray-100 text-gray-500'
+                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                                : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
                                         )}
                                     >
                                         {spec.enabled ? (
@@ -195,7 +195,7 @@ export default function SpecList() {
                                                 deleteMutation.mutate(spec.id)
                                             }
                                         }}
-                                        className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                        className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                                         title="Delete spec"
                                     >
                                         <Trash2 className="w-5 h-5" />
@@ -206,12 +206,12 @@ export default function SpecList() {
                     ))}
                 </div>
             ) : (
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-                    <FileCode2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-12 text-center">
+                    <FileCode2 className="w-16 h-16 text-gray-300 dark:text-slate-600 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-slate-100 mb-2">
                         No API Specifications
                     </h3>
-                    <p className="text-gray-500 mb-6">
+                    <p className="text-gray-500 dark:text-slate-400 mb-6">
                         Upload your first OpenAPI 3 specification to get started
                     </p>
                     <button

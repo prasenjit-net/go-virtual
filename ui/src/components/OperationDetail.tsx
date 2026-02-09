@@ -20,11 +20,11 @@ import type { Operation, ResponseConfig, Spec } from '../types'
 import ResponseConfigEditor from './ResponseDesigner/ResponseConfigEditor'
 
 const methodColors: Record<string, string> = {
-    GET: 'bg-green-100 text-green-700',
-    POST: 'bg-blue-100 text-blue-700',
-    PUT: 'bg-yellow-100 text-yellow-700',
-    DELETE: 'bg-red-100 text-red-700',
-    PATCH: 'bg-purple-100 text-purple-700',
+    GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    POST: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    PUT: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
+    DELETE: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    PATCH: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
 }
 
 export default function OperationDetail() {
@@ -71,8 +71,8 @@ export default function OperationDetail() {
         return (
             <div className="p-8">
                 <div className="animate-pulse space-y-4">
-                    <div className="h-8 bg-gray-200 rounded w-48"></div>
-                    <div className="h-32 bg-gray-200 rounded-xl"></div>
+                    <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-48"></div>
+                    <div className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
                 </div>
             </div>
         )
@@ -81,7 +81,7 @@ export default function OperationDetail() {
     if (!operation) {
         return (
             <div className="p-8">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 dark:bg-red-950/40 dark:border-red-900/40 dark:text-red-300">
                     Operation not found
                 </div>
             </div>
@@ -109,7 +109,7 @@ export default function OperationDetail() {
             <div className="mb-8">
                 <Link
                     to={`/specs/${operation.specId}`}
-                    className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700 mb-4"
+                    className="inline-flex items-center text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 mb-4"
                 >
                     <ArrowLeft className="w-4 h-4 mr-1" />
                     Back to Specification
@@ -118,28 +118,28 @@ export default function OperationDetail() {
                 <div className="flex items-center">
                     <span className={clsx(
                         'px-3 py-1.5 rounded text-sm font-bold uppercase',
-                        methodColors[operation.method] || 'bg-gray-100 text-gray-700'
+                        methodColors[operation.method] || 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
                     )}>
                         {operation.method}
                     </span>
-                    <h1 className="text-2xl font-mono font-bold text-gray-900 ml-4">
+                    <h1 className="text-2xl font-mono font-bold text-gray-900 dark:text-slate-100 ml-4">
                         {operation.path}
                     </h1>
                 </div>
                 {operation.summary && (
-                    <p className="text-gray-500 mt-2">{operation.summary}</p>
+                    <p className="text-gray-500 dark:text-slate-400 mt-2">{operation.summary}</p>
                 )}
-                <p className="text-sm text-gray-400 mt-1">
-                    Full path: <code className="font-mono bg-gray-100 px-1 rounded">{operation.fullPath}</code>
+                <p className="text-sm text-gray-400 dark:text-slate-500 mt-1">
+                    Full path: <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">{operation.fullPath}</code>
                 </p>
             </div>
 
             {/* Response Configurations */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="p-6 border-b border-gray-200 flex items-center justify-between">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Response Configurations</h2>
-                        <p className="text-sm text-gray-500 mt-1">
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Response Configurations</h2>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
                             Configure mock responses with conditions and priorities
                         </p>
                     </div>
@@ -153,7 +153,7 @@ export default function OperationDetail() {
                 </div>
 
                 {responses && responses.length > 0 ? (
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-slate-800">
                         {responses.map((config, index) => (
                             <div key={config.id} className="p-4">
                                 <div
@@ -163,31 +163,31 @@ export default function OperationDetail() {
                                     )}
                                 >
                                     <div className="flex items-center">
-                                        <GripVertical className="w-5 h-5 text-gray-300 mr-3" />
-                                        <span className="w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-sm font-medium text-gray-600 mr-3">
+                                        <GripVertical className="w-5 h-5 text-gray-300 dark:text-slate-600 mr-3" />
+                                        <span className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-slate-800 rounded-full text-sm font-medium text-gray-600 dark:text-slate-300 mr-3">
                                             {index + 1}
                                         </span>
                                         <div>
                                             <div className="flex items-center">
-                                                <span className="font-medium text-gray-900">{config.name}</span>
+                                                <span className="font-medium text-gray-900 dark:text-slate-100">{config.name}</span>
                                                 <span className={clsx(
                                                     'ml-3 px-2 py-0.5 rounded text-xs font-medium',
                                                     config.statusCode >= 200 && config.statusCode < 300
-                                                        ? 'bg-green-100 text-green-700'
+                                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                                                         : config.statusCode >= 400
-                                                            ? 'bg-red-100 text-red-700'
-                                                            : 'bg-gray-100 text-gray-700'
+                                                            ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                                            : 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
                                                 )}>
                                                     {config.statusCode}
                                                 </span>
                                                 {config.conditions.length > 0 && (
-                                                    <span className="ml-2 text-xs text-gray-400">
+                                                    <span className="ml-2 text-xs text-gray-400 dark:text-slate-500">
                                                         {config.conditions.length} condition{config.conditions.length !== 1 ? 's' : ''}
                                                     </span>
                                                 )}
                                             </div>
                                             {config.description && (
-                                                <p className="text-sm text-gray-500 mt-0.5">{config.description}</p>
+                                                <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{config.description}</p>
                                             )}
                                         </div>
                                     </div>
@@ -201,8 +201,8 @@ export default function OperationDetail() {
                                             className={clsx(
                                                 'p-2 rounded-lg transition-colors',
                                                 config.enabled
-                                                    ? 'text-green-600 hover:bg-green-50'
-                                                    : 'text-gray-400 hover:bg-gray-100'
+                                                    ? 'text-green-600 hover:bg-green-50 dark:hover:bg-green-950/40'
+                                                    : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'
                                             )}
                                             title={config.enabled ? 'Disable' : 'Enable'}
                                         >
@@ -217,7 +217,7 @@ export default function OperationDetail() {
                                                 e.stopPropagation()
                                                 handleEdit(config)
                                             }}
-                                            className="p-2 text-gray-400 hover:text-primary-600 rounded-lg hover:bg-primary-50 transition-colors"
+                                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
                                             title="Edit"
                                         >
                                             <Edit2 className="w-5 h-5" />
@@ -229,15 +229,15 @@ export default function OperationDetail() {
                                                     deleteMutation.mutate(config.id)
                                                 }
                                             }}
-                                            className="p-2 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                                             title="Delete"
                                         >
                                             <Trash2 className="w-5 h-5" />
                                         </button>
                                         {expandedConfig === config.id ? (
-                                            <ChevronDown className="w-5 h-5 text-gray-400" />
+                                            <ChevronDown className="w-5 h-5 text-gray-400 dark:text-slate-500" />
                                         ) : (
-                                            <ChevronRight className="w-5 h-5 text-gray-400" />
+                                            <ChevronRight className="w-5 h-5 text-gray-400 dark:text-slate-500" />
                                         )}
                                     </div>
                                 </div>
@@ -248,14 +248,14 @@ export default function OperationDetail() {
                                         {/* Conditions */}
                                         {config.conditions.length > 0 && (
                                             <div>
-                                                <h4 className="text-sm font-medium text-gray-700 mb-2">Conditions</h4>
+                                                <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Conditions</h4>
                                                 <div className="space-y-2">
                                                     {config.conditions.map((cond, i) => (
-                                                        <div key={i} className="flex items-center text-sm bg-gray-50 rounded px-3 py-2">
+                                                        <div key={i} className="flex items-center text-sm bg-gray-50 dark:bg-slate-800 rounded px-3 py-2">
                                                             <span className="text-purple-600 font-mono">{cond.source}</span>
-                                                            <span className="mx-2 text-gray-400">.</span>
+                                                            <span className="mx-2 text-gray-400 dark:text-slate-500">.</span>
                                                             <span className="text-blue-600 font-mono">{cond.key}</span>
-                                                            <span className="mx-2 text-gray-500">{cond.operator}</span>
+                                                            <span className="mx-2 text-gray-500 dark:text-slate-400">{cond.operator}</span>
                                                             <span className="text-green-600 font-mono">"{cond.value}"</span>
                                                         </div>
                                                     ))}
@@ -266,12 +266,12 @@ export default function OperationDetail() {
                                         {/* Headers */}
                                         {Object.keys(config.headers).length > 0 && (
                                             <div>
-                                                <h4 className="text-sm font-medium text-gray-700 mb-2">Headers</h4>
-                                                <div className="bg-gray-50 rounded p-3 font-mono text-sm">
+                                                <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Headers</h4>
+                                                <div className="bg-gray-50 dark:bg-slate-800 rounded p-3 font-mono text-sm">
                                                     {Object.entries(config.headers).map(([key, value]) => (
                                                         <div key={key}>
                                                             <span className="text-purple-600">{key}</span>
-                                                            <span className="text-gray-400">: </span>
+                                                            <span className="text-gray-400 dark:text-slate-500">: </span>
                                                             <span className="text-green-600">{value}</span>
                                                         </div>
                                                     ))}
@@ -282,7 +282,7 @@ export default function OperationDetail() {
                                         {/* Body */}
                                         {config.body && (
                                             <div>
-                                                <h4 className="text-sm font-medium text-gray-700 mb-2">Body</h4>
+                                                <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Body</h4>
                                                 <pre className="bg-gray-900 text-gray-100 rounded p-4 text-sm overflow-x-auto">
                                                     {config.body}
                                                 </pre>
@@ -291,7 +291,7 @@ export default function OperationDetail() {
 
                                         {/* Delay */}
                                         {config.delay > 0 && (
-                                            <div className="text-sm text-gray-500">
+                                            <div className="text-sm text-gray-500 dark:text-slate-400">
                                                 Response delay: <span className="font-medium">{config.delay}ms</span>
                                             </div>
                                         )}
@@ -302,7 +302,7 @@ export default function OperationDetail() {
                     </div>
                 ) : (
                     <div className="p-12 text-center">
-                        <p className="text-gray-500 mb-4">No response configurations yet</p>
+                        <p className="text-gray-500 dark:text-slate-400 mb-4">No response configurations yet</p>
                         <button
                             onClick={handleCreate}
                             className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
@@ -319,67 +319,67 @@ export default function OperationDetail() {
                 <div className={clsx(
                     "mt-6 rounded-xl p-6",
                     spec?.useExampleFallback
-                        ? "bg-amber-50 border border-amber-200"
-                        : "bg-gray-50 border border-gray-200"
+                        ? "bg-amber-50 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-900/40"
+                        : "bg-gray-50 border border-gray-200 dark:bg-slate-900 dark:border-slate-800"
                 )}>
                     <div className="flex items-start">
                         <Sparkles className={clsx(
                             "w-5 h-5 mt-0.5 mr-3 flex-shrink-0",
-                            spec?.useExampleFallback ? "text-amber-600" : "text-gray-400"
+                            spec?.useExampleFallback ? "text-amber-600" : "text-gray-400 dark:text-slate-500"
                         )} />
                         <div className="flex-1">
                             <div className="flex items-center justify-between mb-1">
                                 <h3 className={clsx(
                                     "text-sm font-semibold",
-                                    spec?.useExampleFallback ? "text-amber-800" : "text-gray-600"
+                                    spec?.useExampleFallback ? "text-amber-800 dark:text-amber-200" : "text-gray-600 dark:text-slate-300"
                                 )}>
                                     Fallback: Example Response from Spec
                                 </h3>
                                 {!spec?.useExampleFallback && (
-                                    <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                                    <span className="text-xs bg-gray-200 text-gray-600 dark:bg-slate-800 dark:text-slate-300 px-2 py-0.5 rounded">
                                         Disabled at spec level
                                     </span>
                                 )}
                             </div>
                             <p className={clsx(
                                 "text-sm mb-4",
-                                spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"
+                                spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"
                             )}>
                                 {spec?.useExampleFallback
                                     ? "If no configured response matches, this example response from the OpenAPI spec will be returned."
                                     : "Example fallback is disabled for this spec. Enable it in the spec settings to use this response."}
                             </p>
                             <div className={clsx(
-                                "bg-white rounded-lg p-4 space-y-3",
-                                spec?.useExampleFallback ? "border border-amber-200" : "border border-gray-200 opacity-60"
+                                "bg-white dark:bg-slate-900 rounded-lg p-4 space-y-3",
+                                spec?.useExampleFallback ? "border border-amber-200 dark:border-amber-900/40" : "border border-gray-200 dark:border-slate-800 opacity-60"
                             )}>
                                 <div className="flex items-center gap-4 text-sm">
-                                    <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Status:</span>
+                                    <span className={spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"}>Status:</span>
                                     <span className={clsx(
                                         'px-2 py-0.5 rounded text-xs font-medium',
                                         operation.exampleResponse.statusCode >= 200 && operation.exampleResponse.statusCode < 300
-                                            ? 'bg-green-100 text-green-700'
-                                            : 'bg-gray-100 text-gray-700'
+                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                            : 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
                                     )}>
                                         {operation.exampleResponse.statusCode}
                                     </span>
                                 </div>
                                 {operation.exampleResponse.headers && Object.keys(operation.exampleResponse.headers).length > 0 && (
                                     <div className="text-sm">
-                                        <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Headers:</span>
+                                        <span className={spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"}>Headers:</span>
                                         <div className={clsx(
                                             "mt-1 font-mono text-xs rounded p-2",
-                                            spec?.useExampleFallback ? "bg-amber-50" : "bg-gray-50"
+                                            spec?.useExampleFallback ? "bg-amber-50 dark:bg-amber-950/30" : "bg-gray-50 dark:bg-slate-800"
                                         )}>
                                             {Object.entries(operation.exampleResponse.headers).map(([key, value]) => (
-                                                <div key={key}><span className={spec?.useExampleFallback ? "text-amber-600" : "text-gray-400"}>{key}:</span> {value}</div>
+                                                <div key={key}><span className={spec?.useExampleFallback ? "text-amber-600" : "text-gray-400 dark:text-slate-500"}>{key}:</span> {value}</div>
                                             ))}
                                         </div>
                                     </div>
                                 )}
                                 {operation.exampleResponse.body && (
                                     <div className="text-sm">
-                                        <span className={spec?.useExampleFallback ? "text-amber-700" : "text-gray-500"}>Body:</span>
+                                        <span className={spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"}>Body:</span>
                                         <pre className="mt-1 bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48">
                                             {operation.exampleResponse.body}
                                         </pre>
@@ -392,10 +392,10 @@ export default function OperationDetail() {
             )}
 
             {/* Response Priority Info */}
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="mt-6 bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/40 rounded-xl p-4">
                 <div className="flex items-start">
                     <Info className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
-                    <div className="text-sm text-blue-700">
+                    <div className="text-sm text-blue-700 dark:text-blue-300">
                         <strong>Response Matching Order:</strong>
                         <ol className="list-decimal list-inside mt-1 space-y-0.5">
                             <li>First enabled response with matching conditions (by priority)</li>
