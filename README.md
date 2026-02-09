@@ -130,8 +130,26 @@ Use these variables in response bodies and headers:
 | `{{random.uuid}}` | Random UUID | - |
 | `{{random.int(min,max)}}` | Random integer | `{{random.int(1,100)}}` |
 | `{{random.string(len)}}` | Random string | `{{random.string(10)}}` |
+| `{{faker.name.first}}` | Faker first name | `{{faker.name.first}}` |
+| `{{faker.name.last}}` | Faker last name | `{{faker.name.last}}` |
+| `{{faker.name}}` | Faker full name | `{{faker.name}}` |
+| `{{faker.email}}` | Faker email | `{{faker.email}}` |
+| `{{faker.phone}}` | Faker phone | `{{faker.phone}}` |
+| `{{faker.company.name}}` | Faker company name | `{{faker.company.name}}` |
+| `{{faker.address.street}}` | Faker street address | `{{faker.address.street}}` |
+| `{{faker.address.city}}` | Faker city | `{{faker.address.city}}` |
+| `{{faker.address.state}}` | Faker state | `{{faker.address.state}}` |
+| `{{faker.address.zip}}` | Faker postal code | `{{faker.address.zip}}` |
+| `{{faker.internet.username}}` | Faker username | `{{faker.internet.username}}` |
+| `{{faker.internet.domain}}` | Faker domain | `{{faker.internet.domain}}` |
+| `{{faker.internet.url}}` | Faker URL | `{{faker.internet.url}}` |
+| `{{faker.lorem.word}}` | Faker word | `{{faker.lorem.word}}` |
+| `{{faker.lorem.sentence}}` | Faker sentence | `{{faker.lorem.sentence}}` |
+| `{{faker.lorem.paragraph}}` | Faker paragraph | `{{faker.lorem.paragraph}}` |
 | `{{timestamp}}` | Current Unix timestamp | - |
 | `{{timestamp.iso}}` | Current ISO timestamp | - |
+
+Faker outputs are deterministically seeded per request using the request path and query parameters.
 
 ## Condition Operators
 

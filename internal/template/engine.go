@@ -30,6 +30,7 @@ type Context struct {
 	QueryParams map[string][]string
 	Headers     map[string][]string
 	Body        string
+	RNG         *rand.Rand
 }
 
 // templateVarPattern matches template variables like {{variable}}
@@ -69,6 +70,8 @@ func (e *Engine) resolveVariable(varName string, ctx *Context) string {
 		key = parts[1]
 	}
 
+	rng := e.rngForContext(ctx)
+
 	switch source {
 	case "path":
 		if key != "" && ctx.PathParams != nil {
@@ -99,7 +102,9 @@ func (e *Engine) resolveVariable(varName string, ctx *Context) string {
 			}
 		}
 	case "random":
-		return e.resolveRandom(key)
+		return e.resolveRandom(key, rng)
+	case "faker":
+		return e.resolveFaker(key, rng)
 	case "timestamp":
 		return e.resolveTimestamp(key)
 	case "env":
@@ -111,12 +116,16 @@ func (e *Engine) resolveVariable(varName string, ctx *Context) string {
 }
 
 // resolveRandom resolves random value generators
-func (e *Engine) resolveRandom(key string) string {
+func (e *Engine) resolveRandom(key string, rng *rand.Rand) string {
+	if rng == nil {
+		rng = e.rng
+	}
+
 	switch {
 	case key == "uuid":
 		return uuid.New().String()
 	case key == "int":
-		return strconv.Itoa(e.rng.Intn(1000000))
+		return strconv.Itoa(rng.Intn(1000000))
 	case strings.HasPrefix(key, "int("):
 		// Parse int(min,max)
 		params := parseParams(key, "int")
@@ -124,48 +133,205 @@ func (e *Engine) resolveRandom(key string) string {
 			min, _ := strconv.Atoi(params[0])
 			max, _ := strconv.Atoi(params[1])
 			if max > min {
-				return strconv.Itoa(min + e.rng.Intn(max-min+1))
+				return strconv.Itoa(min + rng.Intn(max-min+1))
 			}
 		}
-		return strconv.Itoa(e.rng.Intn(1000000))
+		return strconv.Itoa(rng.Intn(1000000))
 	case key == "float":
-		return fmt.Sprintf("%.2f", e.rng.Float64()*1000)
+		return fmt.Sprintf("%.2f", rng.Float64()*1000)
 	case strings.HasPrefix(key, "float("):
 		params := parseParams(key, "float")
 		if len(params) == 2 {
 			min, _ := strconv.ParseFloat(params[0], 64)
 			max, _ := strconv.ParseFloat(params[1], 64)
 			if max > min {
-				return fmt.Sprintf("%.2f", min+e.rng.Float64()*(max-min))
+				return fmt.Sprintf("%.2f", min+rng.Float64()*(max-min))
 			}
 		}
-		return fmt.Sprintf("%.2f", e.rng.Float64()*1000)
+		return fmt.Sprintf("%.2f", rng.Float64()*1000)
 	case key == "string":
-		return randomString(e.rng, 10)
+		return randomString(rng, 10)
 	case strings.HasPrefix(key, "string("):
 		params := parseParams(key, "string")
 		if len(params) == 1 {
 			length, _ := strconv.Atoi(params[0])
 			if length > 0 {
-				return randomString(e.rng, length)
+				return randomString(rng, length)
 			}
 		}
-		return randomString(e.rng, 10)
+		return randomString(rng, 10)
 	case key == "bool":
-		if e.rng.Intn(2) == 0 {
+		if rng.Intn(2) == 0 {
 			return "false"
 		}
 		return "true"
 	case key == "email":
-		return fmt.Sprintf("%s@example.com", randomString(e.rng, 8))
+		return fmt.Sprintf("%s@example.com", randomString(rng, 8))
 	case key == "name":
 		names := []string{"John", "Jane", "Bob", "Alice", "Charlie", "Diana", "Eve", "Frank"}
-		return names[e.rng.Intn(len(names))]
+		return names[rng.Intn(len(names))]
 	case key == "phone":
-		return fmt.Sprintf("+1-%03d-%03d-%04d", e.rng.Intn(1000), e.rng.Intn(1000), e.rng.Intn(10000))
+		return fmt.Sprintf("+1-%03d-%03d-%04d", rng.Intn(1000), rng.Intn(1000), rng.Intn(10000))
 	}
 
 	return ""
+}
+
+func (e *Engine) rngForContext(ctx *Context) *rand.Rand {
+	if ctx != nil && ctx.RNG != nil {
+		return ctx.RNG
+	}
+	return e.rng
+}
+
+// resolveFaker resolves faker-style generators
+func (e *Engine) resolveFaker(key string, rng *rand.Rand) string {
+	if rng == nil {
+		rng = e.rng
+	}
+	if key == "" {
+		return ""
+	}
+
+	parts := strings.Split(key, ".")
+	category := parts[0]
+	field := ""
+	if len(parts) > 1 {
+		field = parts[1]
+	}
+
+	switch category {
+	case "name":
+		return fakerName(field, rng)
+	case "email":
+		return fakerEmail(rng)
+	case "phone":
+		return fakerPhone(rng)
+	case "company":
+		return fakerCompany(field, rng)
+	case "address":
+		return fakerAddress(field, rng)
+	case "internet":
+		return fakerInternet(field, rng)
+	case "lorem":
+		return fakerLorem(field, rng)
+	case "uuid":
+		return uuid.New().String()
+	case "username":
+		return fakerInternet("username", rng)
+	case "domain":
+		return fakerInternet("domain", rng)
+	case "url":
+		return fakerInternet("url", rng)
+	case "firstName":
+		return fakerName("first", rng)
+	case "lastName":
+		return fakerName("last", rng)
+	case "fullName":
+		return fakerName("full", rng)
+	}
+
+	return ""
+}
+
+func fakerName(field string, rng *rand.Rand) string {
+	firstNames := []string{"Liam", "Noah", "Olivia", "Emma", "Ava", "Sophia", "Mason", "Logan", "Mia", "Lucas"}
+	lastNames := []string{"Smith", "Johnson", "Brown", "Taylor", "Anderson", "Thomas", "Jackson", "White", "Harris", "Martin"}
+	first := firstNames[rng.Intn(len(firstNames))]
+	last := lastNames[rng.Intn(len(lastNames))]
+
+	switch field {
+	case "first":
+		return first
+	case "last":
+		return last
+	case "full", "":
+		return first + " " + last
+	}
+
+	return first + " " + last
+}
+
+func fakerEmail(rng *rand.Rand) string {
+	providers := []string{"example.com", "mail.test", "dev.local", "sample.net"}
+	return fmt.Sprintf("%s@%s", randomString(rng, 8), providers[rng.Intn(len(providers))])
+}
+
+func fakerPhone(rng *rand.Rand) string {
+	return fmt.Sprintf("+1-%03d-%03d-%04d", rng.Intn(1000), rng.Intn(1000), rng.Intn(10000))
+}
+
+func fakerCompany(field string, rng *rand.Rand) string {
+	companies := []string{"Acme", "Globex", "Initech", "Umbrella", "Hooli", "Vandelay", "Stark", "Wayne", "Wonka", "Aperture"}
+	suffixes := []string{"Inc", "LLC", "Ltd", "Group", "Corp"}
+	name := companies[rng.Intn(len(companies))]
+
+	switch field {
+	case "name", "":
+		return name + " " + suffixes[rng.Intn(len(suffixes))]
+	case "suffix":
+		return suffixes[rng.Intn(len(suffixes))]
+	}
+
+	return name + " " + suffixes[rng.Intn(len(suffixes))]
+}
+
+func fakerAddress(field string, rng *rand.Rand) string {
+	streets := []string{"Main", "Oak", "Pine", "Maple", "Cedar", "Elm", "Sunset", "Hillcrest", "Park", "Lake"}
+	cities := []string{"Springfield", "Riverton", "Fairview", "Greenville", "Madison", "Georgetown", "Ashland", "Clinton"}
+	states := []string{"CA", "TX", "NY", "FL", "WA", "IL", "CO", "MA"}
+	street := fmt.Sprintf("%d %s St", 100+rng.Intn(900), streets[rng.Intn(len(streets))])
+	city := cities[rng.Intn(len(cities))]
+	state := states[rng.Intn(len(states))]
+	zip := fmt.Sprintf("%05d", rng.Intn(100000))
+
+	switch field {
+	case "street", "streetAddress":
+		return street
+	case "city":
+		return city
+	case "state":
+		return state
+	case "zip", "postalCode":
+		return zip
+	case "full", "":
+		return fmt.Sprintf("%s, %s, %s %s", street, city, state, zip)
+	}
+
+	return fmt.Sprintf("%s, %s, %s %s", street, city, state, zip)
+}
+
+func fakerInternet(field string, rng *rand.Rand) string {
+	domains := []string{"example.com", "demo.dev", "mock.io", "test.net"}
+	username := randomString(rng, 10)
+	domain := domains[rng.Intn(len(domains))]
+
+	switch field {
+	case "username", "user":
+		return username
+	case "domain":
+		return domain
+	case "url", "":
+		return fmt.Sprintf("https://%s/%s", domain, randomString(rng, 6))
+	}
+
+	return fmt.Sprintf("https://%s/%s", domain, randomString(rng, 6))
+}
+
+func fakerLorem(field string, rng *rand.Rand) string {
+	words := []string{"alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf", "hotel", "india", "juliet", "kilo", "lima"}
+	word := words[rng.Intn(len(words))]
+
+	switch field {
+	case "word", "":
+		return word
+	case "sentence":
+		return fmt.Sprintf("%s %s %s.", words[rng.Intn(len(words))], words[rng.Intn(len(words))], words[rng.Intn(len(words))])
+	case "paragraph":
+		return fmt.Sprintf("%s %s %s. %s %s %s.", words[rng.Intn(len(words))], words[rng.Intn(len(words))], words[rng.Intn(len(words))], words[rng.Intn(len(words))], words[rng.Intn(len(words))], words[rng.Intn(len(words))])
+	}
+
+	return word
 }
 
 // resolveTimestamp resolves timestamp generators

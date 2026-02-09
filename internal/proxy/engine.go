@@ -1,8 +1,12 @@
 package proxy
 
 import (
+	"hash"
+	"hash/fnv"
 	"io"
+	"math/rand"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -264,11 +268,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build template context
+	seed := buildTemplateSeed(r, pathParams)
 	templateCtx := &template.Context{
 		PathParams:  pathParams,
 		QueryParams: r.URL.Query(),
 		Headers:     r.Header,
 		Body:        requestBody,
+		RNG:         rand.New(rand.NewSource(seed)),
 	}
 
 	// Process headers
@@ -370,6 +376,61 @@ func headersToMap(h http.Header) map[string][]string {
 		result[key] = values
 	}
 	return result
+}
+
+func buildTemplateSeed(r *http.Request, pathParams map[string]string) int64 {
+	h := fnv.New64a()
+	_, _ = io.WriteString(h, r.Method)
+	_, _ = io.WriteString(h, "|")
+	_, _ = io.WriteString(h, r.URL.Path)
+	_, _ = io.WriteString(h, "|")
+	writeSortedPathParams(h, pathParams)
+	_, _ = io.WriteString(h, "|")
+	writeSortedQueryParams(h, r.URL.Query())
+
+	return int64(h.Sum64())
+}
+
+func writeSortedPathParams(h hash.Hash64, params map[string]string) {
+	if len(params) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		_, _ = io.WriteString(h, key)
+		_, _ = io.WriteString(h, "=")
+		_, _ = io.WriteString(h, params[key])
+		_, _ = io.WriteString(h, "&")
+	}
+}
+
+func writeSortedQueryParams(h hash.Hash64, query url.Values) {
+	if len(query) == 0 {
+		return
+	}
+
+	keys := make([]string, 0, len(query))
+	for key := range query {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	for _, key := range keys {
+		vals := append([]string(nil), query[key]...)
+		sort.Strings(vals)
+		for _, val := range vals {
+			_, _ = io.WriteString(h, key)
+			_, _ = io.WriteString(h, "=")
+			_, _ = io.WriteString(h, val)
+			_, _ = io.WriteString(h, "&")
+		}
+	}
 }
 
 // MatchRoute is exported for testing purposes

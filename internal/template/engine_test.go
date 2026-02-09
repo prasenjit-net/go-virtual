@@ -1,6 +1,7 @@
 package template
 
 import (
+	"math/rand"
 	"regexp"
 	"strings"
 	"testing"
@@ -360,6 +361,26 @@ func TestProcess_RandomValues(t *testing.T) {
 			t.Errorf("expected phone format, got %q", result)
 		}
 	})
+}
+
+func TestProcess_FakerSeeded(t *testing.T) {
+	e := NewEngine()
+
+	seed := int64(12345)
+	ctx1 := &Context{RNG: rand.New(rand.NewSource(seed))}
+	ctx2 := &Context{RNG: rand.New(rand.NewSource(seed))}
+
+	template := "{{faker.name.first}} {{faker.name.last}} {{faker.email}} {{faker.address.city}} {{faker.internet.username}}"
+	result1 := e.Process(template, ctx1)
+	result2 := e.Process(template, ctx2)
+
+	if result1 != result2 {
+		t.Errorf("expected deterministic faker output, got %q and %q", result1, result2)
+	}
+
+	if strings.TrimSpace(result1) == "" {
+		t.Error("expected non-empty faker output")
+	}
 }
 
 func TestProcess_Timestamp(t *testing.T) {

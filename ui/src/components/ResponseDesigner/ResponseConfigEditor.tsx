@@ -29,6 +29,58 @@ const operators: { value: ConditionOperator; label: string }[] = [
 
 const sources = ['path', 'query', 'header', 'body'] as const
 
+const templateDocs = {
+    request: [
+        { key: '{{path.param}}', desc: 'Replace param with any path parameter name', example: 'path.userId → 42' },
+        { key: '{{query.param}}', desc: 'Replace param with any query parameter name (first value)', example: 'query.status → active' },
+        { key: '{{header.name}}', desc: 'Replace name with any request header (case-insensitive)', example: 'header.Authorization → Bearer ...' },
+        { key: '{{body.jsonPath}}', desc: 'Replace jsonPath with any JSON path in request body', example: 'body.user.name → Alice' },
+    ],
+    random: [
+        { key: '{{random.uuid}}', desc: 'Random UUID', example: '3d7b9c2e-...' },
+        { key: '{{random.int}}', desc: 'Random integer (0-999999)', example: '58231' },
+        { key: '{{random.int(min,max)}}', desc: 'Random integer in range', example: 'random.int(1,10) → 7' },
+        { key: '{{random.float}}', desc: 'Random float', example: '491.23' },
+        { key: '{{random.float(min,max)}}', desc: 'Random float in range', example: 'random.float(1,5) → 3.14' },
+        { key: '{{random.string}}', desc: 'Random string (len 10)', example: 'aZ93kLmP0q' },
+        { key: '{{random.string(len)}}', desc: 'Random string (len)', example: 'random.string(6) → Kd9pQ2' },
+        { key: '{{random.bool}}', desc: 'Random boolean', example: 'true' },
+        { key: '{{random.email}}', desc: 'Random email', example: 'a1b2c3d4@example.com' },
+        { key: '{{random.name}}', desc: 'Random name', example: 'Alice' },
+        { key: '{{random.phone}}', desc: 'Random phone', example: '+1-415-555-0100' },
+    ],
+    faker: [
+        { key: '{{faker.name.first}}', desc: 'First name', example: 'Liam' },
+        { key: '{{faker.name.last}}', desc: 'Last name', example: 'Smith' },
+        { key: '{{faker.name}}', desc: 'Full name', example: 'Olivia Johnson' },
+        { key: '{{faker.email}}', desc: 'Email address', example: 'r2d2@mail.test' },
+        { key: '{{faker.phone}}', desc: 'Phone number', example: '+1-212-555-0199' },
+        { key: '{{faker.company.name}}', desc: 'Company name', example: 'Acme Corp' },
+        { key: '{{faker.address.street}}', desc: 'Street address', example: '123 Oak St' },
+        { key: '{{faker.address.city}}', desc: 'City', example: 'Springfield' },
+        { key: '{{faker.address.state}}', desc: 'State', example: 'CA' },
+        { key: '{{faker.address.zip}}', desc: 'Postal code', example: '94105' },
+        { key: '{{faker.internet.username}}', desc: 'Username', example: 'alpha9delta' },
+        { key: '{{faker.internet.domain}}', desc: 'Domain', example: 'mock.io' },
+        { key: '{{faker.internet.url}}', desc: 'URL', example: 'https://mock.io/abc123' },
+        { key: '{{faker.lorem.word}}', desc: 'Lorem word', example: 'bravo' },
+        { key: '{{faker.lorem.sentence}}', desc: 'Lorem sentence', example: 'alpha bravo charlie.' },
+        { key: '{{faker.lorem.paragraph}}', desc: 'Lorem paragraph', example: 'alpha bravo charlie. delta echo foxtrot.' },
+    ],
+    timestamp: [
+        { key: '{{timestamp}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
+        { key: '{{timestamp.unix}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
+        { key: '{{timestamp.unixMilli}}', desc: 'Unix timestamp (ms)', example: '1707480000123' },
+        { key: '{{timestamp.unixNano}}', desc: 'Unix timestamp (ns)', example: '1707480000123456789' },
+        { key: '{{timestamp.iso}}', desc: 'ISO-8601 timestamp', example: '2026-02-09T12:00:00Z' },
+        { key: '{{timestamp.date}}', desc: 'Date (YYYY-MM-DD)', example: '2026-02-09' },
+        { key: '{{timestamp.time}}', desc: 'Time (HH:MM:SS)', example: '12:00:00' },
+        { key: '{{timestamp.datetime}}', desc: 'Datetime (YYYY-MM-DD HH:MM:SS)', example: '2026-02-09 12:00:00' },
+        { key: '{{timestamp.format(layout)}}', desc: 'Format using Go layout', example: 'timestamp.format(2006/01/02) → 2026/02/09' },
+        { key: '{{timestamp.add(duration)}}', desc: 'Add duration (e.g., 1h, 30m)', example: 'timestamp.add(1h) → 2026-02-09T13:00:00Z' },
+    ],
+}
+
 export default function ResponseConfigEditor({
     operationId,
     config,
@@ -225,8 +277,8 @@ export default function ResponseConfigEditor({
                                 type="button"
                                 onClick={() => setEnabled(!enabled)}
                                 className={`w-full px-3 py-2 rounded-lg border ${enabled
-                                        ? 'bg-green-50 border-green-300 text-green-700'
-                                        : 'bg-gray-50 border-gray-300 text-gray-500'
+                                    ? 'bg-green-50 border-green-300 text-green-700'
+                                    : 'bg-gray-50 border-gray-300 text-gray-500'
                                     }`}
                             >
                                 {enabled ? 'Yes' : 'No'}
@@ -378,6 +430,77 @@ export default function ResponseConfigEditor({
                                 }}
                             />
                         </div>
+                    </div>
+
+                    {/* Template Documentation */}
+                    <div className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-indigo-100 rounded-xl p-5 shadow-sm">
+                        <details className="group">
+                            <summary className="cursor-pointer text-sm font-semibold text-indigo-700 flex items-center justify-between">
+                                Template variables reference
+                                <span className="text-xs text-indigo-400 group-open:rotate-180 transition-transform">▾</span>
+                            </summary>
+                            <p className="text-xs text-indigo-500 mt-2">
+                                Faker values are deterministically seeded per request using path and query parameters.
+                            </p>
+                            <div className="mt-4 space-y-5">
+                                <div className="bg-white/70 border border-indigo-100 rounded-lg p-4">
+                                    <h4 className="text-xs font-semibold text-indigo-600 uppercase tracking-wide mb-3">
+                                        Request data
+                                    </h4>
+                                    <ul className="space-y-3 text-xs text-gray-700">
+                                        {templateDocs.request.map((item) => (
+                                            <li key={item.key} className="flex flex-col gap-1">
+                                                <span className="font-mono text-indigo-900">{item.key}</span>
+                                                <span className="text-gray-600">{item.desc}</span>
+                                                <span className="text-indigo-500/90">Example: {item.example}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div className="bg-white/70 border border-emerald-100 rounded-lg p-4">
+                                    <h4 className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-3">
+                                        Random
+                                    </h4>
+                                    <ul className="space-y-3 text-xs text-gray-700">
+                                        {templateDocs.random.map((item) => (
+                                            <li key={item.key} className="flex flex-col gap-1">
+                                                <span className="font-mono text-emerald-900">{item.key}</span>
+                                                <span className="text-gray-600">{item.desc}</span>
+                                                <span className="text-emerald-500/90">Example: {item.example}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div className="bg-white/70 border border-amber-100 rounded-lg p-4">
+                                    <h4 className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-3">
+                                        Faker
+                                    </h4>
+                                    <ul className="space-y-3 text-xs text-gray-700">
+                                        {templateDocs.faker.map((item) => (
+                                            <li key={item.key} className="flex flex-col gap-1">
+                                                <span className="font-mono text-amber-900">{item.key}</span>
+                                                <span className="text-gray-600">{item.desc}</span>
+                                                <span className="text-amber-500/90">Example: {item.example}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                <div className="bg-white/70 border border-sky-100 rounded-lg p-4">
+                                    <h4 className="text-xs font-semibold text-sky-600 uppercase tracking-wide mb-3">
+                                        Timestamp
+                                    </h4>
+                                    <ul className="space-y-3 text-xs text-gray-700">
+                                        {templateDocs.timestamp.map((item) => (
+                                            <li key={item.key} className="flex flex-col gap-1">
+                                                <span className="font-mono text-sky-900">{item.key}</span>
+                                                <span className="text-gray-600">{item.desc}</span>
+                                                <span className="text-sky-500/90">Example: {item.example}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </form>
 
