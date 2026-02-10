@@ -13,6 +13,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/tracing"
+	"github.com/prasenjit/go-virtual/internal/version"
 )
 
 // Handler handles API requests
@@ -909,6 +910,12 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 		"status":    "healthy",
 		"timestamp": time.Now().Format(time.RFC3339),
 	})
+}
+
+// Version returns version metadata for the running binary
+func (h *Handler) Version(c *gin.Context) {
+	info := version.Get()
+	c.JSON(http.StatusOK, info)
 }
 
 // generateID generates a unique ID

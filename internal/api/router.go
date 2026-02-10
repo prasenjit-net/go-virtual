@@ -102,6 +102,7 @@ func (r *Router) setupRoutes() {
 
 		// Health
 		api.GET("/health", r.handler.HealthCheck)
+		api.GET("/version", r.handler.Version)
 	}
 
 	// WebSocket for live tracing
