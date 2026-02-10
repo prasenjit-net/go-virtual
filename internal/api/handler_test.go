@@ -198,6 +198,238 @@ func TestGetSpec_Exists(t *testing.T) {
 	}
 }
 
+func TestUpdateResponsePriority(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	_ = store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "resp-1",
+		OperationID: "op-1",
+		Priority:    5,
+		StatusCode:  200,
+	})
+
+	r.PUT("/responses/:id/priority", handler.UpdateResponsePriority)
+
+	body := []byte(`{"priority":2}`)
+	req := httptest.NewRequest("PUT", "/responses/resp-1/priority", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var result models.ResponseConfig
+	_ = json.Unmarshal(w.Body.Bytes(), &result)
+	if result.Priority != 2 {
+		t.Fatalf("expected priority to be updated")
+	}
+}
+
+func TestGetSpecStatsAndOperationStats(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	_ = store.CreateSpec(&models.Spec{ID: "spec-1", Name: "Spec", Enabled: true})
+
+	r.GET("/stats/specs/:id", handler.GetSpecStats)
+	req := httptest.NewRequest("GET", "/stats/specs/spec-1", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	r.GET("/stats/operations/:id", handler.GetOperationStats)
+	req = httptest.NewRequest("GET", "/stats/operations/op-1", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var msg map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &msg)
+	if msg["message"] == nil {
+		t.Fatalf("expected message when stats are missing")
+	}
+}
+
+func TestGetTrace(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+
+	trace := &models.Trace{
+		SpecID:      "spec-1",
+		OperationID: "op-1",
+		Request:     models.TraceRequest{Method: "GET", Path: "/users"},
+		Response:    models.TraceResponse{StatusCode: 200},
+	}
+	handler.tracingService.RecordTrace(trace)
+
+	r.GET("/traces/:id", handler.GetTrace)
+	req := httptest.NewRequest("GET", "/traces/"+trace.ID, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	req = httptest.NewRequest("GET", "/traces/missing", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", w.Code)
+	}
+}
+
+func TestTagLifecycleAndSpecTags(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	r.POST("/tags", handler.CreateTag)
+
+	createBody := []byte(`{"name":"Blue","description":"Primary"}`)
+	req := httptest.NewRequest("POST", "/tags", bytes.NewReader(createBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d", w.Code)
+	}
+
+	r.GET("/tags", handler.ListTags)
+	req = httptest.NewRequest("GET", "/tags", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	r.PUT("/tags/:name", handler.UpdateTag)
+	updateBody := []byte(`{"name":"blue","description":"Updated"}`)
+	req = httptest.NewRequest("PUT", "/tags/blue", bytes.NewReader(updateBody))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	spec := &models.Spec{ID: "spec-1", Name: "Spec"}
+	_ = store.CreateSpec(spec)
+	_ = store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
+	_ = store.CreateResponseConfig(&models.ResponseConfig{ID: "resp-1", OperationID: "op-1", Tag: "blue", StatusCode: 200})
+
+	r.PUT("/specs/:id/tags", handler.UpdateSpecTags)
+	updateTags := []byte(`{"tags":["blue","BLUE"," "]}`)
+	req = httptest.NewRequest("PUT", "/specs/spec-1/tags", bytes.NewReader(updateTags))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	r.GET("/specs/:id/tags", handler.GetSpecTags)
+	req = httptest.NewRequest("GET", "/specs/spec-1/tags", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	badTags := []byte(`{"tags":["missing"]}`)
+	req = httptest.NewRequest("PUT", "/specs/spec-1/tags", bytes.NewReader(badTags))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", w.Code)
+	}
+
+	r.DELETE("/tags/:name", handler.DeleteTag)
+	req = httptest.NewRequest("DELETE", "/tags/blue", nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	updatedSpec, _ := store.GetSpec("spec-1")
+	if len(updatedSpec.EnabledTags) != 0 {
+		t.Fatalf("expected enabled tags to be cleared")
+	}
+
+	updatedCfg, _ := store.GetResponseConfig("resp-1")
+	if updatedCfg.Tag != models.DefaultTagName {
+		t.Fatalf("expected response tag to be default")
+	}
+}
+
+func TestEnsureTagExists(t *testing.T) {
+	handler, store, _ := setupTestHandler(t)
+
+	if err := handler.ensureTagExists(models.DefaultTagName); err != nil {
+		t.Fatalf("expected default tag to be valid")
+	}
+
+	if err := store.CreateTag(&models.Tag{Name: "blue"}); err != nil {
+		t.Fatalf("CreateTag error: %v", err)
+	}
+
+	if err := handler.ensureTagExists("blue"); err != nil {
+		t.Fatalf("expected tag to exist")
+	}
+	if err := handler.ensureTagExists("missing"); err == nil {
+		t.Fatalf("expected error for missing tag")
+	}
+}
+
+func TestRenameTagUsage(t *testing.T) {
+	handler, store, _ := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "Spec", EnabledTags: []string{"old"}}
+	_ = store.CreateSpec(spec)
+	_ = store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
+	_ = store.CreateResponseConfig(&models.ResponseConfig{ID: "resp-1", OperationID: "op-1", Tag: "old", StatusCode: 200})
+
+	handler.renameTagUsage("old", "new")
+
+	updatedSpec, _ := store.GetSpec("spec-1")
+	if len(updatedSpec.EnabledTags) != 1 || updatedSpec.EnabledTags[0] != "new" {
+		t.Fatalf("expected enabled tag to be renamed")
+	}
+
+	updatedCfg, _ := store.GetResponseConfig("resp-1")
+	if updatedCfg.Tag != "new" {
+		t.Fatalf("expected response tag to be renamed")
+	}
+}
+
+func TestVersion(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+
+	r.GET("/version", handler.Version)
+	req := httptest.NewRequest("GET", "/version", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+
+	var result map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &result)
+	if result["version"] == nil {
+		t.Fatalf("expected version field in response")
+	}
+}
+
 func TestGetSpec_NotFound(t *testing.T) {
 	handler, _, r := setupTestHandler(t)
 

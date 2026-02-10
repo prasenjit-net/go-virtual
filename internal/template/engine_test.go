@@ -383,6 +383,81 @@ func TestProcess_FakerSeeded(t *testing.T) {
 	}
 }
 
+func TestProcess_FakerAdditional(t *testing.T) {
+	e := NewEngine()
+
+	seed := int64(42)
+	ctx := &Context{RNG: rand.New(rand.NewSource(seed))}
+
+	tests := []struct {
+		name     string
+		template string
+		assert   func(t *testing.T, value string)
+	}{
+		{
+			name:     "faker phone",
+			template: "{{faker.phone}}",
+			assert: func(t *testing.T, value string) {
+				if !strings.HasPrefix(value, "+1-") {
+					t.Fatalf("expected phone format, got %q", value)
+				}
+			},
+		},
+		{
+			name:     "faker company name",
+			template: "{{faker.company.name}}",
+			assert: func(t *testing.T, value string) {
+				if !strings.Contains(value, " ") {
+					t.Fatalf("expected company name with suffix, got %q", value)
+				}
+			},
+		},
+		{
+			name:     "faker company suffix",
+			template: "{{faker.company.suffix}}",
+			assert: func(t *testing.T, value string) {
+				if value == "" {
+					t.Fatalf("expected company suffix")
+				}
+			},
+		},
+		{
+			name:     "faker lorem word",
+			template: "{{faker.lorem.word}}",
+			assert: func(t *testing.T, value string) {
+				if value == "" || strings.Contains(value, " ") {
+					t.Fatalf("expected single lorem word, got %q", value)
+				}
+			},
+		},
+		{
+			name:     "faker lorem sentence",
+			template: "{{faker.lorem.sentence}}",
+			assert: func(t *testing.T, value string) {
+				if !strings.HasSuffix(value, ".") {
+					t.Fatalf("expected lorem sentence, got %q", value)
+				}
+			},
+		},
+		{
+			name:     "faker lorem paragraph",
+			template: "{{faker.lorem.paragraph}}",
+			assert: func(t *testing.T, value string) {
+				if strings.Count(value, ".") < 2 {
+					t.Fatalf("expected lorem paragraph, got %q", value)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value := e.Process(tt.template, ctx)
+			tt.assert(t, value)
+		})
+	}
+}
+
 func TestProcess_Timestamp(t *testing.T) {
 	e := NewEngine()
 	ctx := &Context{}

@@ -3,6 +3,8 @@ package parser
 import (
 	"strings"
 	"testing"
+
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 func TestNewParser(t *testing.T) {
@@ -623,5 +625,149 @@ func TestParse_JSONSpec(t *testing.T) {
 
 	if len(result.Operations) != 1 {
 		t.Errorf("Expected 1 operation, got %d", len(result.Operations))
+	}
+}
+
+func TestParseOperations(t *testing.T) {
+	p := NewParser()
+
+	spec := `
+openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      responses:
+        '200':
+          description: OK
+  /users/{id}:
+    delete:
+      responses:
+        '204':
+          description: No Content
+`
+
+	ops, err := p.ParseOperations(spec, "spec-1", "/api")
+	if err != nil {
+		t.Fatalf("ParseOperations error: %v", err)
+	}
+	if len(ops) != 2 {
+		t.Fatalf("expected 2 operations, got %d", len(ops))
+	}
+
+	if ops[0].SpecID != "spec-1" {
+		t.Fatalf("expected spec ID to be set")
+	}
+}
+
+func TestGenerateOperationID(t *testing.T) {
+	first := generateOperationID("spec-1", "GET", "/users")
+	second := generateOperationID("spec-1", "GET", "/users")
+	third := generateOperationID("spec-1", "POST", "/users")
+
+	if first != second {
+		t.Fatalf("expected deterministic operation IDs, got %q and %q", first, second)
+	}
+	if first == third {
+		t.Fatalf("expected different operation IDs for different methods")
+	}
+	if len(first) != 32 {
+		t.Fatalf("expected operation ID length 32, got %d", len(first))
+	}
+}
+
+func TestGenerateExampleFromSchema(t *testing.T) {
+	tests := []struct {
+		name     string
+		schema   *openapi3.Schema
+		expected string
+	}{
+		{
+			name:     "string",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"string"}},
+			expected: `"string"`,
+		},
+		{
+			name:     "object",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"object"}},
+			expected: `{}`,
+		},
+		{
+			name:     "array",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"array"}},
+			expected: `[]`,
+		},
+		{
+			name:     "integer",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"integer"}},
+			expected: `0`,
+		},
+		{
+			name:     "number",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"number"}},
+			expected: `0.0`,
+		},
+		{
+			name:     "boolean",
+			schema:   &openapi3.Schema{Type: &openapi3.Types{"boolean"}},
+			expected: `false`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := generateExampleFromSchema(tt.schema); got != tt.expected {
+				t.Fatalf("expected %q, got %q", tt.expected, got)
+			}
+		})
+	}
+}
+
+func TestExtractExampleResponse(t *testing.T) {
+	p := NewParser()
+
+	spec := `
+openapi: 3.0.0
+info:
+  title: Test API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Rate-Limit:
+              schema:
+                type: string
+              example: "100"
+          content:
+            application/json:
+              example:
+                ok: true
+`
+
+	headers, body, err := p.ExtractExampleResponse(spec, "GET", "/users", 200)
+	if err != nil {
+		t.Fatalf("ExtractExampleResponse error: %v", err)
+	}
+	if headers["X-Rate-Limit"] != "100" {
+		t.Fatalf("expected header X-Rate-Limit=100, got %q", headers["X-Rate-Limit"])
+	}
+	if headers["Content-Type"] != "application/json" {
+		t.Fatalf("expected content type header")
+	}
+	if !strings.Contains(body, "ok") {
+		t.Fatalf("expected body to include example data")
+	}
+
+	if _, _, err := p.ExtractExampleResponse(spec, "GET", "/missing", 200); err == nil {
+		t.Fatalf("expected error for missing path")
+	}
+	if _, _, err := p.ExtractExampleResponse(spec, "TRACE", "/users", 200); err == nil {
+		t.Fatalf("expected error for unsupported method")
 	}
 }

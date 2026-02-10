@@ -221,6 +221,63 @@ func TestGetOperation(t *testing.T) {
 	}
 }
 
+func TestTagCRUD(t *testing.T) {
+	s := NewMemoryStorage()
+
+	tag := &models.Tag{Name: "blue", Description: "desc"}
+	if err := s.CreateTag(tag); err != nil {
+		t.Fatalf("CreateTag failed: %v", err)
+	}
+
+	if _, err := s.GetTag("blue"); err != nil {
+		t.Fatalf("GetTag failed: %v", err)
+	}
+
+	updated := &models.Tag{Name: "blue", Description: "updated"}
+	if err := s.UpdateTag("blue", updated); err != nil {
+		t.Fatalf("UpdateTag failed: %v", err)
+	}
+
+	if err := s.DeleteTag("blue"); err != nil {
+		t.Fatalf("DeleteTag failed: %v", err)
+	}
+	if _, err := s.GetTag("blue"); err == nil {
+		t.Fatalf("expected tag to be deleted")
+	}
+}
+
+func TestDeleteOperationsBySpec(t *testing.T) {
+	s := NewMemoryStorage()
+
+	op1 := &models.Operation{ID: "op-1", SpecID: "spec-1"}
+	op2 := &models.Operation{ID: "op-2", SpecID: "spec-1"}
+	op3 := &models.Operation{ID: "op-3", SpecID: "spec-2"}
+	_ = s.CreateOperation(op1)
+	_ = s.CreateOperation(op2)
+	_ = s.CreateOperation(op3)
+
+	if err := s.DeleteOperationsBySpec("spec-1"); err != nil {
+		t.Fatalf("DeleteOperationsBySpec failed: %v", err)
+	}
+
+	if _, err := s.GetOperation("op-1"); err == nil {
+		t.Fatalf("expected op-1 to be deleted")
+	}
+	if _, err := s.GetOperation("op-2"); err == nil {
+		t.Fatalf("expected op-2 to be deleted")
+	}
+	if _, err := s.GetOperation("op-3"); err != nil {
+		t.Fatalf("expected op-3 to remain")
+	}
+}
+
+func TestMemoryClose(t *testing.T) {
+	s := NewMemoryStorage()
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+}
+
 func TestGetOperationsBySpec(t *testing.T) {
 	s := NewMemoryStorage()
 
