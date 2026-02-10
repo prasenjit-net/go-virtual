@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
@@ -51,6 +52,11 @@ func NewFileStorage(basePath string) (*FileStorage, error) {
 
 // loadAll loads all data from disk
 func (f *FileStorage) loadAll() error {
+	// Load tags
+	if err := f.loadTags(); err != nil {
+		return err
+	}
+
 	// Load specs
 	specsDir := filepath.Join(f.basePath, "specs")
 	entries, err := os.ReadDir(specsDir)
@@ -126,6 +132,10 @@ func (f *FileStorage) loadAll() error {
 			continue
 		}
 
+		if cfg.Tag == "" {
+			cfg.Tag = models.DefaultTagName
+		}
+
 		// Load response body from separate file if it exists
 		cfgID := strings.TrimSuffix(entry.Name(), ".json")
 		body, err := f.loadResponseBody(cfgID)
@@ -156,6 +166,67 @@ func (f *FileStorage) loadAll() error {
 	}
 
 	return nil
+}
+
+func (f *FileStorage) tagsFilePath() string {
+	return filepath.Join(f.basePath, "tags.json")
+}
+
+func (f *FileStorage) loadTags() error {
+	path := f.tagsFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Ensure default tag exists
+			f.memory.tags[models.DefaultTagName] = &models.Tag{
+				Name:      models.DefaultTagName,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+			return f.saveTags()
+		}
+		return err
+	}
+
+	var tags []*models.Tag
+	if err := json.Unmarshal(data, &tags); err != nil {
+		return err
+	}
+
+	for _, tag := range tags {
+		if tag == nil || tag.Name == "" {
+			continue
+		}
+		f.memory.tags[tag.Name] = tag
+	}
+
+	if _, exists := f.memory.tags[models.DefaultTagName]; !exists {
+		f.memory.tags[models.DefaultTagName] = &models.Tag{
+			Name:      models.DefaultTagName,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+	}
+
+	return nil
+}
+
+func (f *FileStorage) saveTags() error {
+	tags := make([]*models.Tag, 0, len(f.memory.tags))
+	for _, tag := range f.memory.tags {
+		tags = append(tags, tag)
+	}
+
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[i].Name < tags[j].Name
+	})
+
+	data, err := json.MarshalIndent(tags, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(f.tagsFilePath(), data, 0644)
 }
 
 // loadSpecContent loads the OpenAPI spec content from a separate file
@@ -257,6 +328,40 @@ func (f *FileStorage) saveResponseConfig(cfg *models.ResponseConfig) error {
 
 	path := filepath.Join(respDir, cfg.ID+".json")
 	return os.WriteFile(path, data, 0644)
+}
+
+// ListTags retrieves all tags
+func (f *FileStorage) ListTags() ([]*models.Tag, error) {
+	return f.memory.ListTags()
+}
+
+// GetTag retrieves a tag by name
+func (f *FileStorage) GetTag(name string) (*models.Tag, error) {
+	return f.memory.GetTag(name)
+}
+
+// CreateTag creates a new tag
+func (f *FileStorage) CreateTag(tag *models.Tag) error {
+	if err := f.memory.CreateTag(tag); err != nil {
+		return err
+	}
+	return f.saveTags()
+}
+
+// UpdateTag updates a tag (supports rename)
+func (f *FileStorage) UpdateTag(oldName string, tag *models.Tag) error {
+	if err := f.memory.UpdateTag(oldName, tag); err != nil {
+		return err
+	}
+	return f.saveTags()
+}
+
+// DeleteTag deletes a tag
+func (f *FileStorage) DeleteTag(name string) error {
+	if err := f.memory.DeleteTag(name); err != nil {
+		return err
+	}
+	return f.saveTags()
 }
 
 // deleteResponseConfigFile deletes a response config file and its body file from disk

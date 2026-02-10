@@ -15,6 +15,7 @@ type Spec struct {
 	Enabled            bool        `json:"enabled"`
 	Tracing            bool        `json:"tracing"`            // Enable request tracing
 	UseExampleFallback bool        `json:"useExampleFallback"` // Use spec examples as fallback responses
+	EnabledTags        []string    `json:"enabledTags"`
 	CreatedAt          time.Time   `json:"createdAt"`
 	UpdatedAt          time.Time   `json:"updatedAt"`
 	Operations         []Operation `json:"operations,omitempty"`

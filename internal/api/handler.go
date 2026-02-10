@@ -2,6 +2,8 @@ package api
 
 import (
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -54,6 +56,7 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 			"enabled":            spec.Enabled,
 			"tracing":            spec.Tracing,
 			"useExampleFallback": spec.UseExampleFallback,
+			"enabledTags":        spec.EnabledTags,
 			"createdAt":          spec.CreatedAt,
 			"updatedAt":          spec.UpdatedAt,
 			"operationCount":     len(ops),
@@ -87,6 +90,7 @@ func (h *Handler) CreateSpec(c *gin.Context) {
 	}
 
 	// Save spec
+	parseResult.Spec.EnabledTags = []string{}
 	if err := h.store.CreateSpec(parseResult.Spec); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -163,6 +167,9 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	}
 	if update.Tracing != nil {
 		spec.Tracing = *update.Tracing
+	}
+	if update.UseExampleFallback != nil {
+		spec.UseExampleFallback = *update.UseExampleFallback
 	}
 
 	spec.UpdatedAt = time.Now()
@@ -403,6 +410,7 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 		OperationID: opID,
 		Name:        input.Name,
 		Description: input.Description,
+		Tag:         normalizeTag(input.Tag),
 		Priority:    input.Priority,
 		Conditions:  input.Conditions,
 		StatusCode:  input.StatusCode,
@@ -410,6 +418,14 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 		Body:        input.Body,
 		Delay:       input.Delay,
 		Enabled:     input.Enabled,
+	}
+
+	if cfg.Tag == "" {
+		cfg.Tag = models.DefaultTagName
+	}
+	if err := h.ensureTagExists(cfg.Tag); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	// Set defaults
@@ -466,6 +482,16 @@ func (h *Handler) UpdateResponseConfig(c *gin.Context) {
 	}
 	if update.Description != nil {
 		cfg.Description = *update.Description
+	}
+	if update.Tag != nil {
+		cfg.Tag = normalizeTag(*update.Tag)
+		if cfg.Tag == "" {
+			cfg.Tag = models.DefaultTagName
+		}
+		if err := h.ensureTagExists(cfg.Tag); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	if update.Priority != nil {
 		cfg.Priority = *update.Priority
@@ -622,6 +648,253 @@ func (h *Handler) ClearTraces(c *gin.Context) {
 		h.tracingService.ClearTraces()
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Traces cleared"})
+}
+
+// ListTags returns all tags
+func (h *Handler) ListTags(c *gin.Context) {
+	tags, err := h.store.ListTags()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, tags)
+}
+
+// CreateTag creates a new tag
+func (h *Handler) CreateTag(c *gin.Context) {
+	var input models.Tag
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input.Name = normalizeTag(input.Name)
+	if input.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag name is required"})
+		return
+	}
+	if input.Name == models.DefaultTagName {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "default tag cannot be created"})
+		return
+	}
+
+	input.CreatedAt = time.Now()
+	input.UpdatedAt = time.Now()
+
+	if err := h.store.CreateTag(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, input)
+}
+
+// UpdateTag updates a tag (supports rename)
+func (h *Handler) UpdateTag(c *gin.Context) {
+	oldName := normalizeTag(c.Param("name"))
+	if oldName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag name is required"})
+		return
+	}
+
+	existing, err := h.store.GetTag(oldName)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tag not found"})
+		return
+	}
+
+	var input models.Tag
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	newName := normalizeTag(input.Name)
+	if newName != "" && newName != oldName {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag name cannot be changed"})
+		return
+	}
+
+	updated := &models.Tag{
+		Name:        oldName,
+		Description: input.Description,
+		CreatedAt:   existing.CreatedAt,
+		UpdatedAt:   time.Now(),
+	}
+
+	if err := h.store.UpdateTag(oldName, updated); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, updated)
+}
+
+// DeleteTag deletes a tag and reassigns responses to default
+func (h *Handler) DeleteTag(c *gin.Context) {
+	name := normalizeTag(c.Param("name"))
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "tag name is required"})
+		return
+	}
+	if name == models.DefaultTagName {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "default tag cannot be deleted"})
+		return
+	}
+
+	if err := h.store.DeleteTag(name); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "tag not found"})
+		return
+	}
+
+	h.replaceTagWithDefault(name)
+
+	c.JSON(http.StatusOK, gin.H{"message": "tag deleted"})
+}
+
+// GetSpecTags returns enabled tags for a spec
+func (h *Handler) GetSpecTags(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "spec id is required"})
+		return
+	}
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"enabledTags": spec.EnabledTags})
+}
+
+// UpdateSpecTags updates enabled tags for a spec
+func (h *Handler) UpdateSpecTags(c *gin.Context) {
+	id := c.Param("id")
+	if id == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "spec id is required"})
+		return
+	}
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Tags []string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	validated, err := h.validateTagList(input.Tags)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spec.EnabledTags = validated
+	spec.UpdatedAt = time.Now()
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"enabledTags": spec.EnabledTags})
+}
+
+func (h *Handler) validateTagList(tags []string) ([]string, error) {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		normalized := normalizeTag(tag)
+		if normalized == "" || normalized == models.DefaultTagName {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		if _, err := h.store.GetTag(normalized); err != nil {
+			return nil, err
+		}
+		seen[normalized] = struct{}{}
+		result = append(result, normalized)
+	}
+
+	sort.Strings(result)
+	return result, nil
+}
+
+func (h *Handler) ensureTagExists(tag string) error {
+	if tag == models.DefaultTagName {
+		return nil
+	}
+	_, err := h.store.GetTag(tag)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *Handler) replaceTagWithDefault(tag string) {
+	ops, _ := h.store.GetAllOperations()
+	for _, op := range ops {
+		cfgs, _ := h.store.GetResponseConfigsByOperation(op.ID)
+		for _, cfg := range cfgs {
+			if normalizeTag(cfg.Tag) == tag {
+				cfg.Tag = models.DefaultTagName
+				h.store.UpdateResponseConfig(cfg)
+			}
+		}
+	}
+
+	specs, _ := h.store.GetAllSpecs()
+	for _, spec := range specs {
+		updated := make([]string, 0, len(spec.EnabledTags))
+		for _, enabled := range spec.EnabledTags {
+			if normalizeTag(enabled) != tag {
+				updated = append(updated, normalizeTag(enabled))
+			}
+		}
+		spec.EnabledTags = updated
+		h.store.UpdateSpec(spec)
+	}
+}
+
+func (h *Handler) renameTagUsage(oldName, newName string) {
+	ops, _ := h.store.GetAllOperations()
+	for _, op := range ops {
+		cfgs, _ := h.store.GetResponseConfigsByOperation(op.ID)
+		for _, cfg := range cfgs {
+			if normalizeTag(cfg.Tag) == oldName {
+				cfg.Tag = newName
+				h.store.UpdateResponseConfig(cfg)
+			}
+		}
+	}
+
+	specs, _ := h.store.GetAllSpecs()
+	for _, spec := range specs {
+		updated := make([]string, 0, len(spec.EnabledTags))
+		for _, enabled := range spec.EnabledTags {
+			if normalizeTag(enabled) == oldName {
+				updated = append(updated, newName)
+			} else {
+				updated = append(updated, normalizeTag(enabled))
+			}
+		}
+		spec.EnabledTags = updated
+		h.store.UpdateSpec(spec)
+	}
+}
+
+func normalizeTag(tag string) string {
+	return strings.ToLower(strings.TrimSpace(tag))
 }
 
 // GetRoutes returns registered routes

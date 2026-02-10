@@ -6,6 +6,7 @@ type ResponseConfig struct {
 	OperationID string            `json:"operationId"`
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
+	Tag         string            `json:"tag"`
 	Priority    int               `json:"priority"` // Lower = higher priority (0 is highest)
 	Conditions  []Condition       `json:"conditions"`
 	StatusCode  int               `json:"statusCode"`
@@ -19,6 +20,7 @@ type ResponseConfig struct {
 type ResponseConfigInput struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
+	Tag         string            `json:"tag"`
 	Priority    int               `json:"priority"`
 	Conditions  []Condition       `json:"conditions"`
 	StatusCode  int               `json:"statusCode"`
@@ -32,6 +34,7 @@ type ResponseConfigInput struct {
 type ResponseConfigUpdate struct {
 	Name        *string            `json:"name,omitempty"`
 	Description *string            `json:"description,omitempty"`
+	Tag         *string            `json:"tag,omitempty"`
 	Priority    *int               `json:"priority,omitempty"`
 	Conditions  *[]Condition       `json:"conditions,omitempty"`
 	StatusCode  *int               `json:"statusCode,omitempty"`

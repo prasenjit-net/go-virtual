@@ -65,6 +65,8 @@ func (r *Router) setupRoutes() {
 		api.PUT("/specs/:id/disable", r.handler.DisableSpec)
 		api.PUT("/specs/:id/tracing", r.handler.ToggleTracing)
 		api.PUT("/specs/:id/example-fallback", r.handler.ToggleExampleFallback)
+		api.GET("/specs/:id/tags", r.handler.GetSpecTags)
+		api.PUT("/specs/:id/tags", r.handler.UpdateSpecTags)
 
 		// Operations
 		api.GET("/specs/:id/operations", r.handler.ListOperations)
@@ -77,6 +79,12 @@ func (r *Router) setupRoutes() {
 		api.PUT("/responses/:id", r.handler.UpdateResponseConfig)
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)
 		api.PUT("/responses/:id/priority", r.handler.UpdateResponsePriority)
+
+		// Tags
+		api.GET("/tags", r.handler.ListTags)
+		api.POST("/tags", r.handler.CreateTag)
+		api.PUT("/tags/:name", r.handler.UpdateTag)
+		api.DELETE("/tags/:name", r.handler.DeleteTag)
 
 		// Statistics
 		api.GET("/stats", r.handler.GetGlobalStats)

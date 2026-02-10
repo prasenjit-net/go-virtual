@@ -7,7 +7,8 @@ import {
     Server,
     Sun,
     Moon,
-    Monitor
+    Monitor,
+    Tags
 } from 'lucide-react'
 import clsx from 'clsx'
 
@@ -15,6 +16,7 @@ const navItems = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/specs', icon: FileCode2, label: 'API Specs' },
     { to: '/traces', icon: Activity, label: 'Traces' },
+    { to: '/tags', icon: Tags, label: 'Tags' },
 ]
 
 type ThemeMode = 'light' | 'dark' | 'system'

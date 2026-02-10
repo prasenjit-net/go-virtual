@@ -14,6 +14,13 @@ type Storage interface {
 	UpdateSpec(spec *models.Spec) error
 	DeleteSpec(id string) error
 
+	// Tag operations
+	ListTags() ([]*models.Tag, error)
+	GetTag(name string) (*models.Tag, error)
+	CreateTag(tag *models.Tag) error
+	UpdateTag(oldName string, tag *models.Tag) error
+	DeleteTag(name string) error
+
 	// Operation operations
 	CreateOperation(op *models.Operation) error
 	GetOperation(id string) (*models.Operation, error)

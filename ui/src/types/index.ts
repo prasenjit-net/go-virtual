@@ -9,6 +9,7 @@ export interface Spec {
     enabled: boolean;
     tracing: boolean;
     useExampleFallback: boolean;
+    enabledTags?: string[];
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -60,6 +61,7 @@ export interface ResponseConfig {
     operationId: string;
     name: string;
     description: string;
+    tag?: string;
     priority: number;
     conditions: Condition[];
     statusCode: number;
@@ -72,6 +74,7 @@ export interface ResponseConfig {
 export interface ResponseConfigInput {
     name: string;
     description?: string;
+    tag?: string;
     priority: number;
     conditions: Condition[];
     statusCode: number;
@@ -79,6 +82,13 @@ export interface ResponseConfigInput {
     body: string;
     delay?: number;
     enabled: boolean;
+}
+
+export interface Tag {
+    name: string;
+    description?: string;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 // Condition types

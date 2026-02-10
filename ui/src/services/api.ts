@@ -76,6 +76,53 @@ export const specsApi = {
         });
         return handleResponse<any>(response);
     },
+
+    getTags: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/tags`);
+        return handleResponse<any>(response);
+    },
+
+    updateTags: async (id: string, tags: string[]) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/tags`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags }),
+        });
+        return handleResponse<any>(response);
+    },
+};
+
+// Tags API
+export const tagsApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/tags`);
+        return handleResponse<any[]>(response);
+    },
+
+    create: async (data: { name: string; description?: string }) => {
+        const response = await fetch(`${API_BASE}/tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<any>(response);
+    },
+
+    update: async (name: string, data: { name: string; description?: string }) => {
+        const response = await fetch(`${API_BASE}/tags/${encodeURIComponent(name)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<any>(response);
+    },
+
+    delete: async (name: string) => {
+        const response = await fetch(`${API_BASE}/tags/${encodeURIComponent(name)}`, {
+            method: 'DELETE',
+        });
+        return handleResponse<any>(response);
+    },
 };
 
 // Operations API

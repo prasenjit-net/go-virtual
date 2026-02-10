@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/prasenjit/go-virtual/internal/models"
 )
@@ -14,15 +15,26 @@ type MemoryStorage struct {
 	specs           map[string]*models.Spec
 	operations      map[string]*models.Operation
 	responseConfigs map[string]*models.ResponseConfig
+	tags            map[string]*models.Tag
 }
 
 // NewMemoryStorage creates a new in-memory storage
 func NewMemoryStorage() *MemoryStorage {
-	return &MemoryStorage{
+	storage := &MemoryStorage{
 		specs:           make(map[string]*models.Spec),
 		operations:      make(map[string]*models.Operation),
 		responseConfigs: make(map[string]*models.ResponseConfig),
+		tags:            make(map[string]*models.Tag),
 	}
+
+	// Ensure default tag exists
+	storage.tags[models.DefaultTagName] = &models.Tag{
+		Name:      models.DefaultTagName,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	return storage
 }
 
 // CreateSpec creates a new spec
@@ -107,6 +119,82 @@ func (m *MemoryStorage) DeleteSpec(id string) error {
 	}
 
 	delete(m.specs, id)
+	return nil
+}
+
+// ListTags retrieves all tags
+func (m *MemoryStorage) ListTags() ([]*models.Tag, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tags := make([]*models.Tag, 0, len(m.tags))
+	for _, tag := range m.tags {
+		tags = append(tags, tag)
+	}
+
+	sort.Slice(tags, func(i, j int) bool {
+		return tags[i].Name < tags[j].Name
+	})
+
+	return tags, nil
+}
+
+// GetTag retrieves a tag by name
+func (m *MemoryStorage) GetTag(name string) (*models.Tag, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	tag, exists := m.tags[name]
+	if !exists {
+		return nil, fmt.Errorf("tag not found: %s", name)
+	}
+
+	return tag, nil
+}
+
+// CreateTag creates a new tag
+func (m *MemoryStorage) CreateTag(tag *models.Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tags[tag.Name]; exists {
+		return fmt.Errorf("tag already exists: %s", tag.Name)
+	}
+
+	m.tags[tag.Name] = tag
+	return nil
+}
+
+// UpdateTag updates a tag (supports rename)
+func (m *MemoryStorage) UpdateTag(oldName string, tag *models.Tag) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tags[oldName]; !exists {
+		return fmt.Errorf("tag not found: %s", oldName)
+	}
+
+	if oldName != tag.Name {
+		if _, exists := m.tags[tag.Name]; exists {
+			return fmt.Errorf("tag already exists: %s", tag.Name)
+		}
+		delete(m.tags, oldName)
+	}
+
+	m.tags[tag.Name] = tag
+	return nil
+}
+
+// DeleteTag deletes a tag
+func (m *MemoryStorage) DeleteTag(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.tags[name]; !exists {
+		return fmt.Errorf("tag not found: %s", name)
+	}
+
+	delete(m.tags, name)
 	return nil
 }
 

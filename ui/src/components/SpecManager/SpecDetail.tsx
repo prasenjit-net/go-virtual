@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     ArrowLeft,
     FileCode2,
@@ -7,7 +7,7 @@ import {
     Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
-import { specsApi, operationsApi } from '../../services/api'
+import { specsApi, operationsApi, tagsApi } from '../../services/api'
 import type { Spec, OperationSummary } from '../../types'
 
 const methodColors: Record<string, string> = {
@@ -22,6 +22,7 @@ const methodColors: Record<string, string> = {
 
 export default function SpecDetail() {
     const { specId } = useParams<{ specId: string }>()
+    const queryClient = useQueryClient()
 
     const { data: spec, isLoading: specLoading } = useQuery<Spec>({
         queryKey: ['spec', specId],
@@ -33,6 +34,18 @@ export default function SpecDetail() {
         queryKey: ['operations', specId],
         queryFn: () => operationsApi.listBySpec(specId!),
         enabled: !!specId,
+    })
+
+    const { data: tags } = useQuery({
+        queryKey: ['tags'],
+        queryFn: tagsApi.list,
+    })
+
+    const updateTagsMutation = useMutation({
+        mutationFn: (enabledTags: string[]) => specsApi.updateTags(specId!, enabledTags),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+        },
     })
 
     if (specLoading || opsLoading) {
@@ -54,6 +67,19 @@ export default function SpecDetail() {
                 </div>
             </div>
         )
+    }
+
+    const enabledTags = new Set(spec.enabledTags || [])
+
+    const toggleTag = (tagName: string) => {
+        if (!specId) return
+        const next = new Set(enabledTags)
+        if (next.has(tagName)) {
+            next.delete(tagName)
+        } else {
+            next.add(tagName)
+        }
+        updateTagsMutation.mutate(Array.from(next))
     }
 
     // Group operations by tag
@@ -160,6 +186,37 @@ export default function SpecDetail() {
                         No operations found in this specification
                     </div>
                 )}
+            </div>
+
+            {/* Enabled Tags */}
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Enabled Tags</h2>
+                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+                        Responses tagged with enabled tags are considered for this spec. The default tag is always included.
+                    </p>
+                </div>
+                <div className="p-6 flex flex-wrap gap-2">
+                    {(tags || []).map((tag: { name: string }) => (
+                        <button
+                            key={tag.name}
+                            type="button"
+                            onClick={() => toggleTag(tag.name)}
+                            disabled={tag.name === 'default'}
+                            className={clsx(
+                                'px-3 py-1.5 rounded-full text-sm font-medium border transition-colors',
+                                tag.name === 'default'
+                                    ? 'bg-gray-100 text-gray-500 border-gray-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                    : enabledTags.has(tag.name)
+                                        ? 'bg-primary-50 text-primary-700 border-primary-200 dark:bg-primary-900/30 dark:text-primary-200 dark:border-primary-800'
+                                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-700 dark:hover:bg-slate-800'
+                            )}
+                            title={tag.name === 'default' ? 'Default tag is always enabled' : undefined}
+                        >
+                            {tag.name}
+                        </button>
+                    ))}
+                </div>
             </div>
         </div>
     )

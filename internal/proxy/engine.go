@@ -182,8 +182,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Find matching response config by priority (only if configs exist)
 	var matchedConfig *models.ResponseConfig
 	if err == nil && len(responseConfigs) > 0 {
+		enabledTags := make(map[string]struct{})
+		enabledTags[models.DefaultTagName] = struct{}{}
+		for _, tag := range matchedRoute.spec.EnabledTags {
+			enabledTags[tag] = struct{}{}
+		}
+
 		for _, cfg := range responseConfigs {
 			if !cfg.Enabled {
+				continue
+			}
+			tag := cfg.Tag
+			if tag == "" {
+				tag = models.DefaultTagName
+			}
+			if _, ok := enabledTags[tag]; !ok {
 				continue
 			}
 			if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {

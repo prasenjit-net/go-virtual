@@ -5,6 +5,7 @@ import SpecList from './components/SpecManager/SpecList'
 import SpecDetail from './components/SpecManager/SpecDetail'
 import OperationDetail from './components/OperationDetail'
 import TraceViewer from './components/TraceViewer'
+import TagManager from './components/TagManager'
 
 function App() {
     return (
@@ -16,6 +17,7 @@ function App() {
                 <Route path="specs/:specId" element={<SpecDetail />} />
                 <Route path="operations/:operationId" element={<OperationDetail />} />
                 <Route path="traces" element={<TraceViewer />} />
+                <Route path="tags" element={<TagManager />} />
             </Route>
         </Routes>
     )

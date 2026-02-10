@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Trash2, AlertCircle } from 'lucide-react'
 import Editor from '@monaco-editor/react'
-import { responsesApi } from '../../services/api'
+import { responsesApi, tagsApi } from '../../services/api'
 import type { ResponseConfig, Condition, ConditionOperator } from '../../types'
 
 interface ResponseConfigEditorProps {
@@ -92,6 +92,7 @@ export default function ResponseConfigEditor({
     const [priority, setPriority] = useState(config?.priority || 0)
     const [delay, setDelay] = useState(config?.delay || 0)
     const [enabled, setEnabled] = useState(config?.enabled ?? true)
+    const [tag, setTag] = useState(config?.tag || 'default')
     const [conditions, setConditions] = useState<Condition[]>(config?.conditions || [])
     const [headers, setHeaders] = useState<Record<string, string>>(config?.headers || {})
     const [body, setBody] = useState(config?.body || '')
@@ -100,6 +101,13 @@ export default function ResponseConfigEditor({
     const [headerValue, setHeaderValue] = useState('')
 
     const queryClient = useQueryClient()
+
+    const { data: tags } = useQuery({
+        queryKey: ['tags'],
+        queryFn: tagsApi.list,
+    })
+
+    const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
 
     const createMutation = useMutation({
         mutationFn: (data: any) => responsesApi.create(operationId, data),
@@ -131,6 +139,7 @@ export default function ResponseConfigEditor({
         const data = {
             name: name.trim(),
             description: description.trim(),
+            tag,
             statusCode,
             priority,
             delay,
@@ -226,6 +235,25 @@ export default function ResponseConfigEditor({
                                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
                                 placeholder="Returns when..."
                             />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
+                                Tag
+                            </label>
+                            <select
+                                value={tag}
+                                onChange={(e) => setTag(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                            >
+                                {tagOptions.map((t: { name: string }) => (
+                                    <option key={t.name} value={t.name}>
+                                        {t.name}
+                                    </option>
+                                ))}
+                            </select>
+                            <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                Tags are managed globally and enabled per spec.
+                            </p>
                         </div>
                     </div>
 
