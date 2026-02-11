@@ -23,5 +23,16 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         emptyOutDir: true,
+        chunkSizeWarningLimit: 800,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    react: ['react', 'react-dom', 'react-router-dom'],
+                    tanstack: ['@tanstack/react-query'],
+                    monaco: ['@monaco-editor/react'],
+                    ui: ['lucide-react', '@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+                },
+            },
+        },
     },
 })
