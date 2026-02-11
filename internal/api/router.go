@@ -103,6 +103,9 @@ func (r *Router) setupRoutes() {
 		// Health
 		api.GET("/health", r.handler.HealthCheck)
 		api.GET("/version", r.handler.Version)
+
+		// Template validation
+		api.POST("/templates/validate", r.handler.ValidateTemplate)
 	}
 
 	// WebSocket for live tracing

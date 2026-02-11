@@ -1,11 +1,13 @@
 package template
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"regexp"
 	"strconv"
 	"strings"
+	texttmpl "text/template"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +35,13 @@ type Context struct {
 	RNG         *rand.Rand
 }
 
+type bodyTemplateData struct {
+	Path   map[string]string
+	Query  map[string]string
+	Header map[string]string
+	Body   string
+}
+
 // templateVarPattern matches template variables like {{variable}}
 var templateVarPattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
@@ -54,11 +63,118 @@ func (e *Engine) ProcessHeaders(headers map[string]string, ctx *Context) map[str
 	return result
 }
 
+// RenderBodyTemplate renders the body using text/template with advanced features
+func (e *Engine) RenderBodyTemplate(body string, ctx *Context) (string, error) {
+	if body == "" {
+		return "", nil
+	}
+
+	preprocessed := preprocessLegacyBodyTemplate(body)
+	data, funcMap := e.buildBodyTemplateContext(ctx)
+
+	tmpl, err := texttmpl.New("body").Option("missingkey=zero").Funcs(funcMap).Parse(preprocessed)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
+// ValidateBodyTemplate checks whether a body template can be parsed with current helpers.
+func (e *Engine) ValidateBodyTemplate(body string) error {
+	if body == "" {
+		return nil
+	}
+
+	preprocessed := preprocessLegacyBodyTemplate(body)
+	_, funcMap := e.buildBodyTemplateContext(nil)
+	_, err := texttmpl.New("body").Option("missingkey=zero").Funcs(funcMap).Parse(preprocessed)
+	return err
+}
+
+func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, texttmpl.FuncMap) {
+	if ctx == nil {
+		ctx = &Context{}
+	}
+
+	rng := e.rngForContext(ctx)
+	query := normalizeFirstValues(ctx.QueryParams)
+	headers := normalizeFirstValues(ctx.Headers)
+
+	data := bodyTemplateData{
+		Path:   ctx.PathParams,
+		Query:  query,
+		Header: headers,
+		Body:   ctx.Body,
+	}
+
+	funcMap := texttmpl.FuncMap{
+		"path": func(key string) string {
+			if key == "" || ctx.PathParams == nil {
+				return ""
+			}
+			return ctx.PathParams[key]
+		},
+		"query": func(key string) string {
+			if key == "" {
+				return ""
+			}
+			val, ok := query[strings.ToLower(key)]
+			if !ok {
+				return ""
+			}
+			return val
+		},
+		"header": func(key string) string {
+			if key == "" {
+				return ""
+			}
+			val, ok := headers[strings.ToLower(key)]
+			if !ok {
+				return ""
+			}
+			return val
+		},
+		"body": func(path string) string {
+			if path == "" {
+				return ctx.Body
+			}
+			if ctx.Body == "" {
+				return ""
+			}
+			result := gjson.Get(ctx.Body, path)
+			if result.Exists() {
+				return result.String()
+			}
+			return ""
+		},
+		"random": func(args ...interface{}) string {
+			return e.resolveRandom(buildKeyFromArgs(args), rng)
+		},
+		"faker": func(args ...interface{}) string {
+			return e.resolveFaker(buildDotKeyFromArgs(args), rng)
+		},
+		"timestamp": func(args ...interface{}) string {
+			return e.resolveTimestamp(buildKeyFromArgs(args))
+		},
+		"env": func(string) string {
+			return ""
+		},
+	}
+
+	return data, funcMap
+}
+
 // resolveVariable resolves a single variable to its value
 func (e *Engine) resolveVariable(varName string, ctx *Context) string {
 	// Handle optional leading dot (e.g., both "path.id" and ".path.id" are valid)
 	varName = strings.TrimPrefix(varName, ".")
-	
+
 	parts := strings.SplitN(varName, ".", 2)
 	if len(parts) < 1 {
 		return ""
@@ -375,7 +491,7 @@ func (e *Engine) resolveTimestamp(key string) string {
 // parseParams extracts parameters from a function call like "func(param1,param2)"
 func parseParams(key, funcName string) []string {
 	prefix := funcName + "("
-	if !strings.HasPrefix(key, prefix) {
+	if !strings.HasPrefix(key, prefix) || !strings.HasSuffix(key, ")") {
 		return nil
 	}
 
@@ -393,10 +509,121 @@ func parseParams(key, funcName string) []string {
 
 // randomString generates a random alphanumeric string
 func randomString(rng *rand.Rand, length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[rng.Intn(len(charset))]
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	if rng == nil {
+		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
-	return string(result)
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = chars[rng.Intn(len(chars))]
+	}
+	return string(b)
+}
+
+func preprocessLegacyBodyTemplate(input string) string {
+	if input == "" {
+		return input
+	}
+
+	keywords := map[string]struct{}{
+		"if": {}, "range": {}, "with": {}, "end": {}, "else": {}, "define": {}, "template": {}, "block": {},
+	}
+
+	return templateVarPattern.ReplaceAllStringFunc(input, func(match string) string {
+		value := strings.TrimSpace(match[2 : len(match)-2])
+		if value == "" {
+			return match
+		}
+		if strings.ContainsAny(value, " \t\n") {
+			first := strings.Fields(value)
+			if len(first) > 0 {
+				if _, ok := keywords[first[0]]; ok {
+					return match
+				}
+			}
+			return match
+		}
+		if strings.HasPrefix(value, ".") {
+			trimmed := strings.TrimPrefix(value, ".")
+			if converted := legacyTokenToTemplate(trimmed); converted != "{{"+trimmed+"}}" {
+				return converted
+			}
+			return match
+		}
+		if _, ok := keywords[value]; ok {
+			return match
+		}
+
+		return legacyTokenToTemplate(value)
+	})
+}
+
+
+func legacyTokenToTemplate(value string) string {
+	switch {
+	case strings.HasPrefix(value, "path."):
+		return fmt.Sprintf("{{path %q}}", strings.TrimPrefix(value, "path."))
+	case strings.HasPrefix(value, "query."):
+		return fmt.Sprintf("{{query %q}}", strings.TrimPrefix(value, "query."))
+	case strings.HasPrefix(value, "header."):
+		return fmt.Sprintf("{{header %q}}", strings.TrimPrefix(value, "header."))
+	case strings.HasPrefix(value, "body."):
+		return fmt.Sprintf("{{body %q}}", strings.TrimPrefix(value, "body."))
+	case strings.HasPrefix(value, "random."):
+		return fmt.Sprintf("{{random %q}}", strings.TrimPrefix(value, "random."))
+	case strings.HasPrefix(value, "faker."):
+		return fmt.Sprintf("{{faker %q}}", strings.TrimPrefix(value, "faker."))
+	case strings.HasPrefix(value, "timestamp."):
+		return fmt.Sprintf("{{timestamp %q}}", strings.TrimPrefix(value, "timestamp."))
+	case strings.HasPrefix(value, "env."):
+		return fmt.Sprintf("{{env %q}}", strings.TrimPrefix(value, "env."))
+	default:
+		return "{{" + value + "}}"
+	}
+}
+
+func normalizeFirstValues(values map[string][]string) map[string]string {
+	if values == nil {
+		return map[string]string{}
+	}
+
+	normalized := make(map[string]string, len(values))
+	for key, vals := range values {
+		if len(vals) == 0 {
+			continue
+		}
+		lower := strings.ToLower(key)
+		normalized[lower] = vals[0]
+	}
+
+	return normalized
+}
+
+func buildKeyFromArgs(args []interface{}) string {
+	if len(args) == 0 {
+		return ""
+	}
+	base := fmt.Sprint(args[0])
+	if len(args) == 1 {
+		return base
+	}
+	params := make([]string, 0, len(args)-1)
+	for _, arg := range args[1:] {
+		params = append(params, fmt.Sprint(arg))
+	}
+	return fmt.Sprintf("%s(%s)", base, strings.Join(params, ","))
+}
+
+func buildDotKeyFromArgs(args []interface{}) string {
+	if len(args) == 0 {
+		return ""
+	}
+	if len(args) == 1 {
+		return fmt.Sprint(args[0])
+	}
+	parts := make([]string, 0, len(args))
+	for _, arg := range args {
+		parts = append(parts, fmt.Sprint(arg))
+	}
+	return strings.Join(parts, ".")
 }

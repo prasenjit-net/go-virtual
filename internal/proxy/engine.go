@@ -23,13 +23,13 @@ import (
 
 // Engine handles proxying requests to virtual API endpoints
 type Engine struct {
-	store           storage.Storage
-	statsCollector  *stats.Collector
-	tracingService  *tracing.Service
-	condEvaluator   *condition.Evaluator
-	templateEngine  *template.Engine
-	mu              sync.RWMutex
-	routes          map[string][]*route // method -> routes
+	store          storage.Storage
+	statsCollector *stats.Collector
+	tracingService *tracing.Service
+	condEvaluator  *condition.Evaluator
+	templateEngine *template.Engine
+	mu             sync.RWMutex
+	routes         map[string][]*route // method -> routes
 }
 
 // route represents a registered route
@@ -101,12 +101,12 @@ func (e *Engine) ReloadRoutes() error {
 // buildPathPattern converts an OpenAPI path pattern to a regex
 func buildPathPattern(basePath, pathPattern string) (*regexp.Regexp, []string) {
 	fullPath := path.Join(basePath, pathPattern)
-	
+
 	var paramKeys []string
-	
+
 	// Escape special regex characters except for path parameters
 	escaped := regexp.QuoteMeta(fullPath)
-	
+
 	// Replace escaped path parameters {param} with capture groups
 	paramPattern := regexp.MustCompile(`\\{([^}]+)\\}`)
 	result := paramPattern.ReplaceAllStringFunc(escaped, func(match string) string {
@@ -129,12 +129,12 @@ func sortRoutes(routes []*route) {
 		// Count parameters in each route
 		iParams := len(routes[i].paramKeys)
 		jParams := len(routes[j].paramKeys)
-		
+
 		// Fewer parameters = more specific
 		if iParams != jParams {
 			return iParams < jParams
 		}
-		
+
 		// Same number of params, sort by path length (longer = more specific)
 		return len(routes[i].operation.Path) > len(routes[j].operation.Path)
 	})
@@ -178,7 +178,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
-	
+
 	// Find matching response config by priority (only if configs exist)
 	var matchedConfig *models.ResponseConfig
 	if err == nil && len(responseConfigs) > 0 {
@@ -210,23 +210,23 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Only if UseExampleFallback is enabled for the spec
 	if matchedConfig == nil && matchedRoute.spec.UseExampleFallback && matchedRoute.operation.ExampleResponse != nil {
 		example := matchedRoute.operation.ExampleResponse
-		
+
 		// Set headers from example
 		for key, value := range example.Headers {
 			w.Header().Set(key, value)
 		}
-		
+
 		// Set default content-type if not set
 		if w.Header().Get("Content-Type") == "" && example.Body != "" {
 			w.Header().Set("Content-Type", "application/json")
 		}
-		
+
 		// Write response
 		w.WriteHeader(example.StatusCode)
 		if example.Body != "" {
 			w.Write([]byte(example.Body))
 		}
-		
+
 		// Calculate duration and record stats
 		duration := time.Since(startTime)
 		isError := example.StatusCode >= 400
@@ -238,7 +238,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			duration,
 			isError,
 		)
-		
+
 		// Record trace if enabled
 		if matchedRoute.spec.Tracing {
 			trace := &models.Trace{
@@ -301,8 +301,11 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 	}
 
-	// Process body
-	responseBody := e.templateEngine.Process(matchedConfig.Body, templateCtx)
+	// Process body with advanced templating
+	responseBody, err := e.templateEngine.RenderBodyTemplate(matchedConfig.Body, templateCtx)
+	if err != nil {
+		responseBody = matchedConfig.Body
+	}
 
 	// Write response
 	w.WriteHeader(matchedConfig.StatusCode)

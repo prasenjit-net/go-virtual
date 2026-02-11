@@ -185,6 +185,24 @@ export const responsesApi = {
     },
 };
 
+// Templates API
+export const templatesApi = {
+    validate: async (body: string) => {
+        const response = await fetch(`${API_BASE}/templates/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ body }),
+        });
+
+        if (response.ok) {
+            return { valid: true as const };
+        }
+
+        const error = await response.json().catch(() => ({ error: 'Invalid template' }));
+        return { valid: false as const, error: error.error || 'Invalid template' };
+    },
+};
+
 // Statistics API
 export const statsApi = {
     getGlobal: async () => {

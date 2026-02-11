@@ -17,7 +17,6 @@ import {
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi } from '../services/api'
 import type { Operation, ResponseConfig, Spec } from '../types'
-import ResponseConfigEditor from './ResponseDesigner/ResponseConfigEditor'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -29,8 +28,6 @@ const methodColors: Record<string, string> = {
 
 export default function OperationDetail() {
     const { operationId } = useParams<{ operationId: string }>()
-    const [showEditor, setShowEditor] = useState(false)
-    const [editingConfig, setEditingConfig] = useState<ResponseConfig | null>(null)
     const [expandedConfig, setExpandedConfig] = useState<string | null>(null)
     const queryClient = useQueryClient()
 
@@ -88,21 +85,6 @@ export default function OperationDetail() {
         )
     }
 
-    const handleEdit = (config: ResponseConfig) => {
-        setEditingConfig(config)
-        setShowEditor(true)
-    }
-
-    const handleCreate = () => {
-        setEditingConfig(null)
-        setShowEditor(true)
-    }
-
-    const handleEditorClose = () => {
-        setShowEditor(false)
-        setEditingConfig(null)
-    }
-
     return (
         <div className="p-8">
             {/* Header */}
@@ -143,13 +125,13 @@ export default function OperationDetail() {
                             Configure mock responses with conditions and priorities
                         </p>
                     </div>
-                    <button
-                        onClick={handleCreate}
+                    <Link
+                        to={`/operations/${operationId}/responses/new`}
                         className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                     >
                         <Plus className="w-5 h-5 mr-2" />
                         Add Response
-                    </button>
+                    </Link>
                 </div>
 
                 {responses && responses.length > 0 ? (
@@ -215,16 +197,14 @@ export default function OperationDetail() {
                                                 <ToggleLeft className="w-5 h-5" />
                                             )}
                                         </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                handleEdit(config)
-                                            }}
+                                        <Link
+                                            to={`/responses/${config.id}/edit`}
+                                            onClick={(e) => e.stopPropagation()}
                                             className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
                                             title="Edit"
                                         >
                                             <Edit2 className="w-5 h-5" />
-                                        </button>
+                                        </Link>
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
@@ -306,13 +286,13 @@ export default function OperationDetail() {
                 ) : (
                     <div className="p-12 text-center">
                         <p className="text-gray-500 dark:text-slate-400 mb-4">No response configurations yet</p>
-                        <button
-                            onClick={handleCreate}
+                        <Link
+                            to={`/operations/${operationId}/responses/new`}
                             className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                         >
                             <Plus className="w-5 h-5 mr-2" />
                             Add First Response
-                        </button>
+                        </Link>
                     </div>
                 )}
             </div>
@@ -412,13 +392,6 @@ export default function OperationDetail() {
             </div>
 
             {/* Editor Modal */}
-            {showEditor && (
-                <ResponseConfigEditor
-                    operationId={operationId!}
-                    config={editingConfig}
-                    onClose={handleEditorClose}
-                />
-            )}
         </div>
     )
 }

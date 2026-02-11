@@ -529,6 +529,54 @@ func TestProcess_Timestamp(t *testing.T) {
 	})
 }
 
+func TestRenderBodyTemplate_RequestData(t *testing.T) {
+	e := NewEngine()
+	ctx := &Context{
+		PathParams:  map[string]string{"id": "42"},
+		QueryParams: map[string][]string{"Status": {"active"}},
+		Headers:     map[string][]string{"Authorization": {"Bearer token"}},
+		Body:        `{"user":{"name":"Alice"}}`,
+	}
+
+	template := `{"id":"{{.Path.id}}","status":"{{index .Query "status"}}","auth":"{{index .Header "authorization"}}","name":"{{body "user.name"}}"}`
+	result, err := e.RenderBodyTemplate(template, ctx)
+	if err != nil {
+		t.Fatalf("RenderBodyTemplate error: %v", err)
+	}
+	if !strings.Contains(result, "\"id\":\"42\"") {
+		t.Fatalf("expected path param to render")
+	}
+	if !strings.Contains(result, "\"status\":\"active\"") {
+		t.Fatalf("expected normalized query param to render")
+	}
+	if !strings.Contains(result, "\"auth\":\"Bearer token\"") {
+		t.Fatalf("expected normalized header to render")
+	}
+	if !strings.Contains(result, "\"name\":\"Alice\"") {
+		t.Fatalf("expected body json path to render")
+	}
+}
+
+func TestRenderBodyTemplate_LegacyTokens(t *testing.T) {
+	e := NewEngine()
+	ctx := &Context{
+		PathParams: map[string]string{"id": "99"},
+		Body:       `{"user":{"name":"Bob"}}`,
+	}
+
+	template := `{"id":"{{path.id}}","name":"{{body.user.name}}"}`
+	result, err := e.RenderBodyTemplate(template, ctx)
+	if err != nil {
+		t.Fatalf("RenderBodyTemplate error: %v", err)
+	}
+	if !strings.Contains(result, "\"id\":\"99\"") {
+		t.Fatalf("expected legacy path token to render")
+	}
+	if !strings.Contains(result, "\"name\":\"Bob\"") {
+		t.Fatalf("expected legacy body token to render")
+	}
+}
+
 func TestProcess_MixedTemplate(t *testing.T) {
 	e := NewEngine()
 
@@ -570,10 +618,10 @@ func TestProcessHeaders(t *testing.T) {
 	}
 
 	headers := map[string]string{
-		"X-Request-ID":   "{{random.uuid}}",
-		"X-User-ID":      "{{path.id}}",
-		"Content-Type":   "application/json",
-		"X-Timestamp":    "{{timestamp.unix}}",
+		"X-Request-ID": "{{random.uuid}}",
+		"X-User-ID":    "{{path.id}}",
+		"Content-Type": "application/json",
+		"X-Timestamp":  "{{timestamp.unix}}",
 	}
 
 	result := e.ProcessHeaders(headers, ctx)

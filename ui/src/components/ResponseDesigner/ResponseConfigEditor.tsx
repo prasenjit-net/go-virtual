@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Trash2, AlertCircle } from 'lucide-react'
 import Editor from '@monaco-editor/react'
-import { responsesApi, tagsApi } from '../../services/api'
+import type * as Monaco from 'monaco-editor'
+import { responsesApi, tagsApi, templatesApi } from '../../services/api'
 import type { ResponseConfig, Condition, ConditionOperator } from '../../types'
 
 interface ResponseConfigEditorProps {
     operationId: string
     config: ResponseConfig | null
     onClose: () => void
+    variant?: 'modal' | 'page'
 }
 
 const operators: { value: ConditionOperator; label: string }[] = [
@@ -31,53 +33,60 @@ const sources = ['path', 'query', 'header', 'body'] as const
 
 const templateDocs = {
     request: [
-        { key: '{{path.param}}', desc: 'Replace param with any path parameter name', example: 'path.userId → 42' },
-        { key: '{{query.param}}', desc: 'Replace param with any query parameter name (first value)', example: 'query.status → active' },
-        { key: '{{header.name}}', desc: 'Replace name with any request header (case-insensitive)', example: 'header.Authorization → Bearer ...' },
-        { key: '{{body.jsonPath}}', desc: 'Replace jsonPath with any JSON path in request body', example: 'body.user.name → Alice' },
+        { key: '{{.Path.id}}', desc: 'Path parameters map (use .Path.<name>)', example: '.Path.userId → 42' },
+        { key: '{{index .Query "status"}}', desc: 'Query params (lowercased keys, first value)', example: 'query status → active' },
+        { key: '{{index .Header "authorization"}}', desc: 'Headers (lowercased keys, first value)', example: 'authorization → Bearer ...' },
+        { key: '{{body "user.name"}}', desc: 'JSON path from request body', example: 'user.name → Alice' },
+    ],
+    control: [
+        { key: '{{if (eq (index .Query "status") "active")}}...{{else}}...{{end}}', desc: 'Conditional rendering with comparisons', example: 'Show block when status=active' },
+        { key: '{{if (index .Header "x-feature")}}...{{end}}', desc: 'Truthy checks (non-empty values)', example: 'Feature flag header present' },
+        { key: '{{range $k, $v := .Query}}...{{end}}', desc: 'Loop over query params (lowercased keys)', example: 'Render all query key/value pairs' },
+        { key: '{{range $k, $v := .Header}}...{{end}}', desc: 'Loop over headers (lowercased keys)', example: 'Render all header key/value pairs' },
+        { key: '{{with .Path}}...{{end}}', desc: 'Scoped block when path params exist', example: 'Use .Path inside block' },
     ],
     random: [
-        { key: '{{random.uuid}}', desc: 'Random UUID', example: '3d7b9c2e-...' },
-        { key: '{{random.int}}', desc: 'Random integer (0-999999)', example: '58231' },
-        { key: '{{random.int(min,max)}}', desc: 'Random integer in range', example: 'random.int(1,10) → 7' },
-        { key: '{{random.float}}', desc: 'Random float', example: '491.23' },
-        { key: '{{random.float(min,max)}}', desc: 'Random float in range', example: 'random.float(1,5) → 3.14' },
-        { key: '{{random.string}}', desc: 'Random string (len 10)', example: 'aZ93kLmP0q' },
-        { key: '{{random.string(len)}}', desc: 'Random string (len)', example: 'random.string(6) → Kd9pQ2' },
-        { key: '{{random.bool}}', desc: 'Random boolean', example: 'true' },
-        { key: '{{random.email}}', desc: 'Random email', example: 'a1b2c3d4@example.com' },
-        { key: '{{random.name}}', desc: 'Random name', example: 'Alice' },
-        { key: '{{random.phone}}', desc: 'Random phone', example: '+1-415-555-0100' },
+        { key: '{{random "uuid"}}', desc: 'Random UUID', example: '3d7b9c2e-...' },
+        { key: '{{random "int"}}', desc: 'Random integer (0-999999)', example: '58231' },
+        { key: '{{random "int" 1 10}}', desc: 'Random integer in range', example: 'random 1..10 → 7' },
+        { key: '{{random "float"}}', desc: 'Random float', example: '491.23' },
+        { key: '{{random "float" 1 5}}', desc: 'Random float in range', example: 'random 1..5 → 3.14' },
+        { key: '{{random "string"}}', desc: 'Random string (len 10)', example: 'aZ93kLmP0q' },
+        { key: '{{random "string" 6}}', desc: 'Random string (len)', example: 'len 6 → Kd9pQ2' },
+        { key: '{{random "bool"}}', desc: 'Random boolean', example: 'true' },
+        { key: '{{random "email"}}', desc: 'Random email', example: 'a1b2c3d4@example.com' },
+        { key: '{{random "name"}}', desc: 'Random name', example: 'Alice' },
+        { key: '{{random "phone"}}', desc: 'Random phone', example: '+1-415-555-0100' },
     ],
     faker: [
-        { key: '{{faker.name.first}}', desc: 'First name', example: 'Liam' },
-        { key: '{{faker.name.last}}', desc: 'Last name', example: 'Smith' },
-        { key: '{{faker.name}}', desc: 'Full name', example: 'Olivia Johnson' },
-        { key: '{{faker.email}}', desc: 'Email address', example: 'r2d2@mail.test' },
-        { key: '{{faker.phone}}', desc: 'Phone number', example: '+1-212-555-0199' },
-        { key: '{{faker.company.name}}', desc: 'Company name', example: 'Acme Corp' },
-        { key: '{{faker.address.street}}', desc: 'Street address', example: '123 Oak St' },
-        { key: '{{faker.address.city}}', desc: 'City', example: 'Springfield' },
-        { key: '{{faker.address.state}}', desc: 'State', example: 'CA' },
-        { key: '{{faker.address.zip}}', desc: 'Postal code', example: '94105' },
-        { key: '{{faker.internet.username}}', desc: 'Username', example: 'alpha9delta' },
-        { key: '{{faker.internet.domain}}', desc: 'Domain', example: 'mock.io' },
-        { key: '{{faker.internet.url}}', desc: 'URL', example: 'https://mock.io/abc123' },
-        { key: '{{faker.lorem.word}}', desc: 'Lorem word', example: 'bravo' },
-        { key: '{{faker.lorem.sentence}}', desc: 'Lorem sentence', example: 'alpha bravo charlie.' },
-        { key: '{{faker.lorem.paragraph}}', desc: 'Lorem paragraph', example: 'alpha bravo charlie. delta echo foxtrot.' },
+        { key: '{{faker "name.first"}}', desc: 'First name', example: 'Liam' },
+        { key: '{{faker "name.last"}}', desc: 'Last name', example: 'Smith' },
+        { key: '{{faker "name"}}', desc: 'Full name', example: 'Olivia Johnson' },
+        { key: '{{faker "email"}}', desc: 'Email address', example: 'r2d2@mail.test' },
+        { key: '{{faker "phone"}}', desc: 'Phone number', example: '+1-212-555-0199' },
+        { key: '{{faker "company.name"}}', desc: 'Company name', example: 'Acme Corp' },
+        { key: '{{faker "address.street"}}', desc: 'Street address', example: '123 Oak St' },
+        { key: '{{faker "address.city"}}', desc: 'City', example: 'Springfield' },
+        { key: '{{faker "address.state"}}', desc: 'State', example: 'CA' },
+        { key: '{{faker "address.zip"}}', desc: 'Postal code', example: '94105' },
+        { key: '{{faker "internet.username"}}', desc: 'Username', example: 'alpha9delta' },
+        { key: '{{faker "internet.domain"}}', desc: 'Domain', example: 'mock.io' },
+        { key: '{{faker "internet.url"}}', desc: 'URL', example: 'https://mock.io/abc123' },
+        { key: '{{faker "lorem.word"}}', desc: 'Lorem word', example: 'bravo' },
+        { key: '{{faker "lorem.sentence"}}', desc: 'Lorem sentence', example: 'alpha bravo charlie.' },
+        { key: '{{faker "lorem.paragraph"}}', desc: 'Lorem paragraph', example: 'alpha bravo charlie. delta echo foxtrot.' },
     ],
     timestamp: [
         { key: '{{timestamp}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
-        { key: '{{timestamp.unix}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
-        { key: '{{timestamp.unixMilli}}', desc: 'Unix timestamp (ms)', example: '1707480000123' },
-        { key: '{{timestamp.unixNano}}', desc: 'Unix timestamp (ns)', example: '1707480000123456789' },
-        { key: '{{timestamp.iso}}', desc: 'ISO-8601 timestamp', example: '2026-02-09T12:00:00Z' },
-        { key: '{{timestamp.date}}', desc: 'Date (YYYY-MM-DD)', example: '2026-02-09' },
-        { key: '{{timestamp.time}}', desc: 'Time (HH:MM:SS)', example: '12:00:00' },
-        { key: '{{timestamp.datetime}}', desc: 'Datetime (YYYY-MM-DD HH:MM:SS)', example: '2026-02-09 12:00:00' },
-        { key: '{{timestamp.format(layout)}}', desc: 'Format using Go layout', example: 'timestamp.format(2006/01/02) → 2026/02/09' },
-        { key: '{{timestamp.add(duration)}}', desc: 'Add duration (e.g., 1h, 30m)', example: 'timestamp.add(1h) → 2026-02-09T13:00:00Z' },
+        { key: '{{timestamp "unix"}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
+        { key: '{{timestamp "unixMilli"}}', desc: 'Unix timestamp (ms)', example: '1707480000123' },
+        { key: '{{timestamp "unixNano"}}', desc: 'Unix timestamp (ns)', example: '1707480000123456789' },
+        { key: '{{timestamp "iso"}}', desc: 'ISO-8601 timestamp', example: '2026-02-09T12:00:00Z' },
+        { key: '{{timestamp "date"}}', desc: 'Date (YYYY-MM-DD)', example: '2026-02-09' },
+        { key: '{{timestamp "time"}}', desc: 'Time (HH:MM:SS)', example: '12:00:00' },
+        { key: '{{timestamp "datetime"}}', desc: 'Datetime (YYYY-MM-DD HH:MM:SS)', example: '2026-02-09 12:00:00' },
+        { key: '{{timestamp "format" "2006/01/02"}}', desc: 'Format using Go layout', example: 'format 2006/01/02 → 2026/02/09' },
+        { key: '{{timestamp "add" "1h"}}', desc: 'Add duration (e.g., 1h, 30m)', example: 'add 1h → 2026-02-09T13:00:00Z' },
     ],
 }
 
@@ -85,6 +94,7 @@ export default function ResponseConfigEditor({
     operationId,
     config,
     onClose,
+    variant = 'modal',
 }: ResponseConfigEditorProps) {
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
@@ -97,8 +107,13 @@ export default function ResponseConfigEditor({
     const [headers, setHeaders] = useState<Record<string, string>>(config?.headers || {})
     const [body, setBody] = useState(config?.body || '')
     const [error, setError] = useState('')
+    const [bodyError, setBodyError] = useState('')
+    const [isValidating, setIsValidating] = useState(false)
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
+    const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
+    const monacoRef = useRef<typeof Monaco | null>(null)
+    const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const queryClient = useQueryClient()
 
@@ -127,12 +142,139 @@ export default function ResponseConfigEditor({
         onError: (err: Error) => setError(err.message),
     })
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const parseTemplateErrorLine = (message: string) => {
+        const match = message.match(/:(\d+):/)
+        if (match) {
+            return Number(match[1]) || 1
+        }
+        return 1
+    }
+
+    const registerTemplateLanguage = useCallback((monaco: typeof Monaco) => {
+        const exists = monaco.languages.getLanguages().some((lang) => lang.id === 'go-template')
+        if (exists) {
+            return
+        }
+
+        monaco.languages.register({ id: 'go-template' })
+        monaco.languages.setMonarchTokensProvider('go-template', {
+            tokenizer: {
+                root: [
+                    [/\{\{/, { token: 'keyword', next: '@template' }],
+                    [/[^{}]+/, ''],
+                ],
+                template: [
+                    [/\}\}/, { token: 'keyword', next: '@root' }],
+                    [/[^}]+/, 'keyword'],
+                ],
+            },
+        })
+    }, [])
+
+    const validateBodyTemplate = useCallback(async (value: string) => {
+        const editor = editorRef.current
+        const monaco = monacoRef.current
+        const model = editor?.getModel()
+
+        const clearMarkers = () => {
+            if (monaco && model) {
+                monaco.editor.setModelMarkers(model, 'template-validation', [])
+            }
+        }
+
+        const trimmed = value.trim()
+        if (!trimmed) {
+            setBodyError('')
+            clearMarkers()
+            setIsValidating(false)
+            return true
+        }
+
+        setIsValidating(true)
+        const result = await templatesApi.validate(value)
+        setIsValidating(false)
+
+        if (result.valid) {
+            setBodyError('')
+            clearMarkers()
+            return true
+        }
+
+        const message = result.error || 'Invalid template'
+        setBodyError(message)
+
+        if (monaco && model) {
+            const line = parseTemplateErrorLine(message)
+            monaco.editor.setModelMarkers(model, 'template-validation', [
+                {
+                    severity: monaco.MarkerSeverity.Error,
+                    message,
+                    startLineNumber: line,
+                    startColumn: 1,
+                    endLineNumber: line,
+                    endColumn: 1,
+                },
+            ])
+        }
+
+        return false
+    }, [])
+
+    const scheduleTemplateValidation = useCallback((value: string) => {
+        if (validationTimeoutRef.current) {
+            clearTimeout(validationTimeoutRef.current)
+        }
+
+        validationTimeoutRef.current = setTimeout(() => {
+            void validateBodyTemplate(value)
+        }, 300)
+    }, [validateBodyTemplate])
+
+    useEffect(() => {
+        if (body.trim()) {
+            scheduleTemplateValidation(body)
+        } else {
+            void validateBodyTemplate(body)
+        }
+        return () => {
+            if (validationTimeoutRef.current) {
+                clearTimeout(validationTimeoutRef.current)
+            }
+        }
+    }, [body, scheduleTemplateValidation, validateBodyTemplate])
+
+    useEffect(() => {
+        if (!config) {
+            return
+        }
+        setName(config.name || '')
+        setDescription(config.description || '')
+        setStatusCode(config.statusCode || 200)
+        setPriority(config.priority || 0)
+        setDelay(config.delay || 0)
+        setEnabled(config.enabled ?? true)
+        setTag(config.tag || 'default')
+        setConditions(config.conditions || [])
+        setHeaders(config.headers || {})
+        setBody(config.body || '')
+    }, [config])
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         setError('')
 
         if (!name.trim()) {
             setError('Name is required')
+            return
+        }
+
+        if (isValidating) {
+            setError('Wait for template validation to finish.')
+            return
+        }
+
+        if (!await validateBodyTemplate(body)) {
+            setError('Fix response body template before saving.')
             return
         }
 
@@ -187,19 +329,29 @@ export default function ResponseConfigEditor({
         setHeaders(newHeaders)
     }
 
+    const isModal = variant === 'modal'
+    const wrapperClass = isModal
+        ? 'fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50'
+        : 'w-full'
+    const containerClass = isModal
+        ? 'bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col'
+        : 'bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 w-full flex flex-col'
+
     return (
-        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+        <div className={wrapperClass}>
+            <div className={containerClass}>
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
                     <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">
                         {config ? 'Edit Response Configuration' : 'New Response Configuration'}
                     </h2>
-                    <button
-                        onClick={onClose}
-                        className="p-2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+                    {isModal && (
+                        <button
+                            onClick={onClose}
+                            className="p-2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
+                        >
+                            <X className="w-5 h-5" />
+                        </button>
+                    )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -440,15 +592,36 @@ export default function ResponseConfigEditor({
                             Response Body
                         </label>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
-                            Use {'{{path.param}}'}, {'{{query.param}}'}, {'{{header.name}}'}, {'{{body.path}}'},
-                            {'{{random.uuid}}'}, {'{{timestamp}}'} for templates
+                            Body templates use Go text/template. Try {'{{.Path.id}}'},
+                            {'{{index .Query "status"}}'}, {'{{index .Header "authorization"}}'},
+                            {'{{body "user.name"}}'}, {'{{random "uuid"}}'}, {'{{timestamp}}'}.
+                            Header and query keys are lowercased.
                         </p>
-                        <div className="border border-gray-300 dark:border-slate-700 rounded-lg overflow-hidden">
+                        <div
+                            className={`border rounded-lg overflow-hidden ${bodyError
+                                ? 'border-red-300 dark:border-red-700'
+                                : 'border-gray-300 dark:border-slate-700'
+                                }`}
+                        >
                             <Editor
                                 height="200px"
-                                defaultLanguage="json"
+                                defaultLanguage="go-template"
                                 value={body}
-                                onChange={(value) => setBody(value || '')}
+                                onChange={(value) => {
+                                    const next = value || ''
+                                    setBody(next)
+                                    scheduleTemplateValidation(next)
+                                }}
+                                onMount={(editor, monaco) => {
+                                    editorRef.current = editor
+                                    monacoRef.current = monaco
+                                    registerTemplateLanguage(monaco)
+                                    const model = editor.getModel()
+                                    if (model) {
+                                        monaco.editor.setModelLanguage(model, 'go-template')
+                                    }
+                                    validateBodyTemplate(body)
+                                }}
                                 options={{
                                     minimap: { enabled: false },
                                     fontSize: 13,
@@ -461,78 +634,19 @@ export default function ResponseConfigEditor({
                                 }}
                             />
                         </div>
+                        {bodyError && (
+                            <div className="mt-2 flex items-start text-xs text-red-600 dark:text-red-300">
+                                <AlertCircle className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
+                                <span>{bodyError}</span>
+                            </div>
+                        )}
+                        {isValidating && !bodyError && (
+                            <div className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+                                Validating template...
+                            </div>
+                        )}
                     </div>
 
-                    {/* Template Documentation */}
-                    <div className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-indigo-100 dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 rounded-xl p-5 shadow-sm">
-                        <details className="group">
-                            <summary className="cursor-pointer text-sm font-semibold text-indigo-700 dark:text-slate-200 flex items-center justify-between">
-                                Template variables reference
-                                <span className="text-xs text-indigo-400 dark:text-slate-400 group-open:rotate-180 transition-transform">▾</span>
-                            </summary>
-                            <p className="text-xs text-indigo-500 dark:text-slate-400 mt-2">
-                                Faker values are deterministically seeded per request using path and query parameters.
-                            </p>
-                            <div className="mt-4 space-y-5">
-                                <div className="bg-white/70 dark:bg-slate-900/70 border border-indigo-100 dark:border-slate-800 rounded-lg p-4">
-                                    <h4 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300 uppercase tracking-wide mb-3">
-                                        Request data
-                                    </h4>
-                                    <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
-                                        {templateDocs.request.map((item) => (
-                                            <li key={item.key} className="flex flex-col gap-1">
-                                                <span className="font-mono text-indigo-900 dark:text-indigo-200">{item.key}</span>
-                                                <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
-                                                <span className="text-indigo-500/90 dark:text-indigo-300">Example: {item.example}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                                <div className="bg-white/70 dark:bg-slate-900/70 border border-emerald-100 dark:border-emerald-900/40 rounded-lg p-4">
-                                    <h4 className="text-xs font-semibold text-emerald-600 dark:text-emerald-300 uppercase tracking-wide mb-3">
-                                        Random
-                                    </h4>
-                                    <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
-                                        {templateDocs.random.map((item) => (
-                                            <li key={item.key} className="flex flex-col gap-1">
-                                                <span className="font-mono text-emerald-900 dark:text-emerald-200">{item.key}</span>
-                                                <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
-                                                <span className="text-emerald-500/90 dark:text-emerald-300">Example: {item.example}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                                <div className="bg-white/70 dark:bg-slate-900/70 border border-amber-100 dark:border-amber-900/40 rounded-lg p-4">
-                                    <h4 className="text-xs font-semibold text-amber-600 dark:text-amber-300 uppercase tracking-wide mb-3">
-                                        Faker
-                                    </h4>
-                                    <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
-                                        {templateDocs.faker.map((item) => (
-                                            <li key={item.key} className="flex flex-col gap-1">
-                                                <span className="font-mono text-amber-900 dark:text-amber-200">{item.key}</span>
-                                                <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
-                                                <span className="text-amber-500/90 dark:text-amber-300">Example: {item.example}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                                <div className="bg-white/70 dark:bg-slate-900/70 border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
-                                    <h4 className="text-xs font-semibold text-sky-600 dark:text-sky-300 uppercase tracking-wide mb-3">
-                                        Timestamp
-                                    </h4>
-                                    <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
-                                        {templateDocs.timestamp.map((item) => (
-                                            <li key={item.key} className="flex flex-col gap-1">
-                                                <span className="font-mono text-sky-900 dark:text-sky-200">{item.key}</span>
-                                                <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
-                                                <span className="text-sky-500/90 dark:text-sky-300">Example: {item.example}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            </div>
-                        </details>
-                    </div>
                 </form>
 
                 {/* Actions */}
@@ -555,6 +669,91 @@ export default function ResponseConfigEditor({
                                 ? 'Update'
                                 : 'Create'}
                     </button>
+                </div>
+
+                {/* Template Documentation */}
+                <div className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-indigo-100 dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 rounded-xl p-5 shadow-sm mx-6 mb-6">
+                    <details className="group">
+                        <summary className="cursor-pointer text-sm font-semibold text-indigo-700 dark:text-slate-200 flex items-center justify-between">
+                            Template variables reference
+                            <span className="text-xs text-indigo-400 dark:text-slate-400 group-open:rotate-180 transition-transform">▾</span>
+                        </summary>
+                        <p className="text-xs text-indigo-500 dark:text-slate-400 mt-2">
+                            Body templates use Go text/template. Query and header keys are lowercased before lookup.
+                        </p>
+                        <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-indigo-100 dark:border-slate-800 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-indigo-600 dark:text-indigo-300 uppercase tracking-wide mb-3">
+                                    Request data
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.request.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-indigo-900 dark:text-indigo-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-indigo-500/90 dark:text-indigo-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-purple-100 dark:border-purple-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-purple-600 dark:text-purple-300 uppercase tracking-wide mb-3">
+                                    Control flow (loops & conditions)
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.control.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-purple-900 dark:text-purple-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-purple-500/90 dark:text-purple-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-emerald-100 dark:border-emerald-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-emerald-600 dark:text-emerald-300 uppercase tracking-wide mb-3">
+                                    Random
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.random.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-emerald-900 dark:text-emerald-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-emerald-500/90 dark:text-emerald-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-amber-100 dark:border-amber-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-amber-600 dark:text-amber-300 uppercase tracking-wide mb-3">
+                                    Faker
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.faker.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-amber-900 dark:text-amber-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-amber-500/90 dark:text-amber-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-sky-100 dark:border-sky-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-sky-600 dark:text-sky-300 uppercase tracking-wide mb-3">
+                                    Timestamp
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.timestamp.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-sky-900 dark:text-sky-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-sky-500/90 dark:text-sky-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        </div>
+                    </details>
                 </div>
             </div>
         </div>

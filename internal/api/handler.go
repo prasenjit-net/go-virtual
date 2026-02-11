@@ -12,6 +12,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/template"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 	"github.com/prasenjit/go-virtual/internal/version"
 )
@@ -23,6 +24,7 @@ type Handler struct {
 	tracingService *tracing.Service
 	proxyEngine    *proxy.Engine
 	parser         *parser.Parser
+	templateEngine *template.Engine
 }
 
 // NewHandler creates a new API handler
@@ -33,6 +35,7 @@ func NewHandler(store storage.Storage, statsCollector *stats.Collector, tracingS
 		tracingService: tracingService,
 		proxyEngine:    proxyEngine,
 		parser:         parser.NewParser(),
+		templateEngine: template.NewEngine(),
 	}
 }
 
@@ -916,6 +919,24 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 func (h *Handler) Version(c *gin.Context) {
 	info := version.Get()
 	c.JSON(http.StatusOK, info)
+}
+
+// ValidateTemplate validates a body template using the current helper set.
+func (h *Handler) ValidateTemplate(c *gin.Context) {
+	var input struct {
+		Body string `json:"body"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.templateEngine.ValidateBodyTemplate(input.Body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"valid": true})
 }
 
 // generateID generates a unique ID
