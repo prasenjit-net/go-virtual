@@ -13,6 +13,7 @@ type Operation struct {
 	Tags            []string          `json:"tags"`
 	Responses       []ResponseConfig  `json:"responses,omitempty"`
 	ExampleResponse *ExampleResponse  `json:"exampleResponse,omitempty"` // From OpenAPI spec
+	SignatureConfig *SignatureConfig  `json:"signatureConfig,omitempty"` // Controls request signature generation
 }
 
 // ExampleResponse holds example response data from the OpenAPI spec

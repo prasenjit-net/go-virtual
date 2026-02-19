@@ -175,6 +175,21 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	if update.UseExampleFallback != nil {
 		spec.UseExampleFallback = *update.UseExampleFallback
 	}
+	if update.BackendURI != nil {
+		spec.BackendURI = *update.BackendURI
+		// Disabling backend URI also disables proxy mode
+		if spec.BackendURI == "" {
+			spec.ProxyMode = false
+		}
+	}
+	if update.ProxyMode != nil {
+		// Proxy mode requires a backend URI
+		if *update.ProxyMode && spec.BackendURI == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "backendUri must be set before enabling proxyMode"})
+			return
+		}
+		spec.ProxyMode = *update.ProxyMode
+	}
 
 	spec.UpdatedAt = time.Now()
 
@@ -899,6 +914,126 @@ func (h *Handler) renameTagUsage(oldName, newName string) {
 
 func normalizeTag(tag string) string {
 	return strings.ToLower(strings.TrimSpace(tag))
+}
+
+// SetBackendURI sets or clears the backend URI for a spec
+func (h *Handler) SetBackendURI(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		BackendURI string `json:"backendUri"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spec.BackendURI = input.BackendURI
+	if spec.BackendURI == "" {
+		spec.ProxyMode = false
+	}
+	spec.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.proxyEngine.ReloadRoutes()
+
+	c.JSON(http.StatusOK, gin.H{"backendUri": spec.BackendURI, "proxyMode": spec.ProxyMode})
+}
+
+// ToggleProxyMode enables or disables proxy recording mode for a spec
+func (h *Handler) ToggleProxyMode(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		// Toggle if no body
+		input.Enabled = !spec.ProxyMode
+	}
+
+	if input.Enabled && spec.BackendURI == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "backendUri must be set before enabling proxy mode"})
+		return
+	}
+
+	spec.ProxyMode = input.Enabled
+	spec.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.proxyEngine.ReloadRoutes()
+
+	c.JSON(http.StatusOK, gin.H{"proxyMode": spec.ProxyMode})
+}
+
+// GetSignatureConfig returns the signature configuration for an operation
+func (h *Handler) GetSignatureConfig(c *gin.Context) {
+	id := c.Param("id")
+
+	op, err := h.store.GetOperation(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Operation not found"})
+		return
+	}
+
+	if op.SignatureConfig == nil {
+		// Return default config (nil means "all path params + all query params + full body")
+		c.JSON(http.StatusOK, gin.H{"signatureConfig": nil})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"signatureConfig": op.SignatureConfig})
+}
+
+// UpdateSignatureConfig updates the signature configuration for an operation
+func (h *Handler) UpdateSignatureConfig(c *gin.Context) {
+	id := c.Param("id")
+
+	op, err := h.store.GetOperation(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Operation not found"})
+		return
+	}
+
+	var input struct {
+		SignatureConfig *models.SignatureConfig `json:"signatureConfig"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	op.SignatureConfig = input.SignatureConfig
+
+	if err := h.store.UpdateOperation(op); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Reload routes so the engine picks up the new config
+	h.proxyEngine.ReloadRoutes()
+
+	c.JSON(http.StatusOK, gin.H{"signatureConfig": op.SignatureConfig})
 }
 
 // GetRoutes returns registered routes

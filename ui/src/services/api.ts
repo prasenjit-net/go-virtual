@@ -77,6 +77,24 @@ export const specsApi = {
         return handleResponse<any>(response);
     },
 
+    setBackendURI: async (id: string, backendUri: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/backend`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ backendUri }),
+        });
+        return handleResponse<any>(response);
+    },
+
+    toggleProxyMode: async (id: string, enabled: boolean) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/proxy-mode`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+        });
+        return handleResponse<any>(response);
+    },
+
     getTags: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}/tags`);
         return handleResponse<any>(response);
@@ -134,6 +152,20 @@ export const operationsApi = {
 
     get: async (id: string) => {
         const response = await fetch(`${API_BASE}/operations/${id}`);
+        return handleResponse<any>(response);
+    },
+
+    getSignatureConfig: async (id: string) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/signature`);
+        return handleResponse<any>(response);
+    },
+
+    updateSignatureConfig: async (id: string, signatureConfig: any) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/signature`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ signatureConfig }),
+        });
         return handleResponse<any>(response);
     },
 };

@@ -10,6 +10,8 @@ export interface Spec {
     tracing: boolean;
     useExampleFallback: boolean;
     enabledTags?: string[];
+    backendUri: string;
+    proxyMode: boolean;
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -35,6 +37,21 @@ export interface Operation {
     tags: string[];
     responses?: ResponseConfig[];
     exampleResponse?: ExampleResponse;
+    signatureConfig?: SignatureConfig | null;
+}
+
+// SignatureConfig controls which request parts contribute to the signature hash
+export interface SignatureConfig {
+    // Specific path parameter names to include. Empty = include ALL.
+    pathParams: string[];
+    // Specific query parameter names to include. Empty = include ALL.
+    queryParams: string[];
+    // Specific header names to include. Empty = include NONE.
+    headers: string[];
+    // Whether the request body contributes to the signature.
+    includeBody: boolean;
+    // Specific gjson paths within the body to include. Empty + includeBody = full body.
+    bodyJsonPaths: string[];
 }
 
 export interface ExampleResponse {
@@ -69,6 +86,7 @@ export interface ResponseConfig {
     body: string;
     delay: number;
     enabled: boolean;
+    recorded: boolean;
 }
 
 export interface ResponseConfigInput {
@@ -93,7 +111,7 @@ export interface Tag {
 
 // Condition types
 export interface Condition {
-    source: 'path' | 'query' | 'header' | 'body';
+    source: 'path' | 'query' | 'header' | 'body' | 'signature';
     key: string;
     operator: ConditionOperator;
     value: string;

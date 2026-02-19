@@ -14,6 +14,7 @@ type ResponseConfig struct {
 	Body        string            `json:"body"`    // Can contain template variables
 	Delay       int               `json:"delay"`   // Response delay in milliseconds
 	Enabled     bool              `json:"enabled"`
+	Recorded    bool              `json:"recorded"` // True if auto-recorded in proxy mode
 }
 
 // ResponseConfigInput represents input for creating/updating a response config

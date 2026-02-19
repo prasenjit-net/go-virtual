@@ -1,10 +1,14 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     ArrowLeft,
     FileCode2,
     ChevronRight,
-    Sparkles
+    Sparkles,
+    Radio,
+    Save,
+    Globe
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi } from '../../services/api'
@@ -23,6 +27,7 @@ const methodColors: Record<string, string> = {
 export default function SpecDetail() {
     const { specId } = useParams<{ specId: string }>()
     const queryClient = useQueryClient()
+    const [backendURIInput, setBackendURIInput] = useState<string | null>(null)
 
     const { data: spec, isLoading: specLoading } = useQuery<Spec>({
         queryKey: ['spec', specId],
@@ -43,6 +48,21 @@ export default function SpecDetail() {
 
     const updateTagsMutation = useMutation({
         mutationFn: (enabledTags: string[]) => specsApi.updateTags(specId!, enabledTags),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+        },
+    })
+
+    const setBackendMutation = useMutation({
+        mutationFn: (uri: string) => specsApi.setBackendURI(specId!, uri),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+            setBackendURIInput(null)
+        },
+    })
+
+    const toggleProxyMutation = useMutation({
+        mutationFn: (enabled: boolean) => specsApi.toggleProxyMode(specId!, enabled),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['spec', specId] })
         },
@@ -186,6 +206,81 @@ export default function SpecDetail() {
                         No operations found in this specification
                     </div>
                 )}
+            </div>
+
+            {/* Backend Configuration */}
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+                            <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Backend Configuration</h2>
+                            <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+                                Set a real backend to enable proxy recording mode
+                            </p>
+                        </div>
+                    </div>
+                    {spec.backendUri && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-500 dark:text-slate-400">Proxy Mode</span>
+                            <button
+                                onClick={() => toggleProxyMutation.mutate(!spec.proxyMode)}
+                                disabled={toggleProxyMutation.isPending}
+                                className={clsx(
+                                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
+                                    spec.proxyMode
+                                        ? 'bg-violet-600'
+                                        : 'bg-gray-300 dark:bg-slate-600'
+                                )}
+                                title={spec.proxyMode ? 'Disable proxy mode' : 'Enable proxy mode'}
+                            >
+                                <span className={clsx(
+                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                                    spec.proxyMode ? 'translate-x-6' : 'translate-x-1'
+                                )} />
+                            </button>
+                            {spec.proxyMode && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                                    <Radio className="w-3 h-3 animate-pulse" />
+                                    Recording
+                                </span>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-6">
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="url"
+                            placeholder="https://api.example.com"
+                            value={backendURIInput !== null ? backendURIInput : (spec.backendUri || '')}
+                            onChange={e => setBackendURIInput(e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:ring-violet-400"
+                        />
+                        <button
+                            onClick={() => setBackendMutation.mutate(backendURIInput ?? spec.backendUri ?? '')}
+                            disabled={backendURIInput === null || setBackendMutation.isPending}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                        >
+                            <Save className="w-4 h-4" />
+                            Save
+                        </button>
+                    </div>
+                    {spec.backendUri && !spec.proxyMode && (
+                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+                            Backend configured. Toggle <strong>Proxy Mode</strong> above to start recording responses from the backend.
+                        </p>
+                    )}
+                    {spec.proxyMode && (
+                        <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">
+                            <Radio className="w-3 h-3 inline mr-1 animate-pulse" />
+                            Proxy mode active — all incoming requests are forwarded to <strong>{spec.backendUri}</strong> and responses are automatically recorded.
+                        </p>
+                    )}
+                </div>
             </div>
 
             {/* Enabled Tags */}

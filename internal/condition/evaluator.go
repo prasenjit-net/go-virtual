@@ -23,6 +23,7 @@ type RequestData struct {
 	QueryParams map[string][]string
 	Headers     map[string][]string
 	Body        string
+	Signature   string // Pre-computed request signature for signature conditions
 }
 
 // EvaluateAll evaluates all conditions against request data
@@ -72,6 +73,9 @@ func (e *Evaluator) extractValue(source, key string, data *RequestData) string {
 			return result.String()
 		}
 		return ""
+	case models.SourceSignature:
+		// Return the pre-computed request signature
+		return data.Signature
 	default:
 		return ""
 	}

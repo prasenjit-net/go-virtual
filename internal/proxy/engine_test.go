@@ -13,7 +13,6 @@ import (
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
-
 func setupTestEngine(t *testing.T) (*Engine, storage.Storage) {
 	store := storage.NewMemoryStorage()
 	collector := stats.NewCollector()
@@ -927,3 +926,372 @@ func TestGetRegisteredRoutes(t *testing.T) {
 		t.Errorf("Expected 1 POST route, got %d", len(routes["POST"]))
 	}
 }
+
+// TestServeHTTP_ProxyMode verifies that when proxyMode is enabled the engine
+// forwards the request to the backend and returns its response.
+func TestServeHTTP_ProxyMode(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(202)
+		w.Write([]byte(`{"proxied":true}`))
+	}))
+	defer backend.Close()
+
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:         "spec-proxy",
+		Name:       "Proxy API",
+		BasePath:   "",
+		Enabled:    true,
+		ProxyMode:  true,
+		BackendURI: backend.URL,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-proxy",
+		SpecID:   "spec-proxy",
+		Method:   "GET",
+		Path:     "/items",
+		FullPath: "/items",
+	}
+	store.CreateOperation(op)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/items", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != 202 {
+		t.Errorf("expected 202, got %d", w.Code)
+	}
+	if body := w.Body.String(); body != `{"proxied":true}` {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+// TestServeHTTP_ProxyMode_BackendError verifies a 502 is returned when the
+// backend is unreachable.
+func TestServeHTTP_ProxyMode_BackendError(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:         "spec-proxy-err",
+		Name:       "Proxy Err API",
+		BasePath:   "",
+		Enabled:    true,
+		ProxyMode:  true,
+		BackendURI: "http://127.0.0.1:1", // nothing there
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-proxy-err",
+		SpecID:   "spec-proxy-err",
+		Method:   "GET",
+		Path:     "/fail",
+		FullPath: "/fail",
+	}
+	store.CreateOperation(op)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/fail", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("expected 502, got %d", w.Code)
+	}
+}
+
+// TestServeHTTP_ProxyMode_WithTracing verifies tracing records proxy responses.
+func TestServeHTTP_ProxyMode_WithTracing(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	engine := NewEngine(store, collector, tracingSvc)
+
+	spec := &models.Spec{
+		ID:         "spec-trace-proxy",
+		Name:       "Trace Proxy",
+		BasePath:   "",
+		Enabled:    true,
+		Tracing:    true,
+		ProxyMode:  true,
+		BackendURI: backend.URL,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-trace-proxy",
+		SpecID:   "spec-trace-proxy",
+		Method:   "GET",
+		Path:     "/ping",
+		FullPath: "/ping",
+	}
+	store.CreateOperation(op)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/ping", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	traces := tracingSvc.GetTraces(nil)
+	if len(traces) != 1 {
+		t.Errorf("expected 1 trace, got %d", len(traces))
+	}
+}
+
+// TestServeHTTP_SignatureCondition verifies that a recorded response with a
+// signature condition is matched when the request signature matches.
+func TestServeHTTP_SignatureCondition(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:       "spec-sig",
+		Name:     "Sig API",
+		BasePath: "",
+		Enabled:  true,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-sig",
+		SpecID:   "spec-sig",
+		Method:   "GET",
+		Path:     "/data",
+		FullPath: "/data",
+	}
+	store.CreateOperation(op)
+
+	// Pre-compute the signature for an empty request so we can set up the condition
+	sig := ComputeSignature(map[string]string{}, nil, nil, "", nil)
+
+	config := &models.ResponseConfig{
+		ID:          "config-sig",
+		OperationID: "op-sig",
+		Name:        "Signature match",
+		StatusCode:  200,
+		Body:        `{"matched":true}`,
+		Priority:    1,
+		Enabled:     true,
+		Recorded:    true,
+		Conditions: []models.Condition{
+			{Source: models.SourceSignature, Operator: "eq", Value: sig},
+		},
+	}
+	store.CreateResponseConfig(config)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/data", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	if body := w.Body.String(); !strings.Contains(body, `"matched":true`) {
+		t.Errorf("unexpected body: %q", body)
+	}
+}
+
+// TestServeHTTP_SignatureCondition_NoMatch verifies a non-matching signature
+// falls through to the next config (or 404).
+func TestServeHTTP_SignatureCondition_NoMatch(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:       "spec-sig2",
+		Name:     "Sig2",
+		BasePath: "",
+		Enabled:  true,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-sig2",
+		SpecID:   "spec-sig2",
+		Method:   "GET",
+		Path:     "/check",
+		FullPath: "/check",
+	}
+	store.CreateOperation(op)
+
+	config := &models.ResponseConfig{
+		ID:          "config-sig2",
+		OperationID: "op-sig2",
+		Name:        "Recorded",
+		StatusCode:  200,
+		Body:        `{}`,
+		Priority:    1,
+		Enabled:     true,
+		Recorded:    true,
+		Conditions: []models.Condition{
+			{Source: models.SourceSignature, Operator: "eq", Value: "will-never-match"},
+		},
+	}
+	store.CreateResponseConfig(config)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/check", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// No matching config and no example → 404
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when signature doesn't match, got %d", w.Code)
+	}
+}
+
+// TestServeHTTP_RecordUnmatchedTrace verifies that unmatched requests generate
+// a trace when any spec has tracing enabled.
+func TestServeHTTP_RecordUnmatchedTrace(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	engine := NewEngine(store, collector, tracingSvc)
+
+	spec := &models.Spec{
+		ID:      "spec-trace-unmatched",
+		Enabled: true,
+		Tracing: true,
+	}
+	store.CreateSpec(spec)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/totally-unknown", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+
+	traces := tracingSvc.GetTraces(nil)
+	if len(traces) == 0 {
+		t.Error("expected unmatched trace to be recorded when tracing is enabled")
+	}
+	if traces[0].SpecName != "[Unmatched]" {
+		t.Errorf("unexpected spec name: %q", traces[0].SpecName)
+	}
+}
+
+// TestServeHTTP_RecordUnmatchedTrace_NoTracing verifies that no trace is
+// recorded when no spec has tracing enabled.
+func TestServeHTTP_RecordUnmatchedTrace_NoTracing(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	engine := NewEngine(store, collector, tracingSvc)
+
+	spec := &models.Spec{
+		ID:      "spec-no-trace",
+		Enabled: true,
+		Tracing: false,
+	}
+	store.CreateSpec(spec)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/unknown-no-trace", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	traces := tracingSvc.GetTraces(nil)
+	if len(traces) != 0 {
+		t.Errorf("expected no traces when tracing disabled, got %d", len(traces))
+	}
+}
+
+// TestServeHTTP_ExampleFallback_WithTracing verifies the example-fallback path
+// also records a trace.
+func TestServeHTTP_ExampleFallback_WithTracing_Config(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	engine := NewEngine(store, collector, tracingSvc)
+
+	spec := &models.Spec{
+		ID:                 "spec-ex-trace",
+		Name:               "ExTrace",
+		BasePath:           "",
+		Enabled:            true,
+		Tracing:            true,
+		UseExampleFallback: true,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-ex-trace",
+		SpecID:   "spec-ex-trace",
+		Method:   "GET",
+		Path:     "/example",
+		FullPath: "/example",
+		ExampleResponse: &models.ExampleResponse{
+			StatusCode: 200,
+			Body:       `{"ex":true}`,
+		},
+	}
+	store.CreateOperation(op)
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/example", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+	traces := tracingSvc.GetTraces(nil)
+	if len(traces) != 1 {
+		t.Errorf("expected 1 trace, got %d", len(traces))
+	}
+}
+
+// TestServeHTTP_DisabledResponseConfig verifies that disabled configs are skipped.
+func TestServeHTTP_DisabledResponseConfig(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:      "spec-disabled-cfg",
+		Name:    "Disabled",
+		Enabled: true,
+	}
+	store.CreateSpec(spec)
+
+	op := &models.Operation{
+		ID:       "op-disabled-cfg",
+		SpecID:   "spec-disabled-cfg",
+		Method:   "GET",
+		Path:     "/disabled",
+		FullPath: "/disabled",
+	}
+	store.CreateOperation(op)
+
+	store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "cfg-disabled",
+		OperationID: "op-disabled-cfg",
+		Name:        "Disabled cfg",
+		StatusCode:  200,
+		Body:        `{"ok":true}`,
+		Priority:    1,
+		Enabled:     false, // disabled
+	})
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/disabled", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	// Only disabled config → no match → 404
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for disabled config, got %d", w.Code)
+	}
+}
+

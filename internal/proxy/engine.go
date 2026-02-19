@@ -28,6 +28,7 @@ type Engine struct {
 	tracingService *tracing.Service
 	condEvaluator  *condition.Evaluator
 	templateEngine *template.Engine
+	recorder       *Recorder
 	mu             sync.RWMutex
 	routes         map[string][]*route // method -> routes
 }
@@ -48,6 +49,7 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 		tracingService: tracingService,
 		condEvaluator:  condition.NewEvaluator(),
 		templateEngine: template.NewEngine(),
+		recorder:       NewRecorder(store),
 		routes:         make(map[string][]*route),
 	}
 
@@ -168,12 +170,87 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build request data for condition evaluation
+	// Compute the request signature (needed for both proxy recording and condition evaluation)
+	signature := ComputeSignature(
+		pathParams,
+		r.URL.Query(),
+		r.Header,
+		requestBody,
+		matchedRoute.operation.SignatureConfig,
+	)
+
+	// ---- Proxy recording mode ----
+	// When proxy mode is active for the spec, forward the request to the real
+	// backend, record the response, and return it directly to the client.
+	if matchedRoute.spec.ProxyMode && matchedRoute.spec.BackendURI != "" {
+		statusCode, respHeaders, respBody, err := e.recorder.ProxyAndRecord(
+			r.Method,
+			r.URL.Path,
+			r.URL.RawQuery,
+			r.Header,
+			requestBody,
+			matchedRoute.operation,
+			matchedRoute.spec,
+			signature,
+		)
+		if err != nil {
+			http.Error(w, `{"error":"proxy backend unavailable: `+err.Error()+`"}`, http.StatusBadGateway)
+			return
+		}
+
+		// Write recorded response to client
+		for key, val := range respHeaders {
+			w.Header().Set(key, val)
+		}
+		w.WriteHeader(statusCode)
+		w.Write([]byte(respBody))
+
+		duration := time.Since(startTime)
+		isError := statusCode >= 400
+		e.statsCollector.RecordRequest(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			duration,
+			isError,
+		)
+		if matchedRoute.spec.Tracing {
+			trace := &models.Trace{
+				SpecID:        matchedRoute.spec.ID,
+				SpecName:      matchedRoute.spec.Name,
+				OperationID:   matchedRoute.operation.ID,
+				OperationPath: matchedRoute.operation.Path,
+				Timestamp:     startTime,
+				Duration:      duration.Nanoseconds(),
+				MatchedConfig: "[proxy-recorded]",
+				Request: models.TraceRequest{
+					Method:  r.Method,
+					URL:     r.URL.String(),
+					Path:    r.URL.Path,
+					Query:   r.URL.Query(),
+					Headers: r.Header,
+					Body:    requestBody,
+				},
+				Response: models.TraceResponse{
+					StatusCode: statusCode,
+					Headers:    headersToMap(w.Header()),
+					Body:       respBody,
+				},
+			}
+			e.tracingService.RecordTrace(trace)
+		}
+		return
+	}
+
+	// ---- Virtual response mode ----
+	// Build request data for condition evaluation (include pre-computed signature)
 	reqData := &condition.RequestData{
 		PathParams:  pathParams,
 		QueryParams: r.URL.Query(),
 		Headers:     r.Header,
 		Body:        requestBody,
+		Signature:   signature,
 	}
 
 	// Get response configs for the operation
@@ -290,9 +367,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		RNG:         rand.New(rand.NewSource(seed)),
 	}
 
-	// Process headers
+	// Process headers – skip any that Go's ResponseWriter manages automatically
+	// or that are stale/misleading for virtual responses (see skipRecordedResponseHeaders).
 	responseHeaders := e.templateEngine.ProcessHeaders(matchedConfig.Headers, templateCtx)
 	for key, value := range responseHeaders {
+		if skipRecordedResponseHeaders[http.CanonicalHeaderKey(key)] {
+			continue
+		}
 		w.Header().Set(key, value)
 	}
 

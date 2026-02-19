@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/parser"
 )
 
 func TestFileStorage_DefaultTagAndDirs(t *testing.T) {
@@ -327,5 +328,180 @@ func TestFileStorage_OperationsAndResponses(t *testing.T) {
 
 	if err := fs.Close(); err != nil {
 		t.Fatalf("Close error: %v", err)
+	}
+}
+
+// TestFileStorage_OperationCustomization verifies SignatureConfig is persisted
+// and reloaded correctly via UpdateOperation / loadOperationCustomization.
+func TestFileStorage_OperationCustomization(t *testing.T) {
+	baseDir := t.TempDir()
+
+	specContent := `{"openapi":"3.0.0","info":{"title":"T","version":"1.0"},"paths":{"/items":{"get":{"operationId":"listItems","responses":{"200":{"description":"ok"}}}}}}`
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	p := parser.NewParser()
+	parseResult, err := p.Parse(specContent, "/v1")
+	if err != nil {
+		t.Fatalf("parser.Parse: %v", err)
+	}
+
+	if err := fs.CreateSpec(parseResult.Spec); err != nil {
+		t.Fatalf("CreateSpec: %v", err)
+	}
+	for _, op := range parseResult.Operations {
+		if err := fs.CreateOperation(op); err != nil {
+			t.Fatalf("CreateOperation: %v", err)
+		}
+	}
+
+	ops, err := fs.GetOperationsBySpec(parseResult.Spec.ID)
+	if err != nil || len(ops) == 0 {
+		t.Fatalf("expected operations parsed from spec, got %d (%v)", len(ops), err)
+	}
+	op := ops[0]
+
+	// Attach a SignatureConfig
+	op.SignatureConfig = &models.SignatureConfig{
+		PathParams:  []string{"id"},
+		QueryParams: []string{"page"},
+		Headers:     []string{"X-Tenant"},
+		IncludeBody: false,
+	}
+
+	if err := fs.UpdateOperation(op); err != nil {
+		t.Fatalf("UpdateOperation: %v", err)
+	}
+
+	// Reload from disk — SignatureConfig should be preserved
+	fsReloaded, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage reload: %v", err)
+	}
+
+	reloadedOps, _ := fsReloaded.GetOperationsBySpec(parseResult.Spec.ID)
+	if len(reloadedOps) == 0 {
+		t.Fatal("expected operations after reload")
+	}
+	ro := reloadedOps[0]
+
+	if ro.SignatureConfig == nil {
+		t.Fatal("expected SignatureConfig to survive reload")
+	}
+	if len(ro.SignatureConfig.PathParams) != 1 || ro.SignatureConfig.PathParams[0] != "id" {
+		t.Errorf("unexpected PathParams after reload: %v", ro.SignatureConfig.PathParams)
+	}
+	if ro.SignatureConfig.IncludeBody {
+		t.Error("expected IncludeBody=false after reload")
+	}
+	if len(ro.SignatureConfig.Headers) != 1 || ro.SignatureConfig.Headers[0] != "X-Tenant" {
+		t.Errorf("unexpected Headers after reload: %v", ro.SignatureConfig.Headers)
+	}
+}
+
+// TestFileStorage_SpecBackendURIAndProxyMode verifies BackendURI and ProxyMode
+// are saved to and reloaded from disk.
+func TestFileStorage_SpecBackendURIAndProxyMode(t *testing.T) {
+	baseDir := t.TempDir()
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	spec := &models.Spec{
+		ID:         "spec-be",
+		Name:       "Backend Test",
+		BackendURI: "http://real-backend:9090",
+		ProxyMode:  true,
+		Enabled:    true,
+	}
+	if err := fs.CreateSpec(spec); err != nil {
+		t.Fatalf("CreateSpec: %v", err)
+	}
+
+	fsReloaded, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload error: %v", err)
+	}
+
+	reloaded, err := fsReloaded.GetSpec("spec-be")
+	if err != nil {
+		t.Fatalf("GetSpec: %v", err)
+	}
+	if reloaded.BackendURI != "http://real-backend:9090" {
+		t.Errorf("expected BackendURI, got %q", reloaded.BackendURI)
+	}
+	// ProxyMode is reset on reload (same rule as Tracing)
+	// Actually ProxyMode is NOT reset — only Tracing is. Verify it persists.
+	if !reloaded.ProxyMode {
+		t.Error("expected ProxyMode to survive reload")
+	}
+}
+
+// TestFileStorage_LoadOperationCustomization_MissingFile verifies that loading
+// a customization for an operation that has no file returns nil without error.
+func TestFileStorage_LoadOperationCustomization_MissingFile(t *testing.T) {
+	baseDir := t.TempDir()
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	custom, err := fs.loadOperationCustomization("nonexistent-op-id")
+	if err != nil {
+		t.Errorf("expected nil error for missing file, got: %v", err)
+	}
+	if custom != nil {
+		t.Errorf("expected nil customization for missing file, got: %+v", custom)
+	}
+}
+
+// TestFileStorage_UpdateResponseConfig_Persists verifies UpdateResponseConfig
+// writes new body to disk and reloads correctly.
+func TestFileStorage_UpdateResponseConfig_Persists(t *testing.T) {
+	baseDir := t.TempDir()
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	cfg := &models.ResponseConfig{
+		ID:          "resp-upd",
+		OperationID: "op-upd",
+		Name:        "Initial",
+		StatusCode:  200,
+		Body:        `{"v":1}`,
+		Enabled:     true,
+	}
+	if err := fs.CreateResponseConfig(cfg); err != nil {
+		t.Fatalf("CreateResponseConfig: %v", err)
+	}
+
+	cfg.Body = `{"v":2}`
+	cfg.Name = "Updated"
+	if err := fs.UpdateResponseConfig(cfg); err != nil {
+		t.Fatalf("UpdateResponseConfig: %v", err)
+	}
+
+	fsReloaded, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	reloaded, err := fsReloaded.GetResponseConfig("resp-upd")
+	if err != nil {
+		t.Fatalf("GetResponseConfig: %v", err)
+	}
+	if reloaded.Body != `{"v":2}` {
+		t.Errorf("expected updated body, got %q", reloaded.Body)
+	}
+	if reloaded.Name != "Updated" {
+		t.Errorf("expected updated name, got %q", reloaded.Name)
 	}
 }

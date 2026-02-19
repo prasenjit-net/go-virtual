@@ -29,6 +29,7 @@ func NewFileStorage(basePath string) (*FileStorage, error) {
 		basePath,
 		filepath.Join(basePath, "specs"),
 		filepath.Join(basePath, "responses"),
+		filepath.Join(basePath, "operations"),
 	}
 
 	for _, dir := range dirs {
@@ -102,6 +103,10 @@ func (f *FileStorage) loadAll() error {
 			operations, err := p.ParseOperations(spec.Content, spec.ID, spec.BasePath)
 			if err == nil {
 				for _, op := range operations {
+					// Overlay stored customizations (e.g. SignatureConfig)
+					if custom, err := f.loadOperationCustomization(op.ID); err == nil && custom != nil {
+						op.SignatureConfig = custom.SignatureConfig
+					}
 					f.memory.operations[op.ID] = op
 				}
 			}
@@ -379,6 +384,51 @@ func (f *FileStorage) deleteResponseConfigFile(id string) error {
 	return nil
 }
 
+// operationCustomizationPath returns the file path for an operation's customization file
+func (f *FileStorage) operationCustomizationPath(opID string) string {
+	return filepath.Join(f.basePath, "operations", opID+".json")
+}
+
+// operationCustomization holds the user-editable fields for an operation
+type operationCustomization struct {
+	ID              string                  `json:"id"`
+	SignatureConfig *models.SignatureConfig `json:"signatureConfig,omitempty"`
+}
+
+// saveOperationCustomization persists the customisable fields of an operation to disk.
+func (f *FileStorage) saveOperationCustomization(op *models.Operation) error {
+	custom := &operationCustomization{
+		ID:              op.ID,
+		SignatureConfig: op.SignatureConfig,
+	}
+
+	data, err := json.MarshalIndent(custom, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(f.operationCustomizationPath(op.ID), data, 0644)
+}
+
+// loadOperationCustomization loads the stored customisation for an operation from disk.
+// Returns nil without error when no customization file exists yet.
+func (f *FileStorage) loadOperationCustomization(opID string) (*operationCustomization, error) {
+	data, err := os.ReadFile(f.operationCustomizationPath(opID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	var custom operationCustomization
+	if err := json.Unmarshal(data, &custom); err != nil {
+		return nil, err
+	}
+
+	return &custom, nil
+}
+
 // CreateSpec creates a new spec
 func (f *FileStorage) CreateSpec(spec *models.Spec) error {
 	f.mu.Lock()
@@ -453,12 +503,16 @@ func (f *FileStorage) GetAllOperations() ([]*models.Operation, error) {
 	return f.memory.GetAllOperations()
 }
 
-// UpdateOperation updates an operation (in-memory only, not persisted)
+// UpdateOperation updates an operation and persists its customisable fields (e.g. SignatureConfig)
 func (f *FileStorage) UpdateOperation(op *models.Operation) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.memory.UpdateOperation(op)
+	if err := f.memory.UpdateOperation(op); err != nil {
+		return err
+	}
+
+	return f.saveOperationCustomization(op)
 }
 
 // DeleteOperation deletes an operation (in-memory only)

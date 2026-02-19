@@ -10,10 +10,11 @@ type Condition struct {
 
 // Supported condition sources
 const (
-	SourcePath   = "path"
-	SourceQuery  = "query"
-	SourceHeader = "header"
-	SourceBody   = "body"
+	SourcePath      = "path"
+	SourceQuery     = "query"
+	SourceHeader    = "header"
+	SourceBody      = "body"
+	SourceSignature = "signature" // Matches against a pre-computed request signature hash
 )
 
 // Supported condition operators
@@ -35,7 +36,7 @@ const (
 
 // ValidSources returns all valid condition sources
 func ValidSources() []string {
-	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody}
+	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody, SourceSignature}
 }
 
 // ValidOperators returns all valid condition operators

@@ -1044,3 +1044,373 @@ func TestToggleExampleFallback(t *testing.T) {
 		t.Error("Expected example fallback to be disabled")
 	}
 }
+
+// ---- SetBackendURI ----
+
+func TestSetBackendURI(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API"}
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id/backend", handler.SetBackendURI)
+
+	body := map[string]string{"backendUri": "http://my-backend:9090"}
+	jsonBody, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/backend", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetSpec("spec-1")
+	if updated.BackendURI != "http://my-backend:9090" {
+		t.Errorf("expected backendUri to be set, got %q", updated.BackendURI)
+	}
+}
+
+func TestSetBackendURI_ClearDisablesProxyMode(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://old", ProxyMode: true}
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id/backend", handler.SetBackendURI)
+
+	body := map[string]string{"backendUri": ""} // clear
+	jsonBody, _ := json.Marshal(body)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/backend", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetSpec("spec-1")
+	if updated.ProxyMode {
+		t.Error("expected ProxyMode to be disabled when backendUri is cleared")
+	}
+}
+
+func TestSetBackendURI_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/backend", handler.SetBackendURI)
+
+	body := map[string]string{"backendUri": "http://x"}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/missing/backend", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// ---- ToggleProxyMode ----
+
+func TestToggleProxyMode_Enable(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"}
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id/proxy-mode", handler.ToggleProxyMode)
+
+	body := map[string]bool{"enabled": true}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/proxy-mode", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetSpec("spec-1")
+	if !updated.ProxyMode {
+		t.Error("expected ProxyMode to be enabled")
+	}
+}
+
+func TestToggleProxyMode_EnableWithoutBackendURI(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API"} // no BackendURI
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id/proxy-mode", handler.ToggleProxyMode)
+
+	body := map[string]bool{"enabled": true}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/proxy-mode", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestToggleProxyMode_Toggle(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://be", ProxyMode: false}
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id/proxy-mode", handler.ToggleProxyMode)
+
+	// No body → toggles
+	req := httptest.NewRequest("PUT", "/specs/spec-1/proxy-mode", bytes.NewReader([]byte(`{invalid json`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetSpec("spec-1")
+	if !updated.ProxyMode {
+		t.Error("expected ProxyMode to be toggled on")
+	}
+}
+
+func TestToggleProxyMode_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/proxy-mode", handler.ToggleProxyMode)
+
+	req := httptest.NewRequest("PUT", "/specs/missing/proxy-mode", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// ---- GetSignatureConfig / UpdateSignatureConfig ----
+
+func TestGetSignatureConfig_Default(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
+
+	r.GET("/operations/:id/signature", handler.GetSignatureConfig)
+	req := httptest.NewRequest("GET", "/operations/op-1/signature", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestGetSignatureConfig_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.GET("/operations/:id/signature", handler.GetSignatureConfig)
+
+	req := httptest.NewRequest("GET", "/operations/missing/signature", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateSignatureConfig(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
+
+	r.PUT("/operations/:id/signature", handler.UpdateSignatureConfig)
+
+	body := map[string]interface{}{
+		"signatureConfig": map[string]interface{}{
+			"pathParams":    []string{"id"},
+			"queryParams":   []string{},
+			"headers":       []string{"X-Tenant"},
+			"includeBody":   false,
+			"bodyJsonPaths": []string{},
+		},
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/operations/op-1/signature", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetOperation("op-1")
+	if updated.SignatureConfig == nil {
+		t.Fatal("expected SignatureConfig to be set")
+	}
+	if len(updated.SignatureConfig.PathParams) != 1 || updated.SignatureConfig.PathParams[0] != "id" {
+		t.Errorf("unexpected PathParams: %v", updated.SignatureConfig.PathParams)
+	}
+}
+
+func TestUpdateSignatureConfig_ClearConfig(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	op := &models.Operation{
+		ID:     "op-1",
+		SpecID: "spec-1",
+		SignatureConfig: &models.SignatureConfig{
+			PathParams: []string{"id"},
+		},
+	}
+	store.CreateOperation(op)
+
+	r.PUT("/operations/:id/signature", handler.UpdateSignatureConfig)
+
+	body := map[string]interface{}{"signatureConfig": nil}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/operations/op-1/signature", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+
+	updated, _ := store.GetOperation("op-1")
+	if updated.SignatureConfig != nil {
+		t.Error("expected SignatureConfig to be cleared")
+	}
+}
+
+func TestUpdateSignatureConfig_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/operations/:id/signature", handler.UpdateSignatureConfig)
+
+	body := map[string]interface{}{"signatureConfig": nil}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/operations/missing/signature", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+// ---- ValidateTemplate ----
+
+func TestValidateTemplate_Valid(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.POST("/validate-template", handler.ValidateTemplate)
+
+	body := map[string]string{"body": `{"id": "{{path "id"}}"}`}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/validate-template", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestValidateTemplate_Invalid(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.POST("/validate-template", handler.ValidateTemplate)
+
+	body := map[string]string{"body": `{{.unclosed`}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/validate-template", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestValidateTemplate_InvalidJSON(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.POST("/validate-template", handler.ValidateTemplate)
+
+	req := httptest.NewRequest("POST", "/validate-template", bytes.NewReader([]byte("not-json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+// ---- UpdateSpec with backend/proxyMode fields ----
+
+func TestUpdateSpec_WithBackendAndProxyMode(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://be"}
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id", handler.UpdateSpec)
+
+	trueVal := true
+	update := map[string]interface{}{
+		"backendUri": "http://new-backend",
+		"proxyMode":  trueVal,
+	}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updated, _ := store.GetSpec("spec-1")
+	if updated.BackendURI != "http://new-backend" {
+		t.Errorf("expected backendUri updated, got %q", updated.BackendURI)
+	}
+	if !updated.ProxyMode {
+		t.Error("expected ProxyMode to be enabled")
+	}
+}
+
+func TestUpdateSpec_ProxyModeWithoutBackendURI(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	spec := &models.Spec{ID: "spec-1", Name: "API"} // no BackendURI
+	store.CreateSpec(spec)
+
+	r.PUT("/specs/:id", handler.UpdateSpec)
+
+	trueVal := true
+	update := map[string]interface{}{"proxyMode": trueVal}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 when enabling proxyMode without backendUri, got %d", w.Code)
+	}
+}

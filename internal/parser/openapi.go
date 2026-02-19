@@ -48,6 +48,15 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 	specID := uuid.New().String()
 	now := time.Now()
 
+	// Extract default backend URI from the first non-templated server entry
+	defaultBackendURI := ""
+	for _, srv := range doc.Servers {
+		if srv != nil && srv.URL != "" && !strings.Contains(srv.URL, "{") {
+			defaultBackendURI = strings.TrimRight(srv.URL, "/")
+			break
+		}
+	}
+
 	spec := &models.Spec{
 		ID:                 specID,
 		Name:               doc.Info.Title,
@@ -58,6 +67,7 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 		Enabled:            true,
 		Tracing:            false,
 		UseExampleFallback: true, // Enable example fallback by default
+		BackendURI:         defaultBackendURI,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}

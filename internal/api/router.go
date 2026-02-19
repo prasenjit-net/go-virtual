@@ -65,12 +65,16 @@ func (r *Router) setupRoutes() {
 		api.PUT("/specs/:id/disable", r.handler.DisableSpec)
 		api.PUT("/specs/:id/tracing", r.handler.ToggleTracing)
 		api.PUT("/specs/:id/example-fallback", r.handler.ToggleExampleFallback)
+		api.PUT("/specs/:id/backend", r.handler.SetBackendURI)
+		api.PUT("/specs/:id/proxy-mode", r.handler.ToggleProxyMode)
 		api.GET("/specs/:id/tags", r.handler.GetSpecTags)
 		api.PUT("/specs/:id/tags", r.handler.UpdateSpecTags)
 
 		// Operations
 		api.GET("/specs/:id/operations", r.handler.ListOperations)
 		api.GET("/operations/:id", r.handler.GetOperation)
+		api.GET("/operations/:id/signature", r.handler.GetSignatureConfig)
+		api.PUT("/operations/:id/signature", r.handler.UpdateSignatureConfig)
 
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)

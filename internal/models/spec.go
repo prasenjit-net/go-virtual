@@ -16,6 +16,8 @@ type Spec struct {
 	Tracing            bool        `json:"tracing"`            // Enable request tracing
 	UseExampleFallback bool        `json:"useExampleFallback"` // Use spec examples as fallback responses
 	EnabledTags        []string    `json:"enabledTags"`
+	BackendURI         string      `json:"backendUri"`  // Upstream backend URI for proxy recording mode
+	ProxyMode          bool        `json:"proxyMode"`   // Forward requests to backend and record responses
 	CreatedAt          time.Time   `json:"createdAt"`
 	UpdatedAt          time.Time   `json:"updatedAt"`
 	Operations         []Operation `json:"operations,omitempty"`
@@ -37,4 +39,6 @@ type SpecUpdate struct {
 	Enabled            *bool   `json:"enabled,omitempty"`
 	Tracing            *bool   `json:"tracing,omitempty"`
 	UseExampleFallback *bool   `json:"useExampleFallback,omitempty"`
+	BackendURI         *string `json:"backendUri,omitempty"`
+	ProxyMode          *bool   `json:"proxyMode,omitempty"`
 }
