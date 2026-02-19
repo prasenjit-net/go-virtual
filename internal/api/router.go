@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -54,6 +55,9 @@ func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingSe
 
 // setupRoutes configures all routes
 func (r *Router) setupRoutes() {
+	// Prometheus metrics endpoint — always available, even in headless mode.
+	r.engine.GET("/_prometheus", gin.WrapH(promhttp.Handler()))
+
 	if r.headless {
 		// Headless mode: no admin API, no UI – proxy only
 		r.engine.NoRoute(func(c *gin.Context) {

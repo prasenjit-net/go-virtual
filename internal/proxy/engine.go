@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/prasenjit/go-virtual/internal/condition"
+	"github.com/prasenjit/go-virtual/internal/metrics"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -97,6 +98,9 @@ func (e *Engine) ReloadRoutes() error {
 		sortRoutes(e.routes[method])
 	}
 
+	// Update active-specs gauge
+	metrics.ActiveSpecsTotal.Set(float64(len(specs)))
+
 	return nil
 }
 
@@ -166,6 +170,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if matchedRoute == nil {
 		// Record trace for unmatched request if any spec has tracing enabled
 		e.recordUnmatchedTrace(r, requestBody, startTime)
+		metrics.UnmatchedRequestsTotal.Inc()
 		http.NotFound(w, r)
 		return
 	}
@@ -215,6 +220,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			duration,
 			isError,
 		)
+		metrics.RequestsTotal.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			metrics.StatusLabel(statusCode),
+		).Inc()
+		metrics.RequestDurationSeconds.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+		).Observe(duration.Seconds())
+		metrics.ProxyRequestsTotal.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.spec.BackendURI,
+		).Inc()
 		if matchedRoute.spec.Tracing {
 			trace := &models.Trace{
 				SpecID:        matchedRoute.spec.ID,
@@ -318,6 +338,17 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			duration,
 			isError,
 		)
+		metrics.RequestsTotal.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			metrics.StatusLabel(example.StatusCode),
+		).Inc()
+		metrics.RequestDurationSeconds.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+		).Observe(duration.Seconds())
 
 		// Record trace if enabled
 		if matchedRoute.spec.Tracing {
@@ -408,6 +439,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		duration,
 		isError,
 	)
+	metrics.RequestsTotal.WithLabelValues(
+		matchedRoute.spec.ID,
+		matchedRoute.operation.Method,
+		matchedRoute.operation.Path,
+		metrics.StatusLabel(matchedConfig.StatusCode),
+	).Inc()
+	metrics.RequestDurationSeconds.WithLabelValues(
+		matchedRoute.spec.ID,
+		matchedRoute.operation.Method,
+		matchedRoute.operation.Path,
+	).Observe(duration.Seconds())
+	metrics.ResponseConfigMatchesTotal.WithLabelValues(
+		matchedRoute.operation.ID,
+		matchedConfig.Name,
+	).Inc()
 
 	// Record trace if tracing is enabled
 	if matchedRoute.spec.Tracing {
