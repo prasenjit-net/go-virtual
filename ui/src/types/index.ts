@@ -136,6 +136,10 @@ export interface Trace {
     response: TraceResponse;
     matchedConfigId?: string;
     matchedConfig?: string;
+    // Proxy recording fields
+    proxyMode?: boolean;
+    signature?: string;
+    backendUri?: string;
 }
 
 export interface TraceRequest {

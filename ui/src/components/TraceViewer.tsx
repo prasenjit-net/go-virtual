@@ -7,7 +7,12 @@ import {
     ChevronRight,
     Clock,
     ArrowDownUp,
-    RefreshCw
+    RefreshCw,
+    Radio,
+    Fingerprint,
+    Globe,
+    Copy,
+    Check
 } from 'lucide-react'
 import clsx from 'clsx'
 import { tracesApi, specsApi } from '../services/api'
@@ -221,19 +226,25 @@ export default function TraceViewer() {
                                     )}
                                 >
                                     <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center">
+                                        <div className="flex items-center gap-2 min-w-0">
                                             <span className={clsx(
-                                                'px-2 py-0.5 rounded text-xs font-bold uppercase',
+                                                'px-2 py-0.5 rounded text-xs font-bold uppercase shrink-0',
                                                 methodColors[trace.request.method] || 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
                                             )}>
                                                 {trace.request.method}
                                             </span>
-                                            <span className="ml-2 font-mono text-sm text-gray-900 dark:text-slate-100 truncate max-w-[200px]">
+                                            {trace.proxyMode && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 shrink-0">
+                                                    <Radio className="w-2.5 h-2.5" />
+                                                    Proxy
+                                                </span>
+                                            )}
+                                            <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
                                                 {trace.request.path}
                                             </span>
                                         </div>
                                         <span className={clsx(
-                                            'px-2 py-0.5 rounded text-xs font-medium',
+                                            'px-2 py-0.5 rounded text-xs font-medium shrink-0 ml-2',
                                             trace.response.statusCode >= 200 && trace.response.statusCode < 300
                                                 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
                                                 : trace.response.statusCode >= 400
@@ -250,6 +261,13 @@ export default function TraceViewer() {
                                         {formatDuration(trace.duration)}
                                         <span className="mx-2">•</span>
                                         {trace.specName}
+                                        {trace.signature && (
+                                            <>
+                                                <span className="mx-2">•</span>
+                                                <Fingerprint className="w-3 h-3 mr-1" />
+                                                <span className="font-mono">{trace.signature.substring(0, 8)}</span>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             ))}
@@ -268,100 +286,7 @@ export default function TraceViewer() {
                 {/* Trace Detail */}
                 <div className="w-1/2 overflow-y-auto bg-gray-50 dark:bg-slate-950">
                     {selectedTrace ? (
-                        <div className="p-6">
-                            {/* Request */}
-                            <div className="mb-6">
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center">
-                                    <ArrowDownUp className="w-4 h-4 mr-2 text-blue-600" />
-                                    Request
-                                </h3>
-                                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
-                                    <div className="p-4 border-b border-gray-100 dark:border-slate-800">
-                                        <span className={clsx(
-                                            'px-2 py-1 rounded text-sm font-bold uppercase mr-2',
-                                            methodColors[selectedTrace.request.method]
-                                        )}>
-                                            {selectedTrace.request.method}
-                                        </span>
-                                        <span className="font-mono text-sm text-gray-900 dark:text-slate-100">{selectedTrace.request.url}</span>
-                                    </div>
-                                    {Object.keys(selectedTrace.request.headers).length > 0 && (
-                                        <div className="p-4 border-b border-gray-100 dark:border-slate-800">
-                                            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Headers</h4>
-                                            <div className="font-mono text-xs space-y-1">
-                                                {Object.entries(selectedTrace.request.headers).map(([key, values]) => (
-                                                    <div key={key}>
-                                                        <span className="text-purple-600">{key}:</span>{' '}
-                                                        <span className="text-gray-600 dark:text-slate-300">{values.join(', ')}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {selectedTrace.request.body && (
-                                        <div className="p-4">
-                                            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Body</h4>
-                                            <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto">
-                                                {tryFormatJson(selectedTrace.request.body)}
-                                            </pre>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Response */}
-                            <div>
-                                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center">
-                                    <ArrowDownUp className="w-4 h-4 mr-2 text-green-600 rotate-180" />
-                                    Response
-                                </h3>
-                                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
-                                    <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
-                                        <span className={clsx(
-                                            'px-2 py-1 rounded text-sm font-bold',
-                                            selectedTrace.response.statusCode >= 200 && selectedTrace.response.statusCode < 300
-                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                                : selectedTrace.response.statusCode >= 400
-                                                    ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-                                                    : 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
-                                        )}>
-                                            {selectedTrace.response.statusCode}
-                                        </span>
-                                        <span className="text-sm text-gray-500 dark:text-slate-400">
-                                            {formatDuration(selectedTrace.duration)}
-                                        </span>
-                                    </div>
-                                    {Object.keys(selectedTrace.response.headers).length > 0 && (
-                                        <div className="p-4 border-b border-gray-100 dark:border-slate-800">
-                                            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Headers</h4>
-                                            <div className="font-mono text-xs space-y-1">
-                                                {Object.entries(selectedTrace.response.headers).map(([key, values]) => (
-                                                    <div key={key}>
-                                                        <span className="text-purple-600">{key}:</span>{' '}
-                                                        <span className="text-gray-600 dark:text-slate-300">{values.join(', ')}</span>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                    {selectedTrace.response.body && (
-                                        <div className="p-4">
-                                            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Body</h4>
-                                            <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto">
-                                                {tryFormatJson(selectedTrace.response.body)}
-                                            </pre>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Matched Config */}
-                            {selectedTrace.matchedConfig && (
-                                <div className="mt-4 text-sm text-gray-500 dark:text-slate-400">
-                                    Matched config: <span className="font-medium">{selectedTrace.matchedConfig}</span>
-                                </div>
-                            )}
-                        </div>
+                        <TraceDetail trace={selectedTrace} formatDuration={formatDuration} />
                     ) : (
                         <div className="h-full flex items-center justify-center text-gray-500 dark:text-slate-400">
                             <div className="text-center">
@@ -382,4 +307,191 @@ function tryFormatJson(str: string): string {
     } catch {
         return str
     }
+}
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false)
+    const handleCopy = () => {
+        navigator.clipboard.writeText(text).then(() => {
+            setCopied(true)
+            setTimeout(() => setCopied(false), 1500)
+        })
+    }
+    return (
+        <button
+            onClick={handleCopy}
+            className="ml-2 p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors text-gray-400 hover:text-gray-700 dark:hover:text-slate-200"
+            title="Copy to clipboard"
+        >
+            {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+    )
+}
+
+function HeadersBlock({ headers }: { headers: Record<string, string[]> }) {
+    const entries = Object.entries(headers)
+    if (entries.length === 0) return null
+    return (
+        <div className="p-4 border-b border-gray-100 dark:border-slate-800">
+            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Headers</h4>
+            <div className="font-mono text-xs space-y-1">
+                {entries.map(([key, values]) => (
+                    <div key={key}>
+                        <span className="text-purple-600 dark:text-purple-400">{key}:</span>{' '}
+                        <span className="text-gray-600 dark:text-slate-300">{values.join(', ')}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+function BodyBlock({ body }: { body: string }) {
+    if (!body) return null
+    return (
+        <div className="p-4">
+            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Body</h4>
+            <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all">
+                {tryFormatJson(body)}
+            </pre>
+        </div>
+    )
+}
+
+function TraceDetail({
+    trace,
+    formatDuration,
+}: {
+    trace: Trace
+    formatDuration: (ns: number) => string
+}) {
+    return (
+        <div className="p-6 space-y-6">
+            {/* Proxy Recording Banner */}
+            {trace.proxyMode && (
+                <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                        <span className="text-sm font-semibold text-violet-800 dark:text-violet-200">
+                            Proxy Recording
+                        </span>
+                        <span className="ml-auto text-xs text-violet-500 dark:text-violet-400">
+                            {formatDuration(trace.duration)}
+                        </span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                        {/* Backend URI */}
+                        {trace.backendUri && (
+                            <div className="flex items-start gap-2">
+                                <Globe className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400 mt-0.5 shrink-0" />
+                                <div className="min-w-0">
+                                    <span className="text-xs text-violet-600 dark:text-violet-400 uppercase font-medium">Backend</span>
+                                    <div className="flex items-center gap-1">
+                                        <span className="font-mono text-xs text-violet-900 dark:text-violet-100 break-all">
+                                            {trace.backendUri}
+                                        </span>
+                                        <CopyButton text={trace.backendUri} />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        {/* Signature */}
+                        {trace.signature && (
+                            <div className="flex items-start gap-2">
+                                <Fingerprint className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400 mt-0.5 shrink-0" />
+                                <div className="min-w-0">
+                                    <span className="text-xs text-violet-600 dark:text-violet-400 uppercase font-medium">Request Signature</span>
+                                    <div className="flex items-center gap-1">
+                                        <span className="font-mono text-xs text-violet-900 dark:text-violet-100 break-all">
+                                            {trace.signature}
+                                        </span>
+                                        <CopyButton text={trace.signature} />
+                                    </div>
+                                    <p className="text-xs text-violet-500 dark:text-violet-400 mt-0.5">
+                                        This hash uniquely identifies the request and is used to match replayed responses.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Request */}
+            <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center">
+                    <ArrowDownUp className="w-4 h-4 mr-2 text-blue-600" />
+                    {trace.proxyMode ? 'Client Request → Backend' : 'Request'}
+                </h3>
+                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
+                    <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center gap-2 flex-wrap">
+                        <span className={clsx(
+                            'px-2 py-1 rounded text-sm font-bold uppercase',
+                            methodColors[trace.request.method] || 'bg-gray-100 text-gray-700'
+                        )}>
+                            {trace.request.method}
+                        </span>
+                        <span className="font-mono text-sm text-gray-900 dark:text-slate-100 break-all">{trace.request.url}</span>
+                    </div>
+                    <HeadersBlock headers={trace.request.headers} />
+                    <BodyBlock body={trace.request.body} />
+                    {/* Query params */}
+                    {Object.keys(trace.request.query ?? {}).length > 0 && (
+                        <div className="p-4 border-t border-gray-100 dark:border-slate-800">
+                            <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Query Parameters</h4>
+                            <div className="font-mono text-xs space-y-1">
+                                {Object.entries(trace.request.query).map(([key, values]) => (
+                                    <div key={key}>
+                                        <span className="text-blue-600 dark:text-blue-400">{key}:</span>{' '}
+                                        <span className="text-gray-600 dark:text-slate-300">{values.join(', ')}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Response */}
+            <div>
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center">
+                    <ArrowDownUp className="w-4 h-4 mr-2 text-green-600 rotate-180" />
+                    {trace.proxyMode ? 'Backend Response → Client' : 'Response'}
+                </h3>
+                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
+                    <div className="p-4 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <span className={clsx(
+                                'px-2 py-1 rounded text-sm font-bold',
+                                trace.response.statusCode >= 200 && trace.response.statusCode < 300
+                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                    : trace.response.statusCode >= 400
+                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                                        : 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
+                            )}>
+                                {trace.response.statusCode}
+                            </span>
+                            {trace.proxyMode && (
+                                <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">
+                                    Recorded &amp; saved for replay
+                                </span>
+                            )}
+                        </div>
+                        <span className="text-sm text-gray-500 dark:text-slate-400">
+                            {formatDuration(trace.duration)}
+                        </span>
+                    </div>
+                    <HeadersBlock headers={trace.response.headers} />
+                    <BodyBlock body={trace.response.body} />
+                </div>
+            </div>
+
+            {/* Matched Config (virtual mode) */}
+            {!trace.proxyMode && trace.matchedConfig && (
+                <div className="text-sm text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
+                    Matched config: <span className="font-medium text-gray-700 dark:text-slate-200">{trace.matchedConfig}</span>
+                </div>
+            )}
+        </div>
+    )
 }

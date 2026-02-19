@@ -244,3 +244,74 @@ func TestLoggingConfig(t *testing.T) {
 		t.Errorf("Expected format 'text', got %q", cfg.Format)
 	}
 }
+
+func TestLoad_RelativeStoragePath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Use a relative path; Load() should convert it to absolute
+	configContent := `
+storage:
+  type: file
+  path: ./relative/data
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// The path should have been made absolute
+	if !filepath.IsAbs(cfg.Storage.Path) {
+		t.Errorf("Expected storage path to be absolute after Load(), got %q", cfg.Storage.Path)
+	}
+	if filepath.Base(cfg.Storage.Path) != "data" {
+		t.Errorf("Expected path to end with 'data', got %q", cfg.Storage.Path)
+	}
+}
+
+func TestLoad_TLSConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+server:
+  tls:
+    enabled: true
+    certFile: /certs/server.crt
+    keyFile: /certs/server.key
+    autoGenerate: false
+    storePath: /certs
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if !cfg.Server.TLS.Enabled {
+		t.Error("Expected TLS to be enabled")
+	}
+	if cfg.Server.TLS.CertFile != "/certs/server.crt" {
+		t.Errorf("Expected certFile '/certs/server.crt', got %q", cfg.Server.TLS.CertFile)
+	}
+	if cfg.Server.TLS.AutoGenerate {
+		t.Error("Expected autoGenerate to be false")
+	}
+}
+
+func TestDefaultTLSConfig(t *testing.T) {
+	cfg := Default()
+	if cfg.Server.TLS.Enabled {
+		t.Error("Expected TLS to be disabled by default")
+	}
+	if !cfg.Server.TLS.AutoGenerate {
+		t.Error("Expected autoGenerate to be true by default")
+	}
+}

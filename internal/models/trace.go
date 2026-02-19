@@ -17,6 +17,11 @@ type Trace struct {
 	Response        TraceResponse `json:"response"`
 	MatchedConfigID string        `json:"matchedConfigId,omitempty"`
 	MatchedConfig   string        `json:"matchedConfig,omitempty"` // Name of matched response config
+
+	// Proxy recording fields – populated when the trace is recorded in proxy mode
+	ProxyMode  bool   `json:"proxyMode,omitempty"`  // true when the request was forwarded to a real backend
+	Signature  string `json:"signature,omitempty"`  // deterministic hash of the request used for deduplication
+	BackendURI string `json:"backendUri,omitempty"` // backend URL that handled the request
 }
 
 // TraceRequest represents the captured request

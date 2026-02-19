@@ -224,6 +224,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Timestamp:     startTime,
 				Duration:      duration.Nanoseconds(),
 				MatchedConfig: "[proxy-recorded]",
+				ProxyMode:     true,
+				Signature:     signature,
+				BackendURI:    matchedRoute.spec.BackendURI,
 				Request: models.TraceRequest{
 					Method:  r.Method,
 					URL:     r.URL.String(),
