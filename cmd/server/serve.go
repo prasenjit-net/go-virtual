@@ -43,19 +43,22 @@ or specify a custom config file with the --config flag.`,
 }
 
 var (
-	devMode   bool
-	portFlag  int
-	tlsFlag   bool
+	devMode     bool
+	portFlag    int
+	tlsFlag     bool
+	headlessFlag bool
 )
 
 func init() {
 	serveCmd.Flags().BoolVar(&devMode, "dev", false, "Enable development mode (serve UI from filesystem)")
 	serveCmd.Flags().IntVarP(&portFlag, "port", "p", 0, "Override server port")
 	serveCmd.Flags().BoolVar(&tlsFlag, "tls", false, "Enable TLS (overrides config)")
+	serveCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Headless mode: disable admin API and UI, serve proxy only")
 
 	// Bind flags to viper
 	viper.BindPFlag("server.port", serveCmd.Flags().Lookup("port"))
 	viper.BindPFlag("server.tls.enabled", serveCmd.Flags().Lookup("tls"))
+	viper.BindPFlag("server.headless", serveCmd.Flags().Lookup("headless"))
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -109,21 +112,29 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize proxy engine
 	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService)
 
-	// Setup router
-	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine)
+	// Resolve headless mode (flag overrides config)
+	headless := viper.GetBool("server.headless")
+	if headlessFlag {
+		headless = true
+	}
 
-	// Setup UI serving
-	if devMode {
-		// In dev mode, serve UI from filesystem
-		log.Println("Development mode: Serving UI from ./ui/dist")
-		router.ServeUIFromFS("./ui/dist")
-	} else {
-		// In production, serve embedded UI
-		uiFS, err := fs.Sub(govirtual.EmbeddedUI, "ui/dist")
-		if err != nil {
-			log.Printf("Warning: Embedded UI not available: %v", err)
+	// Setup router
+	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless)
+
+	// Setup UI serving (skipped in headless mode)
+	if !headless {
+		if devMode {
+			// In dev mode, serve UI from filesystem
+			log.Println("Development mode: Serving UI from ./ui/dist")
+			router.ServeUIFromFS("./ui/dist")
 		} else {
-			router.ServeEmbeddedUI(uiFS)
+			// In production, serve embedded UI
+			uiFS, err := fs.Sub(govirtual.EmbeddedUI, "ui/dist")
+			if err != nil {
+				log.Printf("Warning: Embedded UI not available: %v", err)
+			} else {
+				router.ServeEmbeddedUI(uiFS)
+			}
 		}
 	}
 
@@ -139,9 +150,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Start server
 	var cleanup func(context.Context) error
 	if tlsEnabled {
-		cleanup = startTLSServer(server, addr)
+		cleanup = startTLSServer(server, addr, headless)
 	} else {
-		startHTTPServer(server, addr)
+		startHTTPServer(server, addr, headless)
 	}
 
 	// Wait for interrupt signal
@@ -172,12 +183,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 }
 
 // startHTTPServer starts a plain HTTP server
-func startHTTPServer(server *http.Server, addr string) {
+func startHTTPServer(server *http.Server, addr string, headless bool) {
 	server.Addr = addr
 	go func() {
 		log.Printf("Starting Go-Virtual server on %s", addr)
-		log.Printf("Admin UI available at http://%s/_ui/", addr)
-		log.Printf("Admin API available at http://%s/_api/", addr)
+		if headless {
+			log.Printf("Headless mode: admin API and UI disabled, serving proxy only")
+		} else {
+			log.Printf("Admin UI available at http://%s/_ui/", addr)
+			log.Printf("Admin API available at http://%s/_api/", addr)
+		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
@@ -186,7 +201,7 @@ func startHTTPServer(server *http.Server, addr string) {
 
 // startTLSServer starts a server that handles both HTTP and HTTPS on the same port
 // Returns a cleanup function that should be called during shutdown
-func startTLSServer(server *http.Server, addr string) func(context.Context) error {
+func startTLSServer(server *http.Server, addr string, headless bool) func(context.Context) error {
 	// Get TLS configuration from viper
 	certFile := viper.GetString("server.tls.certFile")
 	keyFile := viper.GetString("server.tls.keyFile")
@@ -241,8 +256,12 @@ func startTLSServer(server *http.Server, addr string) func(context.Context) erro
 
 	go func() {
 		log.Printf("Starting Go-Virtual server on %s (HTTP & HTTPS)", addr)
-		log.Printf("Admin UI available at https://%s/_ui/ (or http://%s/_ui/)", addr, addr)
-		log.Printf("Admin API available at https://%s/_api/ (or http://%s/_api/)", addr, addr)
+		if headless {
+			log.Printf("Headless mode: admin API and UI disabled, serving proxy only")
+		} else {
+			log.Printf("Admin UI available at https://%s/_ui/ (or http://%s/_ui/)", addr, addr)
+			log.Printf("Admin API available at https://%s/_api/ (or http://%s/_api/)", addr, addr)
+		}
 
 		// Serve HTTPS
 		go func() {

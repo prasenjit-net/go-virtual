@@ -18,9 +18,10 @@ type Config struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port int       `yaml:"port"`
-	Host string    `yaml:"host"`
-	TLS  TLSConfig `yaml:"tls"`
+	Port     int       `yaml:"port"`
+	Host     string    `yaml:"host"`
+	TLS      TLSConfig `yaml:"tls"`
+	Headless bool      `yaml:"headless"` // Disable admin API and UI; serve only proxy responses from saved data
 }
 
 // TLSConfig holds TLS configuration

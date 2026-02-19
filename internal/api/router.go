@@ -22,10 +22,11 @@ type Router struct {
 	tracingService *tracing.Service
 	proxyEngine    *proxy.Engine
 	handler        *Handler
+	headless       bool
 }
 
 // NewRouter creates a new router
-func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, proxyEngine *proxy.Engine) *Router {
+func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, proxyEngine *proxy.Engine, headless bool) *Router {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := &Router{
@@ -34,6 +35,7 @@ func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingSe
 		statsCollector: statsCollector,
 		tracingService: tracingService,
 		proxyEngine:    proxyEngine,
+		headless:       headless,
 	}
 
 	// Create handler
@@ -52,6 +54,14 @@ func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingSe
 
 // setupRoutes configures all routes
 func (r *Router) setupRoutes() {
+	if r.headless {
+		// Headless mode: no admin API, no UI – proxy only
+		r.engine.NoRoute(func(c *gin.Context) {
+			r.proxyEngine.ServeHTTP(c.Writer, c.Request)
+		})
+		return
+	}
+
 	// Admin API routes
 	api := r.engine.Group("/_api")
 	{

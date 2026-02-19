@@ -20,7 +20,7 @@ func setupTestRouter() *Router {
 	collector := stats.NewCollector()
 	tracingSvc := tracing.NewService(100)
 	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
-	return NewRouter(store, collector, tracingSvc, proxyEngine)
+	return NewRouter(store, collector, tracingSvc, proxyEngine, false)
 }
 
 func TestRouter_CORSOptions(t *testing.T) {
@@ -106,5 +106,40 @@ func TestServeEmbeddedUI(t *testing.T) {
 	router.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusMovedPermanently {
 		t.Fatalf("expected status 301, got %d", w.Code)
+	}
+}
+
+func TestHeadlessRouter_AdminAPIDisabled(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
+	router := NewRouter(store, collector, tracingSvc, proxyEngine, true)
+
+	// Admin API should return 404 (not registered)
+	for _, path := range []string{"/_api/health", "/_api/specs", "/_api/routes"} {
+		req := httptest.NewRequest("GET", path, nil)
+		w := httptest.NewRecorder()
+		router.Handler().ServeHTTP(w, req)
+		if w.Code == http.StatusOK {
+			t.Errorf("expected admin route %s to be disabled in headless mode, got 200", path)
+		}
+	}
+}
+
+func TestHeadlessRouter_UIDisabled(t *testing.T) {
+	store := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
+	router := NewRouter(store, collector, tracingSvc, proxyEngine, true)
+
+	// UI routes should not be registered; request goes to proxy (which returns 404 for no match)
+	req := httptest.NewRequest("GET", "/_ui/", nil)
+	w := httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	// Proxy returns 404 because no spec matches /_ui/ — but it must NOT return 200 as if UI was served
+	if w.Code == http.StatusOK {
+		t.Errorf("expected /_ui/ to NOT be served in headless mode")
 	}
 }
