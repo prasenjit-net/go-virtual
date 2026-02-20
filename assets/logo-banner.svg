@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 110" role="img" aria-label="go-virtual — API Mock and Virtualization">
+  <defs>
+    <!-- Background -->
+    <linearGradient id="b-bg" x1="0" y1="0" x2="520" y2="110" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0c1828"/>
+      <stop offset="100%" stop-color="#172038"/>
+    </linearGradient>
+    <!-- Icon: left arm -->
+    <linearGradient id="b-la" x1="18" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    <!-- Icon: right arm -->
+    <linearGradient id="b-ra" x1="82" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <!-- Icon: centre node -->
+    <linearGradient id="b-cn" x1="39" y1="63" x2="61" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <!-- Icon: centre glow -->
+    <radialGradient id="b-glow" cx="50" cy="74" r="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Banner background -->
+  <rect width="520" height="110" rx="16" fill="url(#b-bg)"/>
+
+  <!-- ── Icon (100×100 content, scaled to 90×90, offset to centre vertically) ── -->
+  <g transform="translate(10, 5) scale(0.9)">
+    <!-- Dashed bypass line -->
+    <line x1="26" y1="22" x2="74" y2="22"
+          stroke="#475569" stroke-width="1.5" stroke-dasharray="3.5,3" opacity="0.5"/>
+    <!-- V left arm -->
+    <line x1="18" y1="22" x2="50" y2="74"
+          stroke="url(#b-la)" stroke-width="6" stroke-linecap="round"/>
+    <!-- V right arm -->
+    <line x1="82" y1="22" x2="50" y2="74"
+          stroke="url(#b-ra)" stroke-width="6" stroke-linecap="round"/>
+    <!-- Top-left node -->
+    <circle cx="18" cy="22" r="8.5" fill="#0c1828" stroke="#38bdf8" stroke-width="2.5"/>
+    <circle cx="18" cy="22" r="3.2" fill="#38bdf8"/>
+    <!-- Top-right node -->
+    <circle cx="82" cy="22" r="8.5" fill="#0c1828" stroke="#a78bfa" stroke-width="2.5"/>
+    <circle cx="82" cy="22" r="3.2" fill="#a78bfa"/>
+    <!-- Centre glow -->
+    <circle cx="50" cy="74" r="22" fill="url(#b-glow)"/>
+    <!-- Centre node -->
+    <circle cx="50" cy="74" r="11.5" fill="url(#b-cn)"/>
+    <!-- Three dots -->
+    <circle cx="43.5" cy="74" r="1.8" fill="white" opacity="0.7"/>
+    <circle cx="50"   cy="74" r="1.8" fill="white" opacity="0.95"/>
+    <circle cx="56.5" cy="74" r="1.8" fill="white" opacity="0.7"/>
+  </g>
+
+  <!-- Vertical divider -->
+  <line x1="107" y1="18" x2="107" y2="92" stroke="#1e3a5f" stroke-width="1" opacity="0.7"/>
+
+  <!-- ── Wordmark ── -->
+  <!-- "go-virtual" in monospace: "go" sky-blue, "-" slate, "virtual" violet -->
+  <text y="62" font-family="'SF Mono','Fira Code','Consolas','Courier New',monospace"
+        font-size="36" font-weight="700" letter-spacing="-0.5">
+    <tspan x="122" fill="#38bdf8">go</tspan><tspan fill="#475569">-</tspan><tspan fill="#818cf8">virtual</tspan>
+  </text>
+
+  <!-- Subtitle -->
+  <text x="124" y="83"
+        font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif"
+        font-size="13" fill="#475569" letter-spacing="2.2" font-weight="500">
+    API MOCK &amp; VIRTUALIZATION
+  </text>
+</svg>

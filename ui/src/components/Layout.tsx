@@ -4,12 +4,12 @@ import {
     LayoutDashboard,
     FileCode2,
     Activity,
-    Server,
     Sun,
     Moon,
     Monitor,
     Tags
 } from 'lucide-react'
+import { LogoFull } from './Logo'
 import clsx from 'clsx'
 
 const navItems = [
@@ -84,9 +84,8 @@ export default function Layout() {
             {/* Sidebar */}
             <aside className="w-64 h-screen sticky top-0 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col">
                 {/* Logo */}
-                <div className="h-16 flex items-center px-6 border-b border-gray-200 dark:border-slate-800">
-                    <Server className="w-8 h-8 text-primary-600" />
-                    <span className="ml-3 text-xl font-bold text-gray-900 dark:text-slate-100">Go-Virtual</span>
+                <div className="h-16 flex items-center px-5 border-b border-gray-200 dark:border-slate-800">
+                    <LogoFull iconSize={36} />
                 </div>
 
                 {/* Navigation */}

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="go-virtual logo">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="gv-bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0c1828"/>
+      <stop offset="100%" stop-color="#172038"/>
+    </linearGradient>
+    <!-- Left arm (client → virtual) -->
+    <linearGradient id="gv-la" x1="18" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    <!-- Right arm (server → virtual) -->
+    <linearGradient id="gv-ra" x1="82" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <!-- Centre node fill -->
+    <linearGradient id="gv-cn" x1="39" y1="63" x2="61" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+    <!-- Centre glow halo -->
+    <radialGradient id="gv-glow" cx="50" cy="74" r="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#38bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background rounded square -->
+  <rect width="100" height="100" rx="22" fill="url(#gv-bg)"/>
+
+  <!-- Dashed top line: the "direct" API route being intercepted by go-virtual -->
+  <line x1="26" y1="22" x2="74" y2="22"
+        stroke="#475569" stroke-width="1.5" stroke-dasharray="3.5,3" opacity="0.5"/>
+
+  <!-- V-shape — left arm (sky blue) -->
+  <line x1="18" y1="22" x2="50" y2="74"
+        stroke="url(#gv-la)" stroke-width="6" stroke-linecap="round"/>
+  <!-- V-shape — right arm (violet) -->
+  <line x1="82" y1="22" x2="50" y2="74"
+        stroke="url(#gv-ra)" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- Top-left endpoint node (client / request side) -->
+  <circle cx="18" cy="22" r="8.5" fill="#0c1828" stroke="#38bdf8" stroke-width="2.5"/>
+  <circle cx="18" cy="22" r="3.2" fill="#38bdf8"/>
+
+  <!-- Top-right endpoint node (server / response side) -->
+  <circle cx="82" cy="22" r="8.5" fill="#0c1828" stroke="#a78bfa" stroke-width="2.5"/>
+  <circle cx="82" cy="22" r="3.2" fill="#a78bfa"/>
+
+  <!-- Centre node ambient glow -->
+  <circle cx="50" cy="74" r="22" fill="url(#gv-glow)"/>
+
+  <!-- Centre node — the virtual proxy nexus -->
+  <circle cx="50" cy="74" r="11.5" fill="url(#gv-cn)"/>
+
+  <!-- Three dots inside centre node: active processing indicator -->
+  <circle cx="43.5" cy="74" r="1.8" fill="white" opacity="0.7"/>
+  <circle cx="50"   cy="74" r="1.8" fill="white" opacity="0.95"/>
+  <circle cx="56.5" cy="74" r="1.8" fill="white" opacity="0.7"/>
+</svg>

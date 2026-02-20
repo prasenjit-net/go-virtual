@@ -1,4 +1,20 @@
-# Go-Virtual
+<p align="center">
+  <img src="assets/logo-banner.svg" alt="go-virtual logo" width="520" />
+</p>
+
+<p align="center">
+  <strong>API Mock &amp; Virtualization for OpenAPI 3</strong><br/>
+  Configure dynamic mock responses, trace live traffic, and run chaos experiments — all from a single binary.
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#api-reference">API Reference</a>
+</p>
+
+---
 
 A powerful API proxy service for OpenAPI 3 specifications with configurable mock responses.
 
