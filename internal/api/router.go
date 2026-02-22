@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -24,11 +25,17 @@ type Router struct {
 	proxyEngine    *proxy.Engine
 	handler        *Handler
 	headless       bool
+	branding       config.BrandingConfig
 }
 
 // NewRouter creates a new router
-func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, proxyEngine *proxy.Engine, headless bool) *Router {
+func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, proxyEngine *proxy.Engine, headless bool, branding ...config.BrandingConfig) *Router {
 	gin.SetMode(gin.ReleaseMode)
+
+	var b config.BrandingConfig
+	if len(branding) > 0 {
+		b = branding[0]
+	}
 
 	r := &Router{
 		engine:         gin.New(),
@@ -37,10 +44,12 @@ func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingSe
 		tracingService: tracingService,
 		proxyEngine:    proxyEngine,
 		headless:       headless,
+		branding:       b,
 	}
 
 	// Create handler
 	r.handler = NewHandler(store, statsCollector, tracingService, proxyEngine)
+	r.handler.SetBranding(b)
 
 	// Setup middleware
 	r.engine.Use(gin.Recovery())
@@ -121,6 +130,7 @@ func (r *Router) setupRoutes() {
 		// Health
 		api.GET("/health", r.handler.HealthCheck)
 		api.GET("/version", r.handler.Version)
+		api.GET("/branding", r.handler.GetBranding)
 
 		// Template validation
 		api.POST("/templates/validate", r.handler.ValidateTemplate)

@@ -19,6 +19,7 @@ import (
 
 	govirtual "github.com/prasenjit/go-virtual"
 	"github.com/prasenjit/go-virtual/internal/api"
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -118,8 +119,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		headless = true
 	}
 
+	// Build branding config
+	branding := config.BrandingConfig{
+		AppTitle:    viper.GetString("branding.appTitle"),
+		AppSubtitle: viper.GetString("branding.appSubtitle"),
+	}
+
 	// Setup router
-	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless)
+	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless, branding)
 
 	// Setup UI serving (skipped in headless mode)
 	if !headless {

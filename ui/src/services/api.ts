@@ -300,6 +300,14 @@ export const healthApi = {
     },
 };
 
+// Branding API
+export const brandingApi = {
+    get: async () => {
+        const response = await fetch(`${API_BASE}/branding`);
+        return handleResponse<{ appTitle: string; appSubtitle: string }>(response);
+    },
+};
+
 // Routes API
 export const routesApi = {
     get: async () => {

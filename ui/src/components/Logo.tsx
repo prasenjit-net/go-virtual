@@ -1,8 +1,15 @@
 /**
  * go-virtual Logo components
  *
- * LogoIcon  – square SVG icon (the V-shape network proxy mark)
- * LogoFull  – icon + "go-virtual" wordmark side-by-side
+ * Concept: "OpenAPI Shadow Mock"
+ *  • Main document  = the real OpenAPI spec (solid indigo outline + content lines)
+ *  • Shadow document = the virtual / mock copy (dashed violet, offset right+down)
+ *  • Check badge    = test passing / mock validated (emerald green)
+ *
+ * Transparent background → works on both light and dark sidebars / backgrounds.
+ *
+ * LogoIcon  – square SVG icon only
+ * LogoFull  – icon + configurable title wordmark (falls back to "go-virtual")
  */
 
 interface LogoIconProps {
@@ -22,59 +29,51 @@ export function LogoIcon({ size = 36, className }: LogoIconProps) {
             role="img"
             aria-label="go-virtual logo"
         >
-            <defs>
-                <linearGradient id="gvl-bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#0c1828" />
-                    <stop offset="100%" stopColor="#172038" />
-                </linearGradient>
-                <linearGradient id="gvl-la" x1="18" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#38bdf8" />
-                    <stop offset="100%" stopColor="#60a5fa" />
-                </linearGradient>
-                <linearGradient id="gvl-ra" x1="82" y1="22" x2="50" y2="74" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#a78bfa" />
-                    <stop offset="100%" stopColor="#818cf8" />
-                </linearGradient>
-                <linearGradient id="gvl-cn" x1="39" y1="63" x2="61" y2="85" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#38bdf8" />
-                    <stop offset="100%" stopColor="#818cf8" />
-                </linearGradient>
-                <radialGradient id="gvl-glow" cx="50" cy="74" r="22" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stopColor="#818cf8" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
-                </radialGradient>
-            </defs>
+            {/*
+              Shadow document — the virtual/mock copy.
+              Offset right+down, dashed violet stroke, transparent fill.
+              indigo-500 at 65% opacity is readable on both white and dark bg.
+            */}
+            <rect x="28" y="22" width="50" height="64" rx="10"
+                fill="#818cf8" fillOpacity="0.10"
+                stroke="#6366f1" strokeWidth="2"
+                strokeDasharray="5,3.5" strokeOpacity="0.65" />
 
-            {/* Background rounded square */}
-            <rect width="100" height="100" rx="22" fill="url(#gvl-bg)" />
+            {/*
+              Main document — the OpenAPI spec.
+              indigo-600 (#4f46e5) has 4.9:1 contrast ratio on white → AA compliant.
+              Vivid enough to read well on dark backgrounds too.
+            */}
+            <rect x="12" y="8" width="52" height="66" rx="10"
+                fill="#4f46e5" fillOpacity="0.07"
+                stroke="#4f46e5" strokeWidth="2.5" />
 
-            {/* Dashed top line — the "direct" API route being intercepted */}
-            <line x1="26" y1="22" x2="74" y2="22"
-                stroke="#475569" strokeWidth="1.5" strokeDasharray="3.5,3" opacity="0.5" />
+            {/* Header / title bar — rounded top corners only */}
+            <path d="M 12 22 L 12 18 Q 12 8 22 8 L 54 8 Q 64 8 64 18 L 64 22 Z"
+                fill="#4f46e5" fillOpacity="0.18" />
 
-            {/* V-shape left arm — sky blue (client / request side) */}
-            <line x1="18" y1="22" x2="50" y2="74"
-                stroke="url(#gvl-la)" strokeWidth="6" strokeLinecap="round" />
-            {/* V-shape right arm — violet (server / response side) */}
-            <line x1="82" y1="22" x2="50" y2="74"
-                stroke="url(#gvl-ra)" strokeWidth="6" strokeLinecap="round" />
+            {/* ── OpenAPI spec content lines ── */}
+            {/* operationId / title line (bolder) — indigo-700 for max contrast on light */}
+            <line x1="21" y1="34" x2="55" y2="34"
+                stroke="#4338ca" strokeWidth="2.8" strokeLinecap="round" />
+            {/* schema / property lines */}
+            <line x1="21" y1="43" x2="50" y2="43"
+                stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+            <line x1="21" y1="51" x2="54" y2="51"
+                stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" opacity="0.65" />
+            <line x1="21" y1="59" x2="40" y2="59"
+                stroke="#4f46e5" strokeWidth="2" strokeLinecap="round" opacity="0.45" />
 
-            {/* Top-left endpoint node (client) */}
-            <circle cx="18" cy="22" r="8.5" fill="#0c1828" stroke="#38bdf8" strokeWidth="2.5" />
-            <circle cx="18" cy="22" r="3.2" fill="#38bdf8" />
-
-            {/* Top-right endpoint node (server) */}
-            <circle cx="82" cy="22" r="8.5" fill="#0c1828" stroke="#a78bfa" strokeWidth="2.5" />
-            <circle cx="82" cy="22" r="3.2" fill="#a78bfa" />
-
-            {/* Centre node — glow halo */}
-            <circle cx="50" cy="74" r="22" fill="url(#gvl-glow)" />
-            {/* Centre node — the virtual proxy nexus */}
-            <circle cx="50" cy="74" r="11.5" fill="url(#gvl-cn)" />
-            {/* Three dots: active-processing indicator */}
-            <circle cx="43.5" cy="74" r="1.8" fill="white" opacity="0.7" />
-            <circle cx="50"   cy="74" r="1.8" fill="white" opacity="0.95" />
-            <circle cx="56.5" cy="74" r="1.8" fill="white" opacity="0.7" />
+            {/*
+              Test / validation badge — overlapping bottom-right corner.
+              emerald-600 (#059669) reads clearly on both light and dark backgrounds.
+            */}
+            <circle cx="72" cy="78" r="14" fill="#059669" />
+            <circle cx="72" cy="78" r="14" fill="white" fillOpacity="0.10" />
+            {/* Checkmark */}
+            <polyline points="64.5,78 70.5,84.5 80.5,71"
+                fill="none" stroke="white" strokeWidth="3"
+                strokeLinecap="round" strokeLinejoin="round" />
         </svg>
     )
 }
@@ -82,21 +81,41 @@ export function LogoIcon({ size = 36, className }: LogoIconProps) {
 interface LogoFullProps {
     /** Icon size in pixels. Default: 36 */
     iconSize?: number
+    /**
+     * Application title from branding config.
+     * When "go-virtual" (or empty) the title renders with its two-tone colour scheme.
+     * A custom title renders in a single adaptive indigo colour.
+     */
+    title?: string
     className?: string
 }
 
-/** Icon + "go-virtual" wordmark, horizontally laid out. */
-export function LogoFull({ iconSize = 36, className }: LogoFullProps) {
+/** Icon + configurable title wordmark, horizontally laid out. */
+export function LogoFull({ iconSize = 36, title, className }: LogoFullProps) {
+    const displayTitle = title?.trim() || 'go-virtual'
+    const isDefault = displayTitle === 'go-virtual'
+
     return (
         <div className={`flex items-center gap-2.5 ${className ?? ''}`}>
             <LogoIcon size={iconSize} />
             <span
                 className="font-bold tracking-tight leading-none select-none"
-                style={{ fontSize: iconSize * 0.55 }}
+                style={{ fontSize: iconSize * 0.53 }}
             >
-                <span className="text-sky-400">go</span>
-                <span className="text-slate-400">-</span>
-                <span className="text-indigo-400">virtual</span>
+                {isDefault ? (
+                    <>
+                        {/*
+                          Two-tone wordmark: darker shades on light, lighter on dark.
+                          indigo-700 / violet-700 → 6:1+ on white ✓
+                          indigo-400 / violet-400 → vivid on dark ✓
+                        */}
+                        <span className="text-indigo-700 dark:text-indigo-400">go</span>
+                        <span className="text-slate-400 dark:text-slate-500">-</span>
+                        <span className="text-violet-700 dark:text-violet-400">virtual</span>
+                    </>
+                ) : (
+                    <span className="text-indigo-700 dark:text-indigo-300">{displayTitle}</span>
+                )}
             </span>
         </div>
     )

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
@@ -2080,5 +2081,84 @@ func TestSetBackendURI_InvalidJSON(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetBranding_Defaults(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.GET("/branding", handler.GetBranding)
+
+	req := httptest.NewRequest("GET", "/branding", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	// Default handler has empty branding — fields are present but empty
+	if _, ok := result["appTitle"]; !ok {
+		t.Error("Expected appTitle in response")
+	}
+	if _, ok := result["appSubtitle"]; !ok {
+		t.Error("Expected appSubtitle in response")
+	}
+}
+
+func TestGetBranding_WithCustomValues(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	handler.SetBranding(config.BrandingConfig{
+		AppTitle:    "My Custom App",
+		AppSubtitle: "Great Subtitle",
+	})
+	r.GET("/branding", handler.GetBranding)
+
+	req := httptest.NewRequest("GET", "/branding", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if result["appTitle"] != "My Custom App" {
+		t.Errorf("Expected appTitle 'My Custom App', got %q", result["appTitle"])
+	}
+	if result["appSubtitle"] != "Great Subtitle" {
+		t.Errorf("Expected appSubtitle 'Great Subtitle', got %q", result["appSubtitle"])
+	}
+}
+
+func TestSetBranding_NormalizesEmptyValues(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	// Set branding with empty strings — should fall back to defaults
+	handler.SetBranding(config.BrandingConfig{})
+	r.GET("/branding", handler.GetBranding)
+
+	req := httptest.NewRequest("GET", "/branding", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("Failed to parse response: %v", err)
+	}
+	if result["appTitle"] != "go-virtual" {
+		t.Errorf("Expected default appTitle 'go-virtual', got %q", result["appTitle"])
+	}
+	if result["appSubtitle"] != "API Mock & Virtualization" {
+		t.Errorf("Expected default appSubtitle 'API Mock & Virtualization', got %q", result["appSubtitle"])
 	}
 }

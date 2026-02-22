@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
 	"github.com/prasenjit/go-virtual/internal/proxy"
@@ -25,6 +26,7 @@ type Handler struct {
 	proxyEngine    *proxy.Engine
 	parser         *parser.Parser
 	templateEngine *template.Engine
+	branding       config.BrandingConfig
 }
 
 // NewHandler creates a new API handler
@@ -1054,6 +1056,25 @@ func (h *Handler) HealthCheck(c *gin.Context) {
 func (h *Handler) Version(c *gin.Context) {
 	info := version.Get()
 	c.JSON(http.StatusOK, info)
+}
+
+// SetBranding sets the branding configuration used by GetBranding.
+func (h *Handler) SetBranding(b config.BrandingConfig) {
+	if b.AppTitle == "" {
+		b.AppTitle = "go-virtual"
+	}
+	if b.AppSubtitle == "" {
+		b.AppSubtitle = "API Mock & Virtualization"
+	}
+	h.branding = b
+}
+
+// GetBranding returns the UI branding configuration (app title, subtitle).
+func (h *Handler) GetBranding(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"appTitle":    h.branding.AppTitle,
+		"appSubtitle": h.branding.AppSubtitle,
+	})
 }
 
 // ValidateTemplate validates a body template using the current helper set.

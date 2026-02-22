@@ -209,3 +209,9 @@ export interface HourlyStat {
     requests: number;
     errors: number;
 }
+
+// Branding configuration returned by /_api/branding
+export interface Branding {
+    appTitle: string;
+    appSubtitle: string;
+}

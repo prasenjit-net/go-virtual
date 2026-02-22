@@ -315,3 +315,54 @@ func TestDefaultTLSConfig(t *testing.T) {
 		t.Error("Expected autoGenerate to be true by default")
 	}
 }
+
+func TestBrandingConfig(t *testing.T) {
+	cfg := BrandingConfig{
+		AppTitle:    "My API Tool",
+		AppSubtitle: "Custom Subtitle",
+	}
+
+	if cfg.AppTitle != "My API Tool" {
+		t.Errorf("Expected AppTitle 'My API Tool', got %q", cfg.AppTitle)
+	}
+	if cfg.AppSubtitle != "Custom Subtitle" {
+		t.Errorf("Expected AppSubtitle 'Custom Subtitle', got %q", cfg.AppSubtitle)
+	}
+}
+
+func TestDefaultBrandingConfig(t *testing.T) {
+	cfg := Default()
+	// Default branding values are set in Default()
+	if cfg.Branding.AppTitle != "go-virtual" {
+		t.Errorf("Expected default AppTitle 'go-virtual', got %q", cfg.Branding.AppTitle)
+	}
+	if cfg.Branding.AppSubtitle != "API Mock & Virtualization" {
+		t.Errorf("Expected default AppSubtitle 'API Mock & Virtualization', got %q", cfg.Branding.AppSubtitle)
+	}
+}
+
+func TestLoad_BrandingConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+branding:
+  appTitle: "Custom Title"
+  appSubtitle: "Custom Sub"
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Branding.AppTitle != "Custom Title" {
+		t.Errorf("Expected AppTitle 'Custom Title', got %q", cfg.Branding.AppTitle)
+	}
+	if cfg.Branding.AppSubtitle != "Custom Sub" {
+		t.Errorf("Expected AppSubtitle 'Custom Sub', got %q", cfg.Branding.AppSubtitle)
+	}
+}

@@ -10,10 +10,20 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server  ServerConfig  `yaml:"server"`
-	Storage StorageConfig `yaml:"storage"`
-	Tracing TracingConfig `yaml:"tracing"`
-	Logging LoggingConfig `yaml:"logging"`
+	Server   ServerConfig   `yaml:"server"`
+	Storage  StorageConfig  `yaml:"storage"`
+	Tracing  TracingConfig  `yaml:"tracing"`
+	Logging  LoggingConfig  `yaml:"logging"`
+	Branding BrandingConfig `yaml:"branding"`
+}
+
+// BrandingConfig holds UI branding configuration
+type BrandingConfig struct {
+	// AppTitle overrides the application name shown in the sidebar and browser tab.
+	// Defaults to "go-virtual" when empty.
+	AppTitle string `yaml:"appTitle"`
+	// AppSubtitle is a short tagline shown below the title in the sidebar footer.
+	AppSubtitle string `yaml:"appSubtitle"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -82,6 +92,10 @@ func Default() *Config {
 		Logging: LoggingConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Branding: BrandingConfig{
+			AppTitle:    "go-virtual",
+			AppSubtitle: "API Mock & Virtualization",
 		},
 	}
 }

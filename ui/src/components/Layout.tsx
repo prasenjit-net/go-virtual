@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
     LayoutDashboard,
     FileCode2,
@@ -10,6 +11,8 @@ import {
     Tags
 } from 'lucide-react'
 import { LogoFull } from './Logo'
+import { brandingApi } from '../services/api'
+import type { Branding } from '../types'
 import clsx from 'clsx'
 
 const navItems = [
@@ -41,6 +44,22 @@ const applyThemeMode = (mode: ThemeMode) => {
 
 export default function Layout() {
     const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme)
+
+    // Fetch branding config — stale forever (only changes on server restart)
+    const { data: branding } = useQuery<Branding>({
+        queryKey: ['branding'],
+        queryFn: brandingApi.get,
+        staleTime: Infinity,
+        retry: false,
+    })
+
+    // Keep document.title in sync with branding
+    useEffect(() => {
+        const title = branding?.appTitle?.trim() || 'go-virtual'
+        document.title = title === 'go-virtual'
+            ? 'go-virtual — API Mock & Virtualization'
+            : title
+    }, [branding?.appTitle])
 
     useEffect(() => {
         applyThemeMode(themeMode)
@@ -85,7 +104,7 @@ export default function Layout() {
             <aside className="w-64 h-screen sticky top-0 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col">
                 {/* Logo */}
                 <div className="h-16 flex items-center px-5 border-b border-gray-200 dark:border-slate-800">
-                    <LogoFull iconSize={36} />
+                    <LogoFull iconSize={36} title={branding?.appTitle} />
                 </div>
 
                 {/* Navigation */}
@@ -142,8 +161,8 @@ export default function Layout() {
                     {/* Footer */}
                     <div className="p-4 border-t border-gray-200 dark:border-slate-800">
                         <div className="text-xs text-gray-500 dark:text-slate-400">
-                            <p>Go-Virtual v0.1.0</p>
-                            <p>OpenAPI 3 Proxy Service</p>
+                            <p className="font-medium">{branding?.appTitle?.trim() || 'go-virtual'}</p>
+                            <p>{branding?.appSubtitle?.trim() || 'API Mock & Virtualization'}</p>
                         </div>
                     </div>
                 </div>
