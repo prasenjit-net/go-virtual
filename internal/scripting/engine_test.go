@@ -225,3 +225,71 @@ func TestRunBindings_CacheHit(t *testing.T) {
 		t.Errorf("Expected 'cached' from both calls, got %v, %v", out1, out2)
 	}
 }
+
+func TestCompileAndValidate_Valid(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	err := engine.CompileAndValidate("s1", `def run(req): return {"ok": True}`)
+	if err != nil {
+		t.Errorf("Expected no error for valid source, got %v", err)
+	}
+}
+
+func TestCompileAndValidate_Invalid(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	err := engine.CompileAndValidate("s1", `def run(req  # bad syntax`)
+	if err == nil {
+		t.Error("Expected error for invalid source")
+	}
+}
+
+func TestTestScript_Success(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	script := makeScript("s1", `def run(req): return {"result": 42}`)
+	result, durationMs, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	if err != nil {
+		t.Fatalf("TestScript error: %v", err)
+	}
+	if durationMs < 0 {
+		t.Errorf("Expected non-negative duration, got %f", durationMs)
+	}
+	m, ok := result.(map[string]any)
+	if !ok {
+		t.Fatalf("Expected map result, got %T", result)
+	}
+	if m["result"] != int64(42) {
+		t.Errorf("result: got %v, want 42", m["result"])
+	}
+}
+
+func TestTestScript_CompileError(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	script := makeScript("s1", `def run(req  # bad`)
+	_, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	if err == nil {
+		t.Error("Expected error for invalid source")
+	}
+}
+
+func TestTestScript_UsesDefaultTimeout(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 500) // 500ms default
+
+	script := makeScript("s1", `def run(req): return "fast"`)
+	script.Timeout = 0 // zero → use default
+
+	result, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	if err != nil {
+		t.Fatalf("TestScript error: %v", err)
+	}
+	if result != "fast" {
+		t.Errorf("Expected 'fast', got %v", result)
+	}
+}

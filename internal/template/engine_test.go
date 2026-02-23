@@ -768,3 +768,80 @@ func TestRandomString(t *testing.T) {
 		}
 	})
 }
+
+func TestProcess_ScriptOutput(t *testing.T) {
+	e := NewEngine()
+
+	tests := []struct {
+		name     string
+		template string
+		ctx      *Context
+		expected string
+	}{
+		{
+			name:     "simple key",
+			template: "{{script.price}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{"price": "9.99"},
+			},
+			expected: "9.99",
+		},
+		{
+			name:     "nested key",
+			template: "{{script.user.name}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{
+					"user": map[string]any{"name": "alice"},
+				},
+			},
+			expected: "alice",
+		},
+		{
+			name:     "missing key returns empty",
+			template: "{{script.missing}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{},
+			},
+			expected: "",
+		},
+		{
+			name:     "nil script output returns empty",
+			template: "{{script.price}}",
+			ctx:      &Context{ScriptOutput: nil},
+			expected: "",
+		},
+		{
+			name:     "no key returns empty",
+			template: "{{script}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{"price": "9.99"},
+			},
+			expected: "",
+		},
+		{
+			name:     "integer value converted to string",
+			template: "{{script.count}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{"count": 42},
+			},
+			expected: "42",
+		},
+		{
+			name:     "nested key not a map returns empty",
+			template: "{{script.flat.child}}",
+			ctx: &Context{
+				ScriptOutput: map[string]any{"flat": "not-a-map"},
+			},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := e.Process(tt.template, tt.ctx)
+			if result != tt.expected {
+				t.Errorf("got %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
