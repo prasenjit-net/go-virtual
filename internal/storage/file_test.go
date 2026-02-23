@@ -505,3 +505,219 @@ func TestFileStorage_UpdateResponseConfig_Persists(t *testing.T) {
 		t.Errorf("expected updated name, got %q", reloaded.Name)
 	}
 }
+
+// ---- FileStorage script tests ----
+
+func TestFileStorage_ScriptCRUD(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	script := &models.Script{
+		ID:      "s1",
+		Name:    "My Script",
+		Source:  "def run(req): return 1",
+		Timeout: 100,
+		Enabled: true,
+	}
+
+	// Create
+	if err := fs.CreateScript(script); err != nil {
+		t.Fatalf("CreateScript: %v", err)
+	}
+
+	// Get
+	got, err := fs.GetScript("s1")
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if got.Name != "My Script" {
+		t.Errorf("Name: got %q", got.Name)
+	}
+	if got.Source != "def run(req): return 1" {
+		t.Errorf("Source: got %q", got.Source)
+	}
+
+	// Duplicate should fail
+	if err := fs.CreateScript(script); err == nil {
+		t.Error("Expected error on duplicate CreateScript")
+	}
+
+	// Update
+	script.Name = "Updated Script"
+	script.Source = "def run(req): return 2"
+	if err := fs.UpdateScript(script); err != nil {
+		t.Fatalf("UpdateScript: %v", err)
+	}
+
+	// GetAll
+	all, err := fs.GetAllScripts()
+	if err != nil {
+		t.Fatalf("GetAllScripts: %v", err)
+	}
+	if len(all) != 1 || all[0].Name != "Updated Script" {
+		t.Errorf("GetAllScripts: got %+v", all)
+	}
+
+	// Delete
+	if err := fs.DeleteScript("s1"); err != nil {
+		t.Fatalf("DeleteScript: %v", err)
+	}
+	if _, err := fs.GetScript("s1"); err == nil {
+		t.Error("Expected error after delete")
+	}
+}
+
+func TestFileStorage_ScriptPersistsAcrossReload(t *testing.T) {
+	baseDir := t.TempDir()
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	script := &models.Script{
+		ID:      "persist-s1",
+		Name:    "Persistent",
+		Source:  `def run(req): return {"ok": True}`,
+		Timeout: 50,
+		Enabled: true,
+	}
+	if err := fs.CreateScript(script); err != nil {
+		t.Fatalf("CreateScript: %v", err)
+	}
+
+	// Reload from disk
+	fs2, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	got, err := fs2.GetScript("persist-s1")
+	if err != nil {
+		t.Fatalf("GetScript after reload: %v", err)
+	}
+	if got.Name != "Persistent" {
+		t.Errorf("Name after reload: got %q", got.Name)
+	}
+	if got.Source != `def run(req): return {"ok": True}` {
+		t.Errorf("Source after reload: got %q", got.Source)
+	}
+}
+
+func TestFileStorage_ScriptBindingCRUD(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	b1 := &models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "result", Order: 0, Enabled: true}
+	b2 := &models.ScriptBinding{ID: "b2", OperationID: "op-1", ScriptID: "s2", OutputKey: "extra", Order: 1, Enabled: true}
+
+	if err := fs.CreateScriptBinding(b1); err != nil {
+		t.Fatalf("CreateScriptBinding b1: %v", err)
+	}
+	if err := fs.CreateScriptBinding(b2); err != nil {
+		t.Fatalf("CreateScriptBinding b2: %v", err)
+	}
+
+	// Duplicate
+	if err := fs.CreateScriptBinding(b1); err == nil {
+		t.Error("Expected error on duplicate binding")
+	}
+
+	// GetScriptBindings
+	bindings, err := fs.GetScriptBindings("op-1")
+	if err != nil {
+		t.Fatalf("GetScriptBindings: %v", err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("Expected 2 bindings, got %d", len(bindings))
+	}
+
+	// UpdateScriptBinding
+	b1.OutputKey = "updated"
+	if err := fs.UpdateScriptBinding(b1); err != nil {
+		t.Fatalf("UpdateScriptBinding: %v", err)
+	}
+	bindings, _ = fs.GetScriptBindings("op-1")
+	found := false
+	for _, b := range bindings {
+		if b.ID == "b1" && b.OutputKey == "updated" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Expected binding b1 to have outputKey 'updated'")
+	}
+
+	// DeleteScriptBinding
+	if err := fs.DeleteScriptBinding("b1"); err != nil {
+		t.Fatalf("DeleteScriptBinding: %v", err)
+	}
+	bindings, _ = fs.GetScriptBindings("op-1")
+	if len(bindings) != 1 {
+		t.Errorf("Expected 1 binding after delete, got %d", len(bindings))
+	}
+
+	// DeleteScriptBinding on non-existent
+	if err := fs.DeleteScriptBinding("nonexistent"); err == nil {
+		t.Error("Expected error deleting non-existent binding")
+	}
+}
+
+func TestFileStorage_DeleteScriptBindingsByScript(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	_ = fs.CreateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "a"})
+	_ = fs.CreateScriptBinding(&models.ScriptBinding{ID: "b2", OperationID: "op-2", ScriptID: "s1", OutputKey: "b"})
+	_ = fs.CreateScriptBinding(&models.ScriptBinding{ID: "b3", OperationID: "op-3", ScriptID: "s2", OutputKey: "c"})
+
+	if err := fs.DeleteScriptBindingsByScript("s1"); err != nil {
+		t.Fatalf("DeleteScriptBindingsByScript: %v", err)
+	}
+
+	b1, _ := fs.GetScriptBindings("op-1")
+	b2, _ := fs.GetScriptBindings("op-2")
+	b3, _ := fs.GetScriptBindings("op-3")
+
+	if len(b1) != 0 || len(b2) != 0 {
+		t.Errorf("Expected s1 bindings deleted, got %d and %d", len(b1), len(b2))
+	}
+	if len(b3) != 1 {
+		t.Errorf("Expected s2 binding retained, got %d", len(b3))
+	}
+}
+
+func TestFileStorage_ScriptBindingPersistsAcrossReload(t *testing.T) {
+	baseDir := t.TempDir()
+
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	_ = fs.CreateScriptBinding(&models.ScriptBinding{
+		ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "result", Order: 0, Enabled: true,
+	})
+
+	fs2, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+
+	bindings, err := fs2.GetScriptBindings("op-1")
+	if err != nil {
+		t.Fatalf("GetScriptBindings after reload: %v", err)
+	}
+	if len(bindings) != 1 || bindings[0].OutputKey != "result" {
+		t.Errorf("Expected 1 binding with outputKey 'result' after reload, got %+v", bindings)
+	}
+}

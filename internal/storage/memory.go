@@ -16,6 +16,8 @@ type MemoryStorage struct {
 	operations      map[string]*models.Operation
 	responseConfigs map[string]*models.ResponseConfig
 	tags            map[string]*models.Tag
+	scripts         map[string]*models.Script
+	scriptBindings  map[string]*models.ScriptBinding
 }
 
 // NewMemoryStorage creates a new in-memory storage
@@ -25,6 +27,8 @@ func NewMemoryStorage() *MemoryStorage {
 		operations:      make(map[string]*models.Operation),
 		responseConfigs: make(map[string]*models.ResponseConfig),
 		tags:            make(map[string]*models.Tag),
+		scripts:         make(map[string]*models.Script),
+		scriptBindings:  make(map[string]*models.ScriptBinding),
 	}
 
 	// Ensure default tag exists
@@ -380,6 +384,151 @@ func (m *MemoryStorage) DeleteResponseConfigsByOperation(opID string) error {
 	for id, cfg := range m.responseConfigs {
 		if cfg.OperationID == opID {
 			delete(m.responseConfigs, id)
+		}
+	}
+
+	return nil
+}
+
+// ---- Script operations ----
+
+// CreateScript creates a new script
+func (m *MemoryStorage) CreateScript(script *models.Script) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scripts[script.ID]; exists {
+		return fmt.Errorf("script with ID %s already exists", script.ID)
+	}
+
+	m.scripts[script.ID] = script
+	return nil
+}
+
+// GetScript retrieves a script by ID
+func (m *MemoryStorage) GetScript(id string) (*models.Script, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	s, exists := m.scripts[id]
+	if !exists {
+		return nil, fmt.Errorf("script not found: %s", id)
+	}
+
+	return s, nil
+}
+
+// GetAllScripts retrieves all scripts sorted by name
+func (m *MemoryStorage) GetAllScripts() ([]*models.Script, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	scripts := make([]*models.Script, 0, len(m.scripts))
+	for _, s := range m.scripts {
+		scripts = append(scripts, s)
+	}
+
+	sort.Slice(scripts, func(i, j int) bool {
+		return scripts[i].Name < scripts[j].Name
+	})
+
+	return scripts, nil
+}
+
+// UpdateScript updates a script
+func (m *MemoryStorage) UpdateScript(script *models.Script) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scripts[script.ID]; !exists {
+		return fmt.Errorf("script not found: %s", script.ID)
+	}
+
+	m.scripts[script.ID] = script
+	return nil
+}
+
+// DeleteScript deletes a script
+func (m *MemoryStorage) DeleteScript(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scripts[id]; !exists {
+		return fmt.Errorf("script not found: %s", id)
+	}
+
+	delete(m.scripts, id)
+	return nil
+}
+
+// ---- ScriptBinding operations ----
+
+// GetScriptBindings retrieves all bindings for an operation, sorted by Order
+func (m *MemoryStorage) GetScriptBindings(operationID string) ([]*models.ScriptBinding, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bindings := make([]*models.ScriptBinding, 0)
+	for _, b := range m.scriptBindings {
+		if b.OperationID == operationID {
+			bindings = append(bindings, b)
+		}
+	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		return bindings[i].Order < bindings[j].Order
+	})
+
+	return bindings, nil
+}
+
+// CreateScriptBinding creates a new binding
+func (m *MemoryStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scriptBindings[binding.ID]; exists {
+		return fmt.Errorf("script binding with ID %s already exists", binding.ID)
+	}
+
+	m.scriptBindings[binding.ID] = binding
+	return nil
+}
+
+// UpdateScriptBinding updates an existing binding
+func (m *MemoryStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scriptBindings[binding.ID]; !exists {
+		return fmt.Errorf("script binding not found: %s", binding.ID)
+	}
+
+	m.scriptBindings[binding.ID] = binding
+	return nil
+}
+
+// DeleteScriptBinding deletes a binding by ID
+func (m *MemoryStorage) DeleteScriptBinding(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.scriptBindings[id]; !exists {
+		return fmt.Errorf("script binding not found: %s", id)
+	}
+
+	delete(m.scriptBindings, id)
+	return nil
+}
+
+// DeleteScriptBindingsByScript deletes all bindings referencing a script
+func (m *MemoryStorage) DeleteScriptBindingsByScript(scriptID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id, b := range m.scriptBindings {
+		if b.ScriptID == scriptID {
+			delete(m.scriptBindings, id)
 		}
 	}
 

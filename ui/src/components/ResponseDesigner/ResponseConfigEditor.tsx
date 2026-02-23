@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Trash2, AlertCircle } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
-import { responsesApi, tagsApi, templatesApi } from '../../services/api'
-import type { ResponseConfig, Condition, ConditionOperator } from '../../types'
+import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
+import type { ResponseConfig, Condition, ConditionOperator, ScriptBinding } from '../../types'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -120,6 +120,12 @@ export default function ResponseConfigEditor({
     const { data: tags } = useQuery({
         queryKey: ['tags'],
         queryFn: tagsApi.list,
+    })
+
+    const { data: scriptBindings } = useQuery<ScriptBinding[]>({
+        queryKey: ['scriptBindings', operationId],
+        queryFn: () => scriptBindingsApi.listByOperation(operationId),
+        enabled: !!operationId,
     })
 
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
@@ -752,6 +758,34 @@ export default function ResponseConfigEditor({
                                     ))}
                                 </ul>
                             </div>
+                            {scriptBindings && scriptBindings.length > 0 && (
+                                <div className="bg-white/70 dark:bg-slate-900/70 border border-emerald-200 dark:border-emerald-900/40 rounded-lg p-4 lg:col-span-2">
+                                    <h4 className="text-xs font-semibold text-emerald-600 dark:text-emerald-300 uppercase tracking-wide mb-3">
+                                        Script Variables (from bound scripts)
+                                    </h4>
+                                    <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300 columns-2">
+                                        {scriptBindings
+                                            .slice()
+                                            .sort((a, b) => a.order - b.order)
+                                            .map((binding) => (
+                                                <li key={binding.id} className="flex flex-col gap-1 break-inside-avoid">
+                                                    <span className="font-mono text-emerald-900 dark:text-emerald-200">
+                                                        {`{{script "${binding.outputKey}"}}`}
+                                                    </span>
+                                                    <span className="text-gray-600 dark:text-slate-300">
+                                                        Full output of <strong>{binding.scriptName || binding.scriptId}</strong>
+                                                    </span>
+                                                    <span className="font-mono text-emerald-700/80 dark:text-emerald-400/80">
+                                                        {`{{script "${binding.outputKey}.fieldName"}}`} — nested field
+                                                    </span>
+                                                </li>
+                                            ))}
+                                    </ul>
+                                    <p className="mt-3 text-xs text-gray-400 dark:text-slate-500">
+                                        Scripts run in order before the response is rendered. Manage bindings in the operation's Script Bindings section.
+                                    </p>
+                                </div>
+                            )}
                         </div>
                     </details>
                 </div>

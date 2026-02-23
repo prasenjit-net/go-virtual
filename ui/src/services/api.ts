@@ -315,3 +315,108 @@ export const routesApi = {
         return handleResponse<Record<string, string[]>>(response);
     },
 };
+
+// Scripts API
+export const scriptsApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/scripts`);
+        return handleResponse<import('../types').Script[]>(response);
+    },
+
+    get: async (id: string) => {
+        const response = await fetch(`${API_BASE}/scripts/${id}`);
+        return handleResponse<import('../types').Script>(response);
+    },
+
+    create: async (data: import('../types').ScriptInput) => {
+        const response = await fetch(`${API_BASE}/scripts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').Script>(response);
+    },
+
+    update: async (id: string, data: import('../types').ScriptInput) => {
+        const response = await fetch(`${API_BASE}/scripts/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').Script>(response);
+    },
+
+    delete: async (id: string) => {
+        const response = await fetch(`${API_BASE}/scripts/${id}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    validate: async (source: string) => {
+        const response = await fetch(`${API_BASE}/scripts/validate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source }),
+        });
+        return handleResponse<{ valid: boolean; error: string | null }>(response);
+    },
+
+    test: async (id: string, input: {
+        path?: Record<string, string>;
+        query?: Record<string, string>;
+        header?: Record<string, string>;
+        body?: any;
+    }) => {
+        const response = await fetch(`${API_BASE}/scripts/${id}/test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input }),
+        });
+        return handleResponse<{ output: any; durationMs: number; error: string | null }>(response);
+    },
+};
+
+// Script Bindings API
+export const scriptBindingsApi = {
+    listByOperation: async (operationId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/scripts`);
+        return handleResponse<import('../types').ScriptBinding[]>(response);
+    },
+
+    create: async (operationId: string, data: import('../types').ScriptBindingInput) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/scripts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ScriptBinding>(response);
+    },
+
+    update: async (operationId: string, bindingId: string, data: Partial<import('../types').ScriptBindingInput>) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/scripts/${bindingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ScriptBinding>(response);
+    },
+
+    delete: async (operationId: string, bindingId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/scripts/${bindingId}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    reorder: async (operationId: string, items: { id: string; order: number }[]) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/scripts/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(items),
+        });
+        return handleResponse<import('../types').ScriptBinding[]>(response);
+    },
+};

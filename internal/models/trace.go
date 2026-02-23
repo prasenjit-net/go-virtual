@@ -22,6 +22,9 @@ type Trace struct {
 	ProxyMode  bool   `json:"proxyMode,omitempty"`  // true when the request was forwarded to a real backend
 	Signature  string `json:"signature,omitempty"`  // deterministic hash of the request used for deduplication
 	BackendURI string `json:"backendUri,omitempty"` // backend URL that handled the request
+
+	// Script execution traces — one entry per executed binding
+	Scripts []ScriptTrace `json:"scripts,omitempty"`
 }
 
 // TraceRequest represents the captured request

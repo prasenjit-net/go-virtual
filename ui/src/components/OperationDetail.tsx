@@ -20,6 +20,7 @@ import {
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi } from '../services/api'
 import type { Operation, ResponseConfig, Spec, SignatureConfig } from '../types'
+import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -650,6 +651,9 @@ export default function OperationDetail() {
                     )}
                 </div>
             </div>
+
+            {/* Script Bindings */}
+            <ScriptBindingsPanel operationId={operationId!} />
 
             {/* Example Response Fallback Info */}
             {operation.exampleResponse && (

@@ -107,6 +107,13 @@ func (r *Router) setupRoutes() {
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)
 		api.PUT("/responses/:id/priority", r.handler.UpdateResponsePriority)
 
+		// Script bindings (per operation)
+		api.GET("/operations/:id/scripts", r.handler.ListScriptBindings)
+		api.POST("/operations/:id/scripts", r.handler.CreateScriptBinding)
+		api.PUT("/operations/:id/scripts/reorder", r.handler.ReorderScriptBindings)
+		api.PUT("/operations/:id/scripts/:bindingId", r.handler.UpdateScriptBinding)
+		api.DELETE("/operations/:id/scripts/:bindingId", r.handler.DeleteScriptBinding)
+
 		// Tags
 		api.GET("/tags", r.handler.ListTags)
 		api.POST("/tags", r.handler.CreateTag)
@@ -134,6 +141,15 @@ func (r *Router) setupRoutes() {
 
 		// Template validation
 		api.POST("/templates/validate", r.handler.ValidateTemplate)
+
+		// Scripts
+		api.GET("/scripts", r.handler.ListScripts)
+		api.POST("/scripts", r.handler.CreateScript)
+		api.POST("/scripts/validate", r.handler.ValidateScript)
+		api.GET("/scripts/:id", r.handler.GetScript)
+		api.PUT("/scripts/:id", r.handler.UpdateScript)
+		api.DELETE("/scripts/:id", r.handler.DeleteScript)
+		api.POST("/scripts/:id/test", r.handler.TestScript)
 	}
 
 	// WebSocket for live tracing

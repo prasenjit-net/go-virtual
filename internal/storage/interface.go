@@ -38,6 +38,20 @@ type Storage interface {
 	DeleteResponseConfig(id string) error
 	DeleteResponseConfigsByOperation(opID string) error
 
+	// Script operations
+	CreateScript(script *models.Script) error
+	GetScript(id string) (*models.Script, error)
+	GetAllScripts() ([]*models.Script, error)
+	UpdateScript(script *models.Script) error
+	DeleteScript(id string) error
+
+	// ScriptBinding operations
+	GetScriptBindings(operationID string) ([]*models.ScriptBinding, error)
+	CreateScriptBinding(binding *models.ScriptBinding) error
+	UpdateScriptBinding(binding *models.ScriptBinding) error
+	DeleteScriptBinding(id string) error
+	DeleteScriptBindingsByScript(scriptID string) error
+
 	// Utility
 	Close() error
 }

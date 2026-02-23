@@ -23,3 +23,6 @@ branding:
   appTitle: ""       # Custom app title shown in the sidebar and browser tab (default: "go-virtual")
   appSubtitle: ""    # Optional tagline shown in the sidebar footer (default: "API Mock & Virtualization")
   format: "json"
+
+scripting:
+  defaultTimeoutMs: 100  # Default Starlark execution timeout per script in milliseconds

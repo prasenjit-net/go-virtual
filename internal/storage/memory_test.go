@@ -617,3 +617,184 @@ func TestConcurrentResponseConfigAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// ---- Script tests ----
+
+func TestMemoryCreateScript(t *testing.T) {
+	s := NewMemoryStorage()
+	script := &models.Script{ID: "s1", Name: "Test", Source: "def run(req): return 1", Enabled: true}
+
+	if err := s.CreateScript(script); err != nil {
+		t.Fatalf("CreateScript: %v", err)
+	}
+	// Duplicate should error
+	if err := s.CreateScript(script); err == nil {
+		t.Error("Expected error on duplicate script")
+	}
+}
+
+func TestMemoryGetScript(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScript(&models.Script{ID: "s1", Name: "S1", Source: "def run(req): return 1"})
+
+	got, err := s.GetScript("s1")
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
+	}
+	if got.Name != "S1" {
+		t.Errorf("Expected S1, got %s", got.Name)
+	}
+
+	_, err = s.GetScript("nonexistent")
+	if err == nil {
+		t.Error("Expected error for missing script")
+	}
+}
+
+func TestMemoryGetAllScripts(t *testing.T) {
+	s := NewMemoryStorage()
+
+	got, err := s.GetAllScripts()
+	if err != nil {
+		t.Fatalf("GetAllScripts (empty): %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Expected empty list, got %d", len(got))
+	}
+
+	_ = s.CreateScript(&models.Script{ID: "s2", Name: "B"})
+	_ = s.CreateScript(&models.Script{ID: "s1", Name: "A"})
+
+	got, err = s.GetAllScripts()
+	if err != nil {
+		t.Fatalf("GetAllScripts: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Expected 2 scripts, got %d", len(got))
+	}
+	// Sorted by name
+	if got[0].Name != "A" || got[1].Name != "B" {
+		t.Errorf("Expected sorted [A,B], got [%s,%s]", got[0].Name, got[1].Name)
+	}
+}
+
+func TestMemoryUpdateScript(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScript(&models.Script{ID: "s1", Name: "Old", Source: "def run(req): return 1"})
+
+	if err := s.UpdateScript(&models.Script{ID: "s1", Name: "New", Source: "def run(req): return 2"}); err != nil {
+		t.Fatalf("UpdateScript: %v", err)
+	}
+	got, _ := s.GetScript("s1")
+	if got.Name != "New" {
+		t.Errorf("Expected 'New', got %s", got.Name)
+	}
+	// Update non-existent
+	if err := s.UpdateScript(&models.Script{ID: "missing"}); err == nil {
+		t.Error("Expected error for missing script")
+	}
+}
+
+func TestMemoryDeleteScript(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScript(&models.Script{ID: "s1", Name: "S1"})
+
+	if err := s.DeleteScript("s1"); err != nil {
+		t.Fatalf("DeleteScript: %v", err)
+	}
+	if _, err := s.GetScript("s1"); err == nil {
+		t.Error("Expected error after delete")
+	}
+	// Delete non-existent
+	if err := s.DeleteScript("s1"); err == nil {
+		t.Error("Expected error deleting non-existent script")
+	}
+}
+
+// ---- ScriptBinding tests ----
+
+func TestMemoryCreateScriptBinding(t *testing.T) {
+	s := NewMemoryStorage()
+	b := &models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "result", Order: 0}
+
+	if err := s.CreateScriptBinding(b); err != nil {
+		t.Fatalf("CreateScriptBinding: %v", err)
+	}
+	// Duplicate should error
+	if err := s.CreateScriptBinding(b); err == nil {
+		t.Error("Expected error on duplicate binding")
+	}
+}
+
+func TestMemoryGetScriptBindings(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b2", OperationID: "op-1", ScriptID: "s1", OutputKey: "b", Order: 1})
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "a", Order: 0})
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b3", OperationID: "op-2", ScriptID: "s1", OutputKey: "c", Order: 0})
+
+	bindings, err := s.GetScriptBindings("op-1")
+	if err != nil {
+		t.Fatalf("GetScriptBindings: %v", err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("Expected 2 bindings for op-1, got %d", len(bindings))
+	}
+	// Sorted by Order
+	if bindings[0].Order != 0 || bindings[1].Order != 1 {
+		t.Errorf("Expected sorted by order, got [%d,%d]", bindings[0].Order, bindings[1].Order)
+	}
+}
+
+func TestMemoryUpdateScriptBinding(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "old"})
+
+	if err := s.UpdateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1", OutputKey: "new"}); err != nil {
+		t.Fatalf("UpdateScriptBinding: %v", err)
+	}
+	bindings, _ := s.GetScriptBindings("op-1")
+	if bindings[0].OutputKey != "new" {
+		t.Errorf("Expected 'new', got %s", bindings[0].OutputKey)
+	}
+	// Update non-existent
+	if err := s.UpdateScriptBinding(&models.ScriptBinding{ID: "missing"}); err == nil {
+		t.Error("Expected error for missing binding")
+	}
+}
+
+func TestMemoryDeleteScriptBinding(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1"})
+
+	if err := s.DeleteScriptBinding("b1"); err != nil {
+		t.Fatalf("DeleteScriptBinding: %v", err)
+	}
+	bindings, _ := s.GetScriptBindings("op-1")
+	if len(bindings) != 0 {
+		t.Errorf("Expected 0 bindings after delete, got %d", len(bindings))
+	}
+	// Delete non-existent
+	if err := s.DeleteScriptBinding("b1"); err == nil {
+		t.Error("Expected error deleting non-existent binding")
+	}
+}
+
+func TestMemoryDeleteScriptBindingsByScript(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b1", OperationID: "op-1", ScriptID: "s1"})
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b2", OperationID: "op-2", ScriptID: "s1"})
+	_ = s.CreateScriptBinding(&models.ScriptBinding{ID: "b3", OperationID: "op-3", ScriptID: "s2"})
+
+	if err := s.DeleteScriptBindingsByScript("s1"); err != nil {
+		t.Fatalf("DeleteScriptBindingsByScript: %v", err)
+	}
+	b1, _ := s.GetScriptBindings("op-1")
+	b2, _ := s.GetScriptBindings("op-2")
+	b3, _ := s.GetScriptBindings("op-3")
+	if len(b1) != 0 || len(b2) != 0 {
+		t.Errorf("Expected s1 bindings deleted, got %d and %d remaining", len(b1), len(b2))
+	}
+	if len(b3) != 1 {
+		t.Errorf("Expected s2 binding retained, got %d", len(b3))
+	}
+}

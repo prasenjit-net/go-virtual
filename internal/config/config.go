@@ -10,11 +10,12 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server   ServerConfig   `yaml:"server"`
-	Storage  StorageConfig  `yaml:"storage"`
-	Tracing  TracingConfig  `yaml:"tracing"`
-	Logging  LoggingConfig  `yaml:"logging"`
-	Branding BrandingConfig `yaml:"branding"`
+	Server    ServerConfig    `yaml:"server"`
+	Storage   StorageConfig   `yaml:"storage"`
+	Tracing   TracingConfig   `yaml:"tracing"`
+	Logging   LoggingConfig   `yaml:"logging"`
+	Branding  BrandingConfig  `yaml:"branding"`
+	Scripting ScriptingConfig `yaml:"scripting"`
 }
 
 // BrandingConfig holds UI branding configuration
@@ -61,6 +62,13 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
+// ScriptingConfig holds Starlark scripting configuration
+type ScriptingConfig struct {
+	// DefaultTimeoutMs is the maximum wall-clock execution time per script in
+	// milliseconds. Individual scripts can override this with their Timeout field.
+	DefaultTimeoutMs int `yaml:"defaultTimeoutMs"`
+}
+
 // Default returns the default configuration
 func Default() *Config {
 	// Get current working directory for default data path
@@ -96,6 +104,9 @@ func Default() *Config {
 		Branding: BrandingConfig{
 			AppTitle:    "go-virtual",
 			AppSubtitle: "API Mock & Virtualization",
+		},
+		Scripting: ScriptingConfig{
+			DefaultTimeoutMs: 100,
 		},
 	}
 }

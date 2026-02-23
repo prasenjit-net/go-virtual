@@ -30,6 +30,7 @@ func NewFileStorage(basePath string) (*FileStorage, error) {
 		filepath.Join(basePath, "specs"),
 		filepath.Join(basePath, "responses"),
 		filepath.Join(basePath, "operations"),
+		filepath.Join(basePath, "scripts"),
 	}
 
 	for _, dir := range dirs {
@@ -55,6 +56,11 @@ func NewFileStorage(basePath string) (*FileStorage, error) {
 func (f *FileStorage) loadAll() error {
 	// Load tags
 	if err := f.loadTags(); err != nil {
+		return err
+	}
+
+	// Load scripts
+	if err := f.loadScripts(); err != nil {
 		return err
 	}
 
@@ -610,6 +616,248 @@ func (f *FileStorage) DeleteResponseConfigsByOperation(opID string) error {
 		f.deleteResponseConfigFile(cfg.ID)
 	}
 
+	return nil
+}
+
+// ---- Script helpers ----
+
+func (f *FileStorage) scriptMetaPath(id string) string {
+	return filepath.Join(f.basePath, "scripts", id+".json")
+}
+
+func (f *FileStorage) scriptSourcePath(id string) string {
+	return filepath.Join(f.basePath, "scripts", id+".star")
+}
+
+func (f *FileStorage) scriptBindingsPath(operationID string) string {
+	return filepath.Join(f.basePath, "operations", operationID+".scripts.json")
+}
+
+// saveScript writes <id>.json (no Source) and <id>.star (source text)
+func (f *FileStorage) saveScript(script *models.Script) error {
+	// Write source to .star file
+	sourcePath := f.scriptSourcePath(script.ID)
+	if err := os.WriteFile(sourcePath, []byte(script.Source), 0644); err != nil {
+		return fmt.Errorf("write script source: %w", err)
+	}
+
+	// Write metadata to .json (Source excluded via json:"-")
+	data, err := json.MarshalIndent(script, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f.scriptMetaPath(script.ID), data, 0644)
+}
+
+// loadScripts loads all scripts from the scripts/ directory
+func (f *FileStorage) loadScripts() error {
+	scriptsDir := filepath.Join(f.basePath, "scripts")
+	entries, err := os.ReadDir(scriptsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(scriptsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var script models.Script
+		if err := json.Unmarshal(data, &script); err != nil {
+			continue
+		}
+
+		// Load source from companion .star file
+		sourceData, err := os.ReadFile(f.scriptSourcePath(script.ID))
+		if err == nil {
+			script.Source = string(sourceData)
+		}
+
+		f.memory.scripts[script.ID] = &script
+	}
+
+	// Load script bindings from operations/<id>.scripts.json files
+	opsDir := filepath.Join(f.basePath, "operations")
+	opEntries, err := os.ReadDir(opsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range opEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".scripts.json") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(opsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var bindings []*models.ScriptBinding
+		if err := json.Unmarshal(data, &bindings); err != nil {
+			continue
+		}
+
+		for _, b := range bindings {
+			if b != nil {
+				f.memory.scriptBindings[b.ID] = b
+			}
+		}
+	}
+
+	return nil
+}
+
+// deleteScriptFiles removes the .json and .star files for a script
+func (f *FileStorage) deleteScriptFiles(id string) {
+	os.Remove(f.scriptMetaPath(id))
+	os.Remove(f.scriptSourcePath(id))
+}
+
+// saveScriptBindings persists the bindings for an operation
+func (f *FileStorage) saveScriptBindings(operationID string) error {
+	bindings, err := f.memory.GetScriptBindings(operationID)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(f.scriptBindingsPath(operationID), data, 0644)
+}
+
+// ---- Script Storage interface methods ----
+
+// CreateScript creates a new script
+func (f *FileStorage) CreateScript(script *models.Script) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.CreateScript(script); err != nil {
+		return err
+	}
+	return f.saveScript(script)
+}
+
+// GetScript retrieves a script by ID
+func (f *FileStorage) GetScript(id string) (*models.Script, error) {
+	return f.memory.GetScript(id)
+}
+
+// GetAllScripts retrieves all scripts
+func (f *FileStorage) GetAllScripts() ([]*models.Script, error) {
+	return f.memory.GetAllScripts()
+}
+
+// UpdateScript updates a script
+func (f *FileStorage) UpdateScript(script *models.Script) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.UpdateScript(script); err != nil {
+		return err
+	}
+	return f.saveScript(script)
+}
+
+// DeleteScript deletes a script and its files
+func (f *FileStorage) DeleteScript(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteScript(id); err != nil {
+		return err
+	}
+	f.deleteScriptFiles(id)
+	return nil
+}
+
+// GetScriptBindings retrieves all bindings for an operation
+func (f *FileStorage) GetScriptBindings(operationID string) ([]*models.ScriptBinding, error) {
+	return f.memory.GetScriptBindings(operationID)
+}
+
+// CreateScriptBinding creates a new binding and persists the operation's binding list
+func (f *FileStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.CreateScriptBinding(binding); err != nil {
+		return err
+	}
+	return f.saveScriptBindings(binding.OperationID)
+}
+
+// UpdateScriptBinding updates a binding and re-persists the operation's binding list
+func (f *FileStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.UpdateScriptBinding(binding); err != nil {
+		return err
+	}
+	return f.saveScriptBindings(binding.OperationID)
+}
+
+// DeleteScriptBinding removes a binding and re-persists the operation's binding list
+func (f *FileStorage) DeleteScriptBinding(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Find the binding first to get the operationID
+	f.memory.mu.RLock()
+	binding, exists := f.memory.scriptBindings[id]
+	f.memory.mu.RUnlock()
+	if !exists {
+		return fmt.Errorf("script binding not found: %s", id)
+	}
+	operationID := binding.OperationID
+
+	if err := f.memory.DeleteScriptBinding(id); err != nil {
+		return err
+	}
+	return f.saveScriptBindings(operationID)
+}
+
+// DeleteScriptBindingsByScript removes all bindings for a script
+func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	// Collect affected operationIDs before deletion
+	f.memory.mu.RLock()
+	affected := make(map[string]struct{})
+	for _, b := range f.memory.scriptBindings {
+		if b.ScriptID == scriptID {
+			affected[b.OperationID] = struct{}{}
+		}
+	}
+	f.memory.mu.RUnlock()
+
+	if err := f.memory.DeleteScriptBindingsByScript(scriptID); err != nil {
+		return err
+	}
+
+	// Re-persist each affected operation's binding list
+	for opID := range affected {
+		if err := f.saveScriptBindings(opID); err != nil {
+			fmt.Printf("Warning: failed to save script bindings for operation %s: %v\n", opID, err)
+		}
+	}
 	return nil
 }
 
