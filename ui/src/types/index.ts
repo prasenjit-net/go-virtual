@@ -140,6 +140,10 @@ export interface Trace {
     proxyMode?: boolean;
     signature?: string;
     backendUri?: string;
+    // Phase 1: script traces
+    scripts?: ScriptTrace[];
+    // Phase 2: session trace
+    session?: SessionTrace;
 }
 
 export interface TraceRequest {
@@ -262,4 +266,42 @@ export interface ScriptTrace {
     durationMs: number;
     output?: any;
     error?: string;
+}
+
+// ---- Scripting Phase 2 — Session Store ----
+
+export interface StoreEntry {
+    key: string;
+    value: any;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface StoreEntryInput {
+    value: any;
+}
+
+export interface SessionInfo {
+    id: string;
+    createdAt: string;
+    lastActive: string;
+    entryCount: number;
+    storeSnapshot?: Record<string, any>;
+}
+
+export interface SessionListResponse {
+    sessions: SessionInfo[];
+    count: number;
+}
+
+export interface StoreAccessEvent {
+    op: string;
+    key?: string;
+    value?: any;
+}
+
+export interface SessionTrace {
+    id: string;
+    isNew: boolean;
+    storeAccess?: StoreAccessEvent[];
 }

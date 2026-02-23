@@ -52,7 +52,7 @@ func TestRunBindings_NoBindings(t *testing.T) {
 	store := newEngineStore(t, nil, nil)
 	engine := NewScriptEngine(store, 100)
 
-	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 	if len(out) != 0 {
 		t.Errorf("Expected empty output, got %v", out)
 	}
@@ -73,7 +73,7 @@ def run(req):
 	engine := NewScriptEngine(store, 100)
 
 	input := &ScriptInput{Path: map[string]string{"userId": "42"}}
-	out, traces := engine.RunBindings(context.Background(), "op-1", input)
+	out, traces := engine.RunBindings(context.Background(), "op-1", input, nil)
 
 	if len(out) != 1 {
 		t.Fatalf("Expected 1 output key, got %d: %v", len(out), out)
@@ -113,7 +113,7 @@ func TestRunBindings_MultipleBindingsOrdered(t *testing.T) {
 	store := newEngineStore(t, []*models.Script{s1, s2}, []*models.ScriptBinding{b1, b2})
 	engine := NewScriptEngine(store, 100)
 
-	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 
 	if len(out) != 2 {
 		t.Fatalf("Expected 2 output keys, got %d", len(out))
@@ -140,7 +140,7 @@ func TestRunBindings_DisabledBindingSkipped(t *testing.T) {
 	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
 	engine := NewScriptEngine(store, 100)
 
-	out, _ := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, _ := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 	if len(out) != 0 {
 		t.Errorf("Expected empty output for disabled binding, got %v", out)
 	}
@@ -155,7 +155,7 @@ func TestRunBindings_DisabledScriptSkipped(t *testing.T) {
 	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
 	engine := NewScriptEngine(store, 100)
 
-	out, _ := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, _ := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 	if len(out) != 0 {
 		t.Errorf("Expected empty output for disabled script, got %v", out)
 	}
@@ -171,7 +171,7 @@ func TestRunBindings_ScriptErrorDoesNotAbort(t *testing.T) {
 	store := newEngineStore(t, []*models.Script{bad, good}, []*models.ScriptBinding{b1, b2})
 	engine := NewScriptEngine(store, 100)
 
-	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 
 	if _, ok := out["bad"]; ok {
 		t.Error("Expected 'bad' key absent from output on error")
@@ -198,7 +198,7 @@ func TestRunBindings_CompilationErrorGraceful(t *testing.T) {
 	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
 	engine := NewScriptEngine(store, 100)
 
-	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{})
+	out, traces := engine.RunBindings(context.Background(), "op-1", &ScriptInput{}, nil)
 	if len(out) != 0 {
 		t.Errorf("Expected empty output for compile error, got %v", out)
 	}
@@ -217,9 +217,9 @@ func TestRunBindings_CacheHit(t *testing.T) {
 	input := &ScriptInput{}
 
 	// First call: compiles and caches
-	out1, _ := engine.RunBindings(context.Background(), "op-1", input)
+	out1, _ := engine.RunBindings(context.Background(), "op-1", input, nil)
 	// Second call: should hit cache
-	out2, _ := engine.RunBindings(context.Background(), "op-1", input)
+	out2, _ := engine.RunBindings(context.Background(), "op-1", input, nil)
 
 	if out1["out"] != "cached" || out2["out"] != "cached" {
 		t.Errorf("Expected 'cached' from both calls, got %v, %v", out1, out2)

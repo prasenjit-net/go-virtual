@@ -10,6 +10,8 @@ import TagManager from './components/TagManager'
 import ScriptList from './components/ScriptManager/ScriptList'
 import ScriptViewer from './components/ScriptManager/ScriptViewer'
 import ScriptEditor from './components/ScriptManager/ScriptEditor'
+import StoreManager from './components/StoreManager/StoreManager'
+import SessionManager from './components/SessionManager/SessionManager'
 
 function App() {
     return (
@@ -28,10 +30,11 @@ function App() {
                 <Route path="scripts/new" element={<ScriptEditor />} />
                 <Route path="scripts/:scriptId" element={<ScriptViewer />} />
                 <Route path="scripts/:scriptId/edit" element={<ScriptEditor />} />
+                <Route path="store" element={<StoreManager />} />
+                <Route path="sessions" element={<SessionManager />} />
             </Route>
         </Routes>
     )
 }
 
 export default App
-

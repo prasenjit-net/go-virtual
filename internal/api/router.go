@@ -13,6 +13,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
@@ -150,6 +151,19 @@ func (r *Router) setupRoutes() {
 		api.PUT("/scripts/:id", r.handler.UpdateScript)
 		api.DELETE("/scripts/:id", r.handler.DeleteScript)
 		api.POST("/scripts/:id/test", r.handler.TestScript)
+
+		// Global store (Phase 2)
+		api.GET("/store", r.handler.ListStoreEntries)
+		api.GET("/store/:key", r.handler.GetStoreEntry)
+		api.PUT("/store/:key", r.handler.UpsertStoreEntry)
+		api.DELETE("/store/:key", r.handler.DeleteStoreEntry)
+		api.DELETE("/store", r.handler.ClearStore)
+
+		// Sessions (Phase 2)
+		api.GET("/sessions", r.handler.ListSessions)
+		api.GET("/sessions/:id", r.handler.GetSession)
+		api.DELETE("/sessions/:id", r.handler.InvalidateSession)
+		api.DELETE("/sessions", r.handler.InvalidateAllSessions)
 	}
 
 	// WebSocket for live tracing
@@ -229,6 +243,11 @@ func (r *Router) ServeEmbeddedUI(uiFS fs.FS) {
 	r.engine.NoRoute(func(c *gin.Context) {
 		r.proxyEngine.ServeHTTP(c.Writer, c.Request)
 	})
+}
+
+// SetStoreManager wires Phase 2 GlobalStore and SessionManager into the handler.
+func (r *Router) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
+	r.handler.SetStoreManager(gs, sm)
 }
 
 // Handler returns the http.Handler

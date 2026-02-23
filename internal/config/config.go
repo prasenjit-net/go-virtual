@@ -16,6 +16,7 @@ type Config struct {
 	Logging   LoggingConfig   `yaml:"logging"`
 	Branding  BrandingConfig  `yaml:"branding"`
 	Scripting ScriptingConfig `yaml:"scripting"`
+	Session   SessionConfig   `yaml:"session"`
 }
 
 // BrandingConfig holds UI branding configuration
@@ -60,6 +61,17 @@ type TracingConfig struct {
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+}
+
+// SessionConfig controls per-request session behaviour.
+type SessionConfig struct {
+	// HeaderName is the HTTP header used to identify the session. Defaults to "X-Virtual-Session-Id".
+	HeaderName string `yaml:"headerName"`
+	// InactivityTimeout is how long a session survives without activity. Defaults to 30 minutes.
+	InactivityTimeout time.Duration `yaml:"inactivityTimeout"`
+	// MaxSessions is a hard cap on concurrent sessions. When exceeded the
+	// least-recently-active session is evicted. Defaults to 10000.
+	MaxSessions int `yaml:"maxSessions"`
 }
 
 // ScriptingConfig holds Starlark scripting configuration
@@ -107,6 +119,11 @@ func Default() *Config {
 		},
 		Scripting: ScriptingConfig{
 			DefaultTimeoutMs: 100,
+		},
+		Session: SessionConfig{
+			HeaderName:        "X-Virtual-Session-Id",
+			InactivityTimeout: 30 * time.Minute,
+			MaxSessions:       10000,
 		},
 	}
 }

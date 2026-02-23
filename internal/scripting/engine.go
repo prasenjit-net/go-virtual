@@ -6,6 +6,7 @@ import (
 
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 )
 
 const defaultTimeoutMs = 100
@@ -38,11 +39,13 @@ func NewScriptEngine(store storage.Storage, defaultTimeout int) *ScriptEngine {
 //   - a map of outputKey → script result (empty map if no bindings or all failed)
 //   - a slice of ScriptTrace records for tracing/debugging
 //
+// sess may be nil (Phase 1 behaviour — no store access injected).
 // Errors in individual scripts are captured in the trace and do not abort execution.
 func (e *ScriptEngine) RunBindings(
 	ctx context.Context,
 	operationID string,
 	input *ScriptInput,
+	sess *store.Session,
 ) (map[string]any, []models.ScriptTrace) {
 	output := make(map[string]any)
 	var traces []models.ScriptTrace
@@ -88,8 +91,11 @@ func (e *ScriptEngine) RunBindings(
 			timeoutMs = e.defaultTimeoutMs
 		}
 
+		// Prepare store access log for this script execution
+		var accessLog []models.StoreAccessEvent
+
 		start := time.Now()
-		result, execErr := compiled.Execute(ctx, input, timeoutMs)
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog)
 		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
 
 		if execErr != nil {
@@ -135,7 +141,7 @@ func (e *ScriptEngine) TestScript(
 	}
 
 	start := time.Now()
-	result, err := compiled.Execute(ctx, input, timeoutMs)
+	result, err := compiled.Execute(ctx, input, timeoutMs, nil, nil)
 	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 
 	return result, durationMs, err

@@ -6,13 +6,20 @@ import (
 	"time"
 
 	"go.starlark.net/starlark"
+
+	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/store"
 )
 
 // CompiledScript is the interface for an immutable, pre-compiled Starlark program.
 // Each call to Execute creates a fresh thread; the CompiledScript itself is safe
 // for concurrent use.
 type CompiledScript interface {
-	Execute(ctx context.Context, input *ScriptInput, timeoutMs int) (any, error)
+	// Execute runs the script with the given request input.
+	// sess may be nil (Phase 1 behaviour — no store access).
+	// When sess is non-nil, a `store` builtin is injected into the Starlark thread
+	// and access events are appended to accessLog.
+	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent) (any, error)
 }
 
 // StarlarkRunner compiles and executes Starlark scripts.
@@ -23,8 +30,8 @@ type StarlarkRunner struct{}
 func (r *StarlarkRunner) Compile(scriptID, source string) (CompiledScript, error) {
 	filename := scriptID + ".star"
 	_, prog, err := starlark.SourceProgram(filename, source, func(name string) bool {
-		// No pre-declared names beyond builtins
-		return false
+		// Allow 'store' as a predeclared name (injected at runtime when a session is active)
+		return name == "store"
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -40,7 +47,8 @@ type starlarkScript struct {
 
 // Execute runs the compiled script with the given request input and timeout.
 // It calls the mandatory top-level `run(req)` function.
-func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int) (result any, err error) {
+// When sess is non-nil a `store` Starlark builtin is injected for session store access.
+func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent) (result any, err error) {
 	// Recover from any Starlark panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -69,7 +77,13 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 		}()
 	}
 
-	globals, execErr := s.prog.Init(thread, starlark.StringDict{})
+	// Build predeclared names (available to the module as global constants)
+	predeclared := starlark.StringDict{}
+	if sess != nil {
+		predeclared["store"] = store.NewStoreBuiltin(sess, accessLog)
+	}
+
+	globals, execErr := s.prog.Init(thread, predeclared)
 	close(done)
 
 	if execErr != nil {
