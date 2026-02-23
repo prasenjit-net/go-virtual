@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { Plus, Code2, Trash2, Edit2, ToggleLeft, ToggleRight, Clock, FileCode } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Plus, Code2, Trash2, Edit2, ToggleLeft, ToggleRight, Clock, FileCode, Eye } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi } from '../../services/api'
 import type { Script } from '../../types'
 
 export default function ScriptList() {
     const queryClient = useQueryClient()
+    const navigate = useNavigate()
     const [pendingDelete, setPendingDelete] = useState<Script | null>(null)
 
     const { data: scripts, isLoading, error } = useQuery<Script[]>({
@@ -82,7 +83,8 @@ export default function ScriptList() {
                     {scripts.map((script) => (
                         <div
                             key={script.id}
-                            className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-5"
+                            onClick={() => navigate(`/scripts/${script.id}`)}
+                            className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-5 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all"
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center min-w-0">
@@ -128,9 +130,14 @@ export default function ScriptList() {
                                 </div>
 
                                 <div className="flex items-center gap-1 flex-shrink-0 ml-4">
+                                    {/* View hint */}
+                                    <span className="text-xs text-gray-300 dark:text-slate-600 mr-1 hidden sm:flex items-center gap-1">
+                                        <Eye className="w-3.5 h-3.5" /> View
+                                    </span>
+
                                     {/* Enable/disable toggle */}
                                     <button
-                                        onClick={() => toggleMutation.mutate({ script })}
+                                        onClick={(e) => { e.stopPropagation(); toggleMutation.mutate({ script }) }}
                                         disabled={toggleMutation.isPending}
                                         className={clsx(
                                             'p-2 rounded-lg transition-colors',
@@ -147,17 +154,17 @@ export default function ScriptList() {
                                     </button>
 
                                     {/* Edit */}
-                                    <Link
-                                        to={`/scripts/${script.id}/edit`}
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); navigate(`/scripts/${script.id}/edit`) }}
                                         className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
                                         title="Edit script"
                                     >
                                         <Edit2 className="w-5 h-5" />
-                                    </Link>
+                                    </button>
 
                                     {/* Delete */}
                                     <button
-                                        onClick={() => setPendingDelete(script)}
+                                        onClick={(e) => { e.stopPropagation(); setPendingDelete(script) }}
                                         className="p-2 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
                                         title="Delete script"
                                     >

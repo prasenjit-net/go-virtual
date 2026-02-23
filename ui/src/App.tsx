@@ -8,6 +8,7 @@ import ResponseConfigPage from './components/ResponseDesigner/ResponseConfigPage
 import TraceViewer from './components/TraceViewer'
 import TagManager from './components/TagManager'
 import ScriptList from './components/ScriptManager/ScriptList'
+import ScriptViewer from './components/ScriptManager/ScriptViewer'
 import ScriptEditor from './components/ScriptManager/ScriptEditor'
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
                 <Route path="tags" element={<TagManager />} />
                 <Route path="scripts" element={<ScriptList />} />
                 <Route path="scripts/new" element={<ScriptEditor />} />
+                <Route path="scripts/:scriptId" element={<ScriptViewer />} />
                 <Route path="scripts/:scriptId/edit" element={<ScriptEditor />} />
             </Route>
         </Routes>
