@@ -133,11 +133,10 @@ export default function SessionManager() {
                                                     s.id === selectedSession?.id ? null : s
                                                 )
                                             }
-                                            className={`border-t border-slate-700 hover:bg-slate-700/30 transition-colors cursor-pointer ${
-                                                selectedSession?.id === s.id
+                                            className={`border-t border-slate-700 hover:bg-slate-700/30 transition-colors cursor-pointer ${selectedSession?.id === s.id
                                                     ? 'bg-teal-900/20 border-l-2 border-l-teal-500'
                                                     : ''
-                                            }`}
+                                                }`}
                                         >
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-2">
@@ -221,7 +220,7 @@ export default function SessionManager() {
                                 {detailLoading ? (
                                     <div className="text-slate-400 text-xs">Loading…</div>
                                 ) : sessionDetail?.storeSnapshot &&
-                                  Object.keys(sessionDetail.storeSnapshot).length > 0 ? (
+                                    Object.keys(sessionDetail.storeSnapshot).length > 0 ? (
                                     <div className="bg-slate-900 rounded-lg p-2 overflow-auto max-h-48">
                                         <table className="w-full text-xs">
                                             <thead>

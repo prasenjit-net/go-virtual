@@ -251,7 +251,7 @@ func TestTestScript_Success(t *testing.T) {
 	engine := NewScriptEngine(store, 100)
 
 	script := makeScript("s1", `def run(req): return {"result": 42}`)
-	result, durationMs, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	result, _, durationMs, err := engine.TestScript(context.Background(), script, &ScriptInput{})
 	if err != nil {
 		t.Fatalf("TestScript error: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestTestScript_CompileError(t *testing.T) {
 	engine := NewScriptEngine(store, 100)
 
 	script := makeScript("s1", `def run(req  # bad`)
-	_, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	_, _, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
 	if err == nil {
 		t.Error("Expected error for invalid source")
 	}
@@ -285,7 +285,7 @@ func TestTestScript_UsesDefaultTimeout(t *testing.T) {
 	script := makeScript("s1", `def run(req): return "fast"`)
 	script.Timeout = 0 // zero → use default
 
-	result, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
+	result, _, _, err := engine.TestScript(context.Background(), script, &ScriptInput{})
 	if err != nil {
 		t.Fatalf("TestScript error: %v", err)
 	}

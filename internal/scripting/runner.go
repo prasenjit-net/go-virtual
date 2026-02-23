@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.starlark.net/starlark"
@@ -19,7 +20,8 @@ type CompiledScript interface {
 	// sess may be nil (Phase 1 behaviour — no store access).
 	// When sess is non-nil, a `store` builtin is injected into the Starlark thread
 	// and access events are appended to accessLog.
-	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent) (any, error)
+	// logBuf collects log() calls from the script; may be nil (logs are discarded).
+	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (any, error)
 }
 
 // StarlarkRunner compiles and executes Starlark scripts.
@@ -30,8 +32,8 @@ type StarlarkRunner struct{}
 func (r *StarlarkRunner) Compile(scriptID, source string) (CompiledScript, error) {
 	filename := scriptID + ".star"
 	_, prog, err := starlark.SourceProgram(filename, source, func(name string) bool {
-		// Allow 'store' as a predeclared name (injected at runtime when a session is active)
-		return name == "store"
+		// Allow 'store' and 'log' as predeclared names (injected at runtime)
+		return name == "store" || name == "log"
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -48,7 +50,8 @@ type starlarkScript struct {
 // Execute runs the compiled script with the given request input and timeout.
 // It calls the mandatory top-level `run(req)` function.
 // When sess is non-nil a `store` Starlark builtin is injected for session store access.
-func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent) (result any, err error) {
+// logBuf collects messages written via log() in the script; passing nil discards them.
+func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (result any, err error) {
 	// Recover from any Starlark panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -82,6 +85,18 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 	if sess != nil {
 		predeclared["store"] = store.NewStoreBuiltin(sess, accessLog)
 	}
+	// log(msg, ...) — always available; appends formatted message to logBuf.
+	// When logBuf is nil (tracing disabled), calls are silently discarded.
+	predeclared["log"] = starlark.NewBuiltin("log", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+		if logBuf != nil {
+			parts := make([]string, 0, len(args))
+			for _, arg := range args {
+				parts = append(parts, arg.String())
+			}
+			*logBuf = append(*logBuf, strings.Join(parts, " "))
+		}
+		return starlark.None, nil
+	})
 
 	globals, execErr := s.prog.Init(thread, predeclared)
 	close(done)

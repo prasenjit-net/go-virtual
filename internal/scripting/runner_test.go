@@ -53,7 +53,7 @@ def run(req):
 		Query:  map[string]string{"fmt": "json"},
 		Header: map[string]string{"authorization": "Bearer tok"},
 	}
-	result, err := cs.Execute(context.Background(), input, 100, nil, nil)
+	result, err := cs.Execute(context.Background(), input, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestExecute_ReturnsString(t *testing.T) {
 	runner := &StarlarkRunner{}
 	src := `def run(req): return "hello"`
 	cs, _ := runner.Compile("s2", src)
-	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil)
+	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestExecute_ReturnsBool(t *testing.T) {
 	runner := &StarlarkRunner{}
 	src := `def run(req): return True`
 	cs, _ := runner.Compile("s3", src)
-	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil)
+	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestExecute_ReturnsInt(t *testing.T) {
 	runner := &StarlarkRunner{}
 	src := `def run(req): return 42`
 	cs, _ := runner.Compile("s4", src)
-	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil)
+	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestExecute_NoRunFunction(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil)
+	_, err = cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Expected error for missing run function")
 	}
@@ -135,7 +135,7 @@ def run(req):
 	}
 	_, err = cs.Execute(context.Background(), &ScriptInput{
 		Path: map[string]string{},
-	}, 100, nil, nil)
+	}, 100, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Expected runtime error for division by zero")
 	}
@@ -155,7 +155,7 @@ def run(req):
     }
 `
 	cs, _ := runner.Compile("s7", src)
-	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil)
+	result, err := cs.Execute(context.Background(), &ScriptInput{}, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -182,7 +182,7 @@ def run(req):
 	cs, _ := runner.Compile("s8", src)
 	result, err := cs.Execute(context.Background(), &ScriptInput{
 		Body: map[string]any{"name": "Alice"},
-	}, 100, nil, nil)
+	}, 100, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -205,7 +205,7 @@ def run(req):
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	_, err = cs.Execute(context.Background(), &ScriptInput{}, 5, nil, nil)
+	_, err = cs.Execute(context.Background(), &ScriptInput{}, 5, nil, nil, nil)
 	if err == nil {
 		t.Fatal("Expected timeout error, got nil")
 	}

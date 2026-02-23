@@ -266,6 +266,7 @@ export interface ScriptTrace {
     durationMs: number;
     output?: any;
     error?: string;
+    logs?: string[];
 }
 
 // ---- Scripting Phase 2 — Session Store ----

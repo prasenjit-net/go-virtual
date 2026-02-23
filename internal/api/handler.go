@@ -1314,11 +1314,12 @@ func (h *Handler) TestScript(c *gin.Context) {
 		}
 	}
 
-	output, durationMs, execErr := h.scriptEngine.TestScript(c.Request.Context(), script, input)
+	output, logs, durationMs, execErr := h.scriptEngine.TestScript(c.Request.Context(), script, input)
 
 	resp := gin.H{
 		"output":     output,
 		"durationMs": durationMs,
+		"logs":       logs,
 		"error":      nil,
 	}
 	if execErr != nil {
