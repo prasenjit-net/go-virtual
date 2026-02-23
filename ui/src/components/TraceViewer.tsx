@@ -12,11 +12,14 @@ import {
     Fingerprint,
     Globe,
     Copy,
-    Check
+    Check,
+    Code2,
+    Terminal,
+    Users
 } from 'lucide-react'
 import clsx from 'clsx'
 import { tracesApi, specsApi } from '../services/api'
-import type { Trace, Spec } from '../types'
+import type { Trace, Spec, ScriptTrace, SessionTrace } from '../types'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -301,6 +304,108 @@ export default function TraceViewer() {
     )
 }
 
+function SessionSection({ session }: { session: SessionTrace }) {
+    return (
+        <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Users className="w-4 h-4 text-indigo-500" />
+                Session
+            </h3>
+            <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3 flex items-center gap-4 text-sm flex-wrap">
+                <div>
+                    <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase mr-1">ID</span>
+                    <span className="font-mono text-xs text-gray-700 dark:text-slate-200">{session.id}</span>
+                </div>
+                {session.isNew && (
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+                        New
+                    </span>
+                )}
+                {session.storeAccess && session.storeAccess.length > 0 && (
+                    <span className="text-xs text-gray-400 dark:text-slate-500">
+                        {session.storeAccess.length} store op{session.storeAccess.length !== 1 ? 's' : ''}
+                    </span>
+                )}
+            </div>
+        </div>
+    )
+}
+
+function ScriptsSection({ scripts }: { scripts: ScriptTrace[] }) {
+    return (
+        <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Code2 className="w-4 h-4 text-amber-500" />
+                Scripts
+                <span className="text-xs font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal">
+                    {scripts.length} binding{scripts.length !== 1 ? 's' : ''} executed
+                </span>
+            </h3>
+            <div className="space-y-3">
+                {scripts.map((st, i) => (
+                    <div
+                        key={st.bindingId || i}
+                        className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden"
+                    >
+                        {/* Script header */}
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-800 flex items-center justify-between gap-3 flex-wrap">
+                            <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-sm text-gray-900 dark:text-slate-100 truncate">{st.scriptName}</span>
+                                <span className="text-xs bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-mono shrink-0">
+                                    .script.{st.outputKey}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs shrink-0">
+                                {st.error ? (
+                                    <span className="text-red-600 dark:text-red-400 font-medium">Error</span>
+                                ) : (
+                                    <span className="text-emerald-600 dark:text-emerald-400 font-medium">OK</span>
+                                )}
+                                <span className="text-gray-400 dark:text-slate-500">{st.durationMs.toFixed(2)}ms</span>
+                            </div>
+                        </div>
+
+                        {/* Error */}
+                        {st.error && (
+                            <div className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-900/40 text-xs font-mono text-red-700 dark:text-red-300">
+                                {st.error}
+                            </div>
+                        )}
+
+                        {/* Logs */}
+                        {st.logs && st.logs.length > 0 && (
+                            <div className="border-b border-gray-100 dark:border-slate-800">
+                                <div className="px-4 pt-3 pb-1 flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-slate-400 uppercase">
+                                    <Terminal className="w-3.5 h-3.5" />
+                                    Logs
+                                </div>
+                                <div className="px-4 pb-3 space-y-0.5">
+                                    {st.logs.map((line, j) => (
+                                        <div key={j} className="flex items-start gap-2 font-mono text-xs">
+                                            <span className="select-none text-gray-400 dark:text-slate-600 shrink-0 w-5 text-right">{j + 1}</span>
+                                            <span className="text-emerald-700 dark:text-emerald-300 break-all">{line}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Output */}
+                        {st.output !== null && st.output !== undefined && (
+                            <div className="px-4 py-3">
+                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-1">Output</div>
+                                <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto">
+                                    {JSON.stringify(st.output, null, 2)}
+                                </pre>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 function tryFormatJson(str: string): string {
     try {
         return JSON.stringify(JSON.parse(str), null, 2)
@@ -491,6 +596,16 @@ function TraceDetail({
                 <div className="text-sm text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
                     Matched config: <span className="font-medium text-gray-700 dark:text-slate-200">{trace.matchedConfig}</span>
                 </div>
+            )}
+
+            {/* Session info */}
+            {trace.session && (
+                <SessionSection session={trace.session} />
+            )}
+
+            {/* Script traces */}
+            {trace.scripts && trace.scripts.length > 0 && (
+                <ScriptsSection scripts={trace.scripts} />
             )}
         </div>
     )
