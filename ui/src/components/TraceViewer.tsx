@@ -61,6 +61,7 @@ export default function TraceViewer() {
         } else {
             // Switching to live - clear live traces and start fresh
             setLiveTraces([])
+            setSelectedTrace(null)
             setIsLive(true)
         }
     }
@@ -69,6 +70,7 @@ export default function TraceViewer() {
         mutationFn: () => tracesApi.clear(specFilter || undefined),
         onSuccess: () => {
             setLiveTraces([])
+            setSelectedTrace(null)
             queryClient.invalidateQueries({ queryKey: ['traces'] })
         },
     })
@@ -124,6 +126,14 @@ export default function TraceViewer() {
         }
         return true
     })
+
+    // Clear detail panel when the selected trace is no longer in the visible list
+    // (e.g. spec filter changed, search narrowed results, or traces were cleared)
+    useEffect(() => {
+        if (selectedTrace && !filteredTraces.some((t) => t.id === selectedTrace.id)) {
+            setSelectedTrace(null)
+        }
+    }, [filteredTraces, selectedTrace])
 
     const formatDuration = (ns: number) => {
         const ms = ns / 1e6
