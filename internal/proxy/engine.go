@@ -16,6 +16,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/condition"
 	"github.com/prasenjit/go-virtual/internal/metrics"
 	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/scripting"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/template"
@@ -29,6 +30,7 @@ type Engine struct {
 	tracingService *tracing.Service
 	condEvaluator  *condition.Evaluator
 	templateEngine *template.Engine
+	scriptEngine   *scripting.ScriptEngine
 	recorder       *Recorder
 	mu             sync.RWMutex
 	routes         map[string][]*route // method -> routes
@@ -42,14 +44,21 @@ type route struct {
 	paramKeys []string
 }
 
-// NewEngine creates a new proxy engine
-func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service) *Engine {
+// NewEngine creates a new proxy engine.
+// An optional scriptTimeoutMs parameter overrides the default script execution timeout (100ms).
+func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, scriptTimeoutMs ...int) *Engine {
+	timeoutMs := 100
+	if len(scriptTimeoutMs) > 0 && scriptTimeoutMs[0] > 0 {
+		timeoutMs = scriptTimeoutMs[0]
+	}
+
 	e := &Engine{
 		store:          store,
 		statsCollector: statsCollector,
 		tracingService: tracingService,
 		condEvaluator:  condition.NewEvaluator(),
 		templateEngine: template.NewEngine(),
+		scriptEngine:   scripting.NewScriptEngine(store, timeoutMs),
 		recorder:       NewRecorder(store),
 		routes:         make(map[string][]*route),
 	}
@@ -276,6 +285,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Signature:   signature,
 	}
 
+	// Run script bindings to produce additional template context
+	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
+	scriptOutput, scriptTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput)
+
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
 
@@ -394,11 +407,12 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Build template context
 	seed := buildTemplateSeed(r, pathParams)
 	templateCtx := &template.Context{
-		PathParams:  pathParams,
-		QueryParams: r.URL.Query(),
-		Headers:     r.Header,
-		Body:        requestBody,
-		RNG:         rand.New(rand.NewSource(seed)),
+		PathParams:   pathParams,
+		QueryParams:  r.URL.Query(),
+		Headers:      r.Header,
+		Body:         requestBody,
+		RNG:          rand.New(rand.NewSource(seed)),
+		ScriptOutput: scriptOutput,
 	}
 
 	// Process headers – skip any that Go's ResponseWriter manages automatically
@@ -466,6 +480,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Duration:        duration.Nanoseconds(),
 			MatchedConfigID: matchedConfig.ID,
 			MatchedConfig:   matchedConfig.Name,
+			Scripts:         scriptTraces,
 			Request: models.TraceRequest{
 				Method:  r.Method,
 				URL:     r.URL.String(),

@@ -11,6 +11,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	github.com/tidwall/gjson v1.18.0
+	go.starlark.net v0.0.0-20260210143700-b62fd896b91b
 	gopkg.in/yaml.v3 v3.0.1
 )
 

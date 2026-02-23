@@ -111,7 +111,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	tracingService := tracing.NewService(maxTraces)
 
 	// Initialize proxy engine
-	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService)
+	scriptTimeoutMs := viper.GetInt("scripting.defaultTimeoutMs")
+	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService, scriptTimeoutMs)
 
 	// Resolve headless mode (flag overrides config)
 	headless := viper.GetBool("server.headless")

@@ -28,11 +28,13 @@ func NewEngine() *Engine {
 
 // Context contains all data available for template rendering
 type Context struct {
-	PathParams  map[string]string
-	QueryParams map[string][]string
-	Headers     map[string][]string
-	Body        string
-	RNG         *rand.Rand
+	PathParams   map[string]string
+	QueryParams  map[string][]string
+	Headers      map[string][]string
+	Body         string
+	RNG          *rand.Rand
+	// ScriptOutput holds results from script bindings, keyed by outputKey.
+	ScriptOutput map[string]any
 }
 
 type bodyTemplateData struct {
@@ -40,6 +42,9 @@ type bodyTemplateData struct {
 	Query  map[string]string
 	Header map[string]string
 	Body   string
+	// Script holds script binding output, keyed by outputKey.
+	// Access as {{.Script.pricing.total}} in templates.
+	Script map[string]any
 }
 
 // templateVarPattern matches template variables like {{variable}}
@@ -106,11 +111,14 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, textt
 	query := normalizeFirstValues(ctx.QueryParams)
 	headers := normalizeFirstValues(ctx.Headers)
 
+	scriptOutput := ctx.ScriptOutput
+
 	data := bodyTemplateData{
 		Path:   ctx.PathParams,
 		Query:  query,
 		Header: headers,
 		Body:   ctx.Body,
+		Script: scriptOutput,
 	}
 
 	funcMap := texttmpl.FuncMap{
@@ -164,6 +172,14 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, textt
 		},
 		"env": func(string) string {
 			return ""
+		},
+		// script resolves a dot-path into the script output map.
+		// e.g. {{script "pricing.total"}} → ScriptOutput["pricing"]["total"]
+		"script": func(path string) string {
+			if path == "" || scriptOutput == nil {
+				return ""
+			}
+			return resolveScriptOutputPath(scriptOutput, path)
 		},
 	}
 
@@ -223,11 +239,40 @@ func (e *Engine) resolveVariable(varName string, ctx *Context) string {
 		return e.resolveFaker(key, rng)
 	case "timestamp":
 		return e.resolveTimestamp(key)
+	case "script":
+		if key != "" && ctx != nil && ctx.ScriptOutput != nil {
+			return resolveScriptOutputPath(ctx.ScriptOutput, key)
+		}
 	case "env":
 		// Environment variables could be added here if needed
 		return ""
 	}
 
+	return ""
+}
+
+// resolveScriptOutputPath walks a dot-separated path through a script output map,
+// returning the string representation of the leaf value (or "" if not found).
+func resolveScriptOutputPath(output map[string]any, path string) string {
+	if output == nil || path == "" {
+		return ""
+	}
+
+	parts := strings.SplitN(path, ".", 2)
+	v, ok := output[parts[0]]
+	if !ok || v == nil {
+		return ""
+	}
+
+	if len(parts) == 1 {
+		// Leaf: convert to string
+		return fmt.Sprintf("%v", v)
+	}
+
+	// Recurse into nested map
+	if nested, ok := v.(map[string]any); ok {
+		return resolveScriptOutputPath(nested, parts[1])
+	}
 	return ""
 }
 
@@ -575,6 +620,8 @@ func legacyTokenToTemplate(value string) string {
 		return fmt.Sprintf("{{faker %q}}", strings.TrimPrefix(value, "faker."))
 	case strings.HasPrefix(value, "timestamp."):
 		return fmt.Sprintf("{{timestamp %q}}", strings.TrimPrefix(value, "timestamp."))
+	case strings.HasPrefix(value, "script."):
+		return fmt.Sprintf("{{script %q}}", strings.TrimPrefix(value, "script."))
 	case strings.HasPrefix(value, "env."):
 		return fmt.Sprintf("{{env %q}}", strings.TrimPrefix(value, "env."))
 	default:

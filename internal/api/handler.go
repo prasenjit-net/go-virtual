@@ -11,6 +11,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
 	"github.com/prasenjit/go-virtual/internal/proxy"
+	"github.com/prasenjit/go-virtual/internal/scripting"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/template"
@@ -26,6 +27,7 @@ type Handler struct {
 	proxyEngine    *proxy.Engine
 	parser         *parser.Parser
 	templateEngine *template.Engine
+	scriptEngine   *scripting.ScriptEngine
 	branding       config.BrandingConfig
 }
 
@@ -38,6 +40,7 @@ func NewHandler(store storage.Storage, statsCollector *stats.Collector, tracingS
 		proxyEngine:    proxyEngine,
 		parser:         parser.NewParser(),
 		templateEngine: template.NewEngine(),
+		scriptEngine:   scripting.NewScriptEngine(store, 100),
 	}
 }
 
@@ -1093,6 +1096,396 @@ func (h *Handler) ValidateTemplate(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"valid": true})
+}
+
+// ---- Script handlers ----
+
+// ListScripts returns all scripts (metadata only, no source).
+func (h *Handler) ListScripts(c *gin.Context) {
+	scripts, err := h.store.GetAllScripts()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	result := make([]map[string]any, len(scripts))
+	for i, s := range scripts {
+		result[i] = map[string]any{
+			"id":          s.ID,
+			"name":        s.Name,
+			"description": s.Description,
+			"timeout":     s.Timeout,
+			"enabled":     s.Enabled,
+			"createdAt":   s.CreatedAt,
+			"updatedAt":   s.UpdatedAt,
+		}
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// CreateScript creates a new Starlark script.
+func (h *Handler) CreateScript(c *gin.Context) {
+	var input models.ScriptInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if input.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	// Validate source
+	if input.Source != "" {
+		if err := h.scriptEngine.CompileAndValidate("validate", input.Source); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	now := time.Now()
+	script := &models.Script{
+		ID:          generateID(),
+		Name:        input.Name,
+		Description: input.Description,
+		Source:      input.Source,
+		Timeout:     input.Timeout,
+		Enabled:     input.Enabled,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	if err := h.store.CreateScript(script); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, script)
+}
+
+// GetScript retrieves a script by ID (includes source).
+func (h *Handler) GetScript(c *gin.Context) {
+	id := c.Param("id")
+	script, err := h.store.GetScript(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+		return
+	}
+	c.JSON(http.StatusOK, script)
+}
+
+// UpdateScript updates an existing script.
+func (h *Handler) UpdateScript(c *gin.Context) {
+	id := c.Param("id")
+	existing, err := h.store.GetScript(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+		return
+	}
+
+	var input models.ScriptInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate source if provided
+	source := input.Source
+	if source == "" {
+		source = existing.Source
+	}
+	if source != "" {
+		if err := h.scriptEngine.CompileAndValidate(id, source); err != nil {
+			c.JSON(http.StatusUnprocessableEntity, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
+	// Update fields
+	if input.Name != "" {
+		existing.Name = input.Name
+	}
+	existing.Description = input.Description
+	existing.Source = source
+	if input.Timeout >= 0 {
+		existing.Timeout = input.Timeout
+	}
+	existing.Enabled = input.Enabled
+	existing.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateScript(existing); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, existing)
+}
+
+// DeleteScript deletes a script and all its bindings.
+func (h *Handler) DeleteScript(c *gin.Context) {
+	id := c.Param("id")
+	if _, err := h.store.GetScript(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+		return
+	}
+
+	// Remove all bindings for this script
+	if err := h.store.DeleteScriptBindingsByScript(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.store.DeleteScript(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// ValidateScript validates Starlark source without saving.
+func (h *Handler) ValidateScript(c *gin.Context) {
+	var input struct {
+		Source string `json:"source"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.scriptEngine.CompileAndValidate("validate", input.Source); err != nil {
+		c.JSON(http.StatusOK, gin.H{"valid": false, "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"valid": true, "error": nil})
+}
+
+// TestScript executes a saved script with a mock input.
+func (h *Handler) TestScript(c *gin.Context) {
+	id := c.Param("id")
+	script, err := h.store.GetScript(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
+		return
+	}
+
+	var body struct {
+		Input *scripting.ScriptInput `json:"input"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input := body.Input
+	if input == nil {
+		input = &scripting.ScriptInput{
+			Path:   map[string]string{},
+			Query:  map[string]string{},
+			Header: map[string]string{},
+			Body:   nil,
+		}
+	}
+
+	output, durationMs, execErr := h.scriptEngine.TestScript(c.Request.Context(), script, input)
+
+	resp := gin.H{
+		"output":     output,
+		"durationMs": durationMs,
+		"error":      nil,
+	}
+	if execErr != nil {
+		resp["error"] = execErr.Error()
+		resp["output"] = nil
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
+// ---- Script Binding handlers ----
+
+// ListScriptBindings returns all bindings for an operation.
+func (h *Handler) ListScriptBindings(c *gin.Context) {
+	operationID := c.Param("id")
+	if _, err := h.store.GetOperation(operationID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "operation not found"})
+		return
+	}
+
+	bindings, err := h.store.GetScriptBindings(operationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, bindings)
+}
+
+// CreateScriptBinding attaches a script to an operation.
+func (h *Handler) CreateScriptBinding(c *gin.Context) {
+	operationID := c.Param("id")
+	if _, err := h.store.GetOperation(operationID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "operation not found"})
+		return
+	}
+
+	var input models.ScriptBindingInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if input.ScriptID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scriptId is required"})
+		return
+	}
+	if input.OutputKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "outputKey is required"})
+		return
+	}
+
+	script, err := h.store.GetScript(input.ScriptID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "script not found: " + input.ScriptID})
+		return
+	}
+
+	binding := &models.ScriptBinding{
+		ID:          generateID(),
+		OperationID: operationID,
+		ScriptID:    input.ScriptID,
+		ScriptName:  script.Name,
+		OutputKey:   input.OutputKey,
+		Order:       input.Order,
+		Enabled:     input.Enabled,
+	}
+
+	if err := h.store.CreateScriptBinding(binding); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, binding)
+}
+
+// UpdateScriptBinding updates binding metadata (outputKey, order, enabled).
+func (h *Handler) UpdateScriptBinding(c *gin.Context) {
+	operationID := c.Param("id")
+	bindingID := c.Param("bindingId")
+
+	bindings, err := h.store.GetScriptBindings(operationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var existing *models.ScriptBinding
+	for _, b := range bindings {
+		if b.ID == bindingID {
+			existing = b
+			break
+		}
+	}
+	if existing == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script binding not found"})
+		return
+	}
+
+	var input models.ScriptBindingInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if input.OutputKey != "" {
+		existing.OutputKey = input.OutputKey
+	}
+	existing.Order = input.Order
+	existing.Enabled = input.Enabled
+
+	if err := h.store.UpdateScriptBinding(existing); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, existing)
+}
+
+// DeleteScriptBinding detaches a script from an operation.
+func (h *Handler) DeleteScriptBinding(c *gin.Context) {
+	operationID := c.Param("id")
+	bindingID := c.Param("bindingId")
+
+	bindings, err := h.store.GetScriptBindings(operationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	found := false
+	for _, b := range bindings {
+		if b.ID == bindingID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "script binding not found"})
+		return
+	}
+
+	if err := h.store.DeleteScriptBinding(bindingID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// ReorderScriptBindings bulk-updates the Order of bindings for an operation.
+func (h *Handler) ReorderScriptBindings(c *gin.Context) {
+	operationID := c.Param("id")
+	if _, err := h.store.GetOperation(operationID); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "operation not found"})
+		return
+	}
+
+	var input []struct {
+		ID    string `json:"id"`
+		Order int    `json:"order"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	bindings, err := h.store.GetScriptBindings(operationID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build index
+	byID := make(map[string]*models.ScriptBinding, len(bindings))
+	for _, b := range bindings {
+		byID[b.ID] = b
+	}
+
+	for _, item := range input {
+		if b, ok := byID[item.ID]; ok {
+			b.Order = item.Order
+			if err := h.store.UpdateScriptBinding(b); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+	}
+
+	// Return updated list
+	updated, _ := h.store.GetScriptBindings(operationID)
+	c.JSON(http.StatusOK, updated)
 }
 
 // generateID generates a unique ID
