@@ -1161,7 +1161,7 @@ func (h *Handler) CreateScript(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, script)
+	c.JSON(http.StatusCreated, scriptWithSource(script))
 }
 
 // GetScript retrieves a script by ID (includes source).
@@ -1172,7 +1172,22 @@ func (h *Handler) GetScript(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "script not found"})
 		return
 	}
-	c.JSON(http.StatusOK, script)
+	c.JSON(http.StatusOK, scriptWithSource(script))
+}
+
+// scriptWithSource builds the JSON-serialisable representation of a Script,
+// explicitly including the Source field (which has json:"-" on the struct).
+func scriptWithSource(s *models.Script) map[string]any {
+	return map[string]any{
+		"id":          s.ID,
+		"name":        s.Name,
+		"description": s.Description,
+		"timeout":     s.Timeout,
+		"enabled":     s.Enabled,
+		"createdAt":   s.CreatedAt,
+		"updatedAt":   s.UpdatedAt,
+		"source":      s.Source,
+	}
 }
 
 // UpdateScript updates an existing script.
@@ -1219,7 +1234,7 @@ func (h *Handler) UpdateScript(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, existing)
+	c.JSON(http.StatusOK, scriptWithSource(existing))
 }
 
 // DeleteScript deletes a script and all its bindings.

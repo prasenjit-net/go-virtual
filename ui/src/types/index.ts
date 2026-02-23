@@ -215,3 +215,51 @@ export interface Branding {
     appTitle: string;
     appSubtitle: string;
 }
+
+// ---- Scripting Phase 1 ----
+
+export interface Script {
+    id: string;
+    name: string;
+    description: string;
+    timeout: number;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
+    source?: string; // Included only in GET /:id, absent in list
+}
+
+export interface ScriptInput {
+    name: string;
+    description: string;
+    source: string;
+    timeout: number;
+    enabled: boolean;
+}
+
+export interface ScriptBinding {
+    id: string;
+    operationId: string;
+    scriptId: string;
+    scriptName?: string;
+    outputKey: string;
+    order: number;
+    enabled: boolean;
+}
+
+export interface ScriptBindingInput {
+    scriptId: string;
+    outputKey: string;
+    order: number;
+    enabled: boolean;
+}
+
+export interface ScriptTrace {
+    bindingId: string;
+    scriptId: string;
+    scriptName: string;
+    outputKey: string;
+    durationMs: number;
+    output?: any;
+    error?: string;
+}
