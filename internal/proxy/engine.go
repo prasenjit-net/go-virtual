@@ -297,19 +297,25 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Session resolution (Phase 2) ──────────────────────────────────────────
 	// Resolve (or create) a session for this request.
+	// Sessions are never created for proxy-mode specs — skip entirely.
 	// When no SessionManager is configured (Phase 1 mode) sess remains nil.
 	var sess *store.Session
 	var sessionIsNew bool
-	if e.sessionManager != nil {
+	if e.sessionManager != nil && !matchedRoute.spec.ProxyMode {
 		rawSessionID := r.Header.Get(e.sessionHeaderName)
 		sess, sessionIsNew = e.sessionManager.GetOrCreate(rawSessionID)
 		// Always echo session ID in response header, unconditionally.
 		w.Header().Set(e.sessionHeaderName, sess.ID)
 	}
 
-	// Run script bindings to produce additional template context
-	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
-	scriptOutput, scriptTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
+	// Run script bindings to produce additional template context.
+	// Scripts are skipped entirely for proxy-mode specs.
+	var scriptOutput map[string]any
+	var scriptTraces []models.ScriptTrace
+	if !matchedRoute.spec.ProxyMode {
+		scriptInput := scripting.BuildInput(pathParams, r, requestBody)
+		scriptOutput, scriptTraces = e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
+	}
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
