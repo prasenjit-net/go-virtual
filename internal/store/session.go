@@ -28,6 +28,18 @@ func newSession(id string, snapshot map[string]any) *Session {
 	}
 }
 
+// NewEphemeralSession returns a throwaway session seeded with the provided
+// snapshot (may be nil for an empty store). It is intended for script test
+// execution: the store builtin is fully functional during the run, but all
+// mutations are discarded when the session goes out of scope — they never
+// reach the GlobalStore.
+func NewEphemeralSession(snapshot map[string]any) *Session {
+	if snapshot == nil {
+		snapshot = make(map[string]any)
+	}
+	return newSession("__ephemeral__", snapshot)
+}
+
 // Get returns the value for a key. ok is false when the key is absent.
 func (s *Session) Get(key string) (any, bool) {
 	s.mu.Lock()
