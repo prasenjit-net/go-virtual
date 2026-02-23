@@ -26,3 +26,8 @@ branding:
 
 scripting:
   defaultTimeoutMs: 100  # Default Starlark execution timeout per script in milliseconds
+
+session:
+  headerName: "X-Virtual-Session-Id"  # Header used to identify sessions
+  inactivityTimeout: "30m"            # Idle TTL before session is discarded (Go duration string)
+  maxSessions: 10000                  # Hard cap on concurrent sessions

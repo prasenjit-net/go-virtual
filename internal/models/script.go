@@ -45,11 +45,12 @@ type ScriptBindingInput struct {
 
 // ScriptTrace captures the execution result of a single script binding within a request trace.
 type ScriptTrace struct {
-	BindingID  string  `json:"bindingId"`
-	ScriptID   string  `json:"scriptId"`
-	ScriptName string  `json:"scriptName"`
-	OutputKey  string  `json:"outputKey"`
-	DurationMs float64 `json:"durationMs"`
-	Output     any     `json:"output,omitempty"`
-	Error      string  `json:"error,omitempty"`
+	BindingID  string   `json:"bindingId"`
+	ScriptID   string   `json:"scriptId"`
+	ScriptName string   `json:"scriptName"`
+	OutputKey  string   `json:"outputKey"`
+	DurationMs float64  `json:"durationMs"`
+	Output     any      `json:"output,omitempty"`
+	Error      string   `json:"error,omitempty"`
+	Logs       []string `json:"logs,omitempty"`
 }

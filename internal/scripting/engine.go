@@ -6,6 +6,7 @@ import (
 
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 )
 
 const defaultTimeoutMs = 100
@@ -38,11 +39,13 @@ func NewScriptEngine(store storage.Storage, defaultTimeout int) *ScriptEngine {
 //   - a map of outputKey → script result (empty map if no bindings or all failed)
 //   - a slice of ScriptTrace records for tracing/debugging
 //
+// sess may be nil (Phase 1 behaviour — no store access injected).
 // Errors in individual scripts are captured in the trace and do not abort execution.
 func (e *ScriptEngine) RunBindings(
 	ctx context.Context,
 	operationID string,
 	input *ScriptInput,
+	sess *store.Session,
 ) (map[string]any, []models.ScriptTrace) {
 	output := make(map[string]any)
 	var traces []models.ScriptTrace
@@ -88,8 +91,12 @@ func (e *ScriptEngine) RunBindings(
 			timeoutMs = e.defaultTimeoutMs
 		}
 
+		// Prepare store access log for this script execution
+		var accessLog []models.StoreAccessEvent
+		var logBuf []string
+
 		start := time.Now()
-		result, execErr := compiled.Execute(ctx, input, timeoutMs)
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf)
 		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
 
 		if execErr != nil {
@@ -97,6 +104,10 @@ func (e *ScriptEngine) RunBindings(
 		} else {
 			st.Output = result
 			output[binding.OutputKey] = result
+		}
+
+		if len(logBuf) > 0 {
+			st.Logs = logBuf
 		}
 
 		traces = append(traces, st)
@@ -118,13 +129,13 @@ func (e *ScriptEngine) TestScript(
 	ctx context.Context,
 	script *models.Script,
 	input *ScriptInput,
-) (any, float64, error) {
+) (any, []string, float64, error) {
 	compiled, cacheHit := e.cache.Get(script.ID, script.UpdatedAt)
 	if !cacheHit {
 		var err error
 		compiled, err = e.runner.Compile(script.ID, script.Source)
 		if err != nil {
-			return nil, 0, err
+			return nil, nil, 0, err
 		}
 		e.cache.Set(script.ID, script.UpdatedAt, compiled)
 	}
@@ -134,9 +145,10 @@ func (e *ScriptEngine) TestScript(
 		timeoutMs = e.defaultTimeoutMs
 	}
 
+	var logBuf []string
 	start := time.Now()
-	result, err := compiled.Execute(ctx, input, timeoutMs)
+	result, err := compiled.Execute(ctx, input, timeoutMs, nil, nil, &logBuf)
 	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 
-	return result, durationMs, err
+	return result, logBuf, durationMs, err
 }

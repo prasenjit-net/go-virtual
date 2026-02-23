@@ -9,7 +9,9 @@ import {
     Moon,
     Monitor,
     Tags,
-    Code2
+    Code2,
+    Database,
+    Users
 } from 'lucide-react'
 import { LogoFull } from './Logo'
 import { brandingApi } from '../services/api'
@@ -21,6 +23,8 @@ const navItems = [
     { to: '/specs', icon: FileCode2, label: 'API Specs' },
     { to: '/traces', icon: Activity, label: 'Traces' },
     { to: '/scripts', icon: Code2, label: 'Scripts' },
+    { to: '/store', icon: Database, label: 'Store' },
+    { to: '/sessions', icon: Users, label: 'Sessions' },
     { to: '/tags', icon: Tags, label: 'Tags' },
 ]
 

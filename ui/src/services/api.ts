@@ -420,3 +420,78 @@ export const scriptBindingsApi = {
         return handleResponse<import('../types').ScriptBinding[]>(response);
     },
 };
+
+// Global Store API
+export const storeApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/store`);
+        return handleResponse<import('../types').StoreEntry[]>(response);
+    },
+
+    get: async (key: string) => {
+        const response = await fetch(`${API_BASE}/store/${encodeURIComponent(key)}`);
+        return handleResponse<{ key: string; value: any }>(response);
+    },
+
+    upsert: async (key: string, value: any) => {
+        const response = await fetch(`${API_BASE}/store/${encodeURIComponent(key)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value }),
+        });
+        return handleResponse<{ key: string; value: any }>(response);
+    },
+
+    delete: async (key: string) => {
+        const response = await fetch(`${API_BASE}/store/${encodeURIComponent(key)}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    clear: async () => {
+        const response = await fetch(`${API_BASE}/store?confirm=true`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};
+
+// Sessions API
+export const sessionsApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/sessions`);
+        return handleResponse<import('../types').SessionListResponse>(response);
+    },
+
+    get: async (id: string) => {
+        const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(id)}`);
+        return handleResponse<import('../types').SessionInfo>(response);
+    },
+
+    invalidate: async (id: string) => {
+        const response = await fetch(`${API_BASE}/sessions/${encodeURIComponent(id)}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    invalidateAll: async () => {
+        const response = await fetch(`${API_BASE}/sessions?confirm=true`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};

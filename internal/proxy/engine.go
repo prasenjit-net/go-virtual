@@ -19,21 +19,24 @@ import (
 	"github.com/prasenjit/go-virtual/internal/scripting"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/template"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
 // Engine handles proxying requests to virtual API endpoints
 type Engine struct {
-	store          storage.Storage
-	statsCollector *stats.Collector
-	tracingService *tracing.Service
-	condEvaluator  *condition.Evaluator
-	templateEngine *template.Engine
-	scriptEngine   *scripting.ScriptEngine
-	recorder       *Recorder
-	mu             sync.RWMutex
-	routes         map[string][]*route // method -> routes
+	store              storage.Storage
+	statsCollector     *stats.Collector
+	tracingService     *tracing.Service
+	condEvaluator      *condition.Evaluator
+	templateEngine     *template.Engine
+	scriptEngine       *scripting.ScriptEngine
+	sessionManager     *store.SessionManager // nil when Phase 2 is not configured
+	sessionHeaderName  string
+	recorder           *Recorder
+	mu                 sync.RWMutex
+	routes             map[string][]*route // method -> routes
 }
 
 // route represents a registered route
@@ -67,6 +70,13 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	e.ReloadRoutes()
 
 	return e
+}
+
+// SetSessionManager attaches a SessionManager to the engine, enabling Phase 2
+// session tracking. headerName is the HTTP header used to identify sessions.
+func (e *Engine) SetSessionManager(sm *store.SessionManager, headerName string) {
+	e.sessionManager = sm
+	e.sessionHeaderName = headerName
 }
 
 // ReloadRoutes reloads all routes from enabled specs
@@ -285,9 +295,27 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Signature:   signature,
 	}
 
-	// Run script bindings to produce additional template context
-	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
-	scriptOutput, scriptTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput)
+	// ── Session resolution (Phase 2) ──────────────────────────────────────────
+	// Resolve (or create) a session for this request.
+	// Sessions are never created for proxy-mode specs — skip entirely.
+	// When no SessionManager is configured (Phase 1 mode) sess remains nil.
+	var sess *store.Session
+	var sessionIsNew bool
+	if e.sessionManager != nil && !matchedRoute.spec.ProxyMode {
+		rawSessionID := r.Header.Get(e.sessionHeaderName)
+		sess, sessionIsNew = e.sessionManager.GetOrCreate(rawSessionID)
+		// Always echo session ID in response header, unconditionally.
+		w.Header().Set(e.sessionHeaderName, sess.ID)
+	}
+
+	// Run script bindings to produce additional template context.
+	// Scripts are skipped entirely for proxy-mode specs.
+	var scriptOutput map[string]any
+	var scriptTraces []models.ScriptTrace
+	if !matchedRoute.spec.ProxyMode {
+		scriptInput := scripting.BuildInput(pathParams, r, requestBody)
+		scriptOutput, scriptTraces = e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
+	}
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
@@ -471,6 +499,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Record trace if tracing is enabled
 	if matchedRoute.spec.Tracing {
+		var sessionTrace *models.SessionTrace
+		if sess != nil {
+			sessionTrace = &models.SessionTrace{
+				ID:    sess.ID,
+				IsNew: sessionIsNew,
+			}
+		}
 		trace := &models.Trace{
 			SpecID:          matchedRoute.spec.ID,
 			SpecName:        matchedRoute.spec.Name,
@@ -481,6 +516,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			MatchedConfigID: matchedConfig.ID,
 			MatchedConfig:   matchedConfig.Name,
 			Scripts:         scriptTraces,
+			Session:         sessionTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
 				URL:     r.URL.String(),

@@ -3,16 +3,25 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.starlark.net/starlark"
+
+	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/store"
 )
 
 // CompiledScript is the interface for an immutable, pre-compiled Starlark program.
 // Each call to Execute creates a fresh thread; the CompiledScript itself is safe
 // for concurrent use.
 type CompiledScript interface {
-	Execute(ctx context.Context, input *ScriptInput, timeoutMs int) (any, error)
+	// Execute runs the script with the given request input.
+	// sess may be nil (Phase 1 behaviour — no store access).
+	// When sess is non-nil, a `store` builtin is injected into the Starlark thread
+	// and access events are appended to accessLog.
+	// logBuf collects log() calls from the script; may be nil (logs are discarded).
+	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (any, error)
 }
 
 // StarlarkRunner compiles and executes Starlark scripts.
@@ -23,8 +32,8 @@ type StarlarkRunner struct{}
 func (r *StarlarkRunner) Compile(scriptID, source string) (CompiledScript, error) {
 	filename := scriptID + ".star"
 	_, prog, err := starlark.SourceProgram(filename, source, func(name string) bool {
-		// No pre-declared names beyond builtins
-		return false
+		// Allow 'store' and 'log' as predeclared names (injected at runtime)
+		return name == "store" || name == "log"
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -40,7 +49,9 @@ type starlarkScript struct {
 
 // Execute runs the compiled script with the given request input and timeout.
 // It calls the mandatory top-level `run(req)` function.
-func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int) (result any, err error) {
+// When sess is non-nil a `store` Starlark builtin is injected for session store access.
+// logBuf collects messages written via log() in the script; passing nil discards them.
+func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (result any, err error) {
 	// Recover from any Starlark panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -69,7 +80,25 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 		}()
 	}
 
-	globals, execErr := s.prog.Init(thread, starlark.StringDict{})
+	// Build predeclared names (available to the module as global constants)
+	predeclared := starlark.StringDict{}
+	if sess != nil {
+		predeclared["store"] = store.NewStoreBuiltin(sess, accessLog)
+	}
+	// log(msg, ...) — always available; appends formatted message to logBuf.
+	// When logBuf is nil (tracing disabled), calls are silently discarded.
+	predeclared["log"] = starlark.NewBuiltin("log", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+		if logBuf != nil {
+			parts := make([]string, 0, len(args))
+			for _, arg := range args {
+				parts = append(parts, arg.String())
+			}
+			*logBuf = append(*logBuf, strings.Join(parts, " "))
+		}
+		return starlark.None, nil
+	})
+
+	globals, execErr := s.prog.Init(thread, predeclared)
 	close(done)
 
 	if execErr != nil {

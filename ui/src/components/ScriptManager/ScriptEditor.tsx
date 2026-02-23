@@ -15,6 +15,8 @@ const DEFAULT_SOURCE = `# Starlark script — define a run(req) function that re
 # req.query  → dict of query parameters
 # req.header → dict of request headers (lowercased keys)
 # req.body   → parsed JSON body (or None)
+# store      → session key-value store (get, set, has, delete, keys)
+# log(...)   → append message to trace logs
 
 def run(req):
     return {
@@ -46,7 +48,7 @@ export default function ScriptEditor() {
     const [testQuery, setTestQuery] = useState('{}')
     const [testHeader, setTestHeader] = useState('{}')
     const [testBody, setTestBody] = useState('null')
-    const [testResult, setTestResult] = useState<{ output: any; durationMs: number; error: string | null } | null>(null)
+    const [testResult, setTestResult] = useState<{ output: any; durationMs: number; error: string | null; logs?: string[] } | null>(null)
     const [isTesting, setIsTesting] = useState(false)
 
     // Load existing script for edit mode
@@ -406,6 +408,19 @@ export default function ScriptEditor() {
                                                 <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 text-sm overflow-x-auto">
                                                     {JSON.stringify(testResult.output, null, 2)}
                                                 </pre>
+                                            </div>
+                                        )}
+
+                                        {testResult.logs && testResult.logs.length > 0 && (
+                                            <div>
+                                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Logs</div>
+                                                <div className="bg-gray-900 rounded-lg p-4 space-y-0.5">
+                                                    {testResult.logs.map((line, i) => (
+                                                        <div key={i} className="text-sm font-mono text-emerald-300">
+                                                            <span className="select-none text-gray-500 mr-2">{String(i + 1).padStart(2, '0')}</span>{line}
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         )}
                                     </div>

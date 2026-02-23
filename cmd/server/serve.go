@@ -23,6 +23,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	gvstore "github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/tlsutil"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
@@ -114,6 +115,37 @@ func runServe(cmd *cobra.Command, args []string) error {
 	scriptTimeoutMs := viper.GetInt("scripting.defaultTimeoutMs")
 	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService, scriptTimeoutMs)
 
+	// Initialize Phase 2 — GlobalStore and SessionManager
+	storePath := storagePath // already resolved above
+	globalStorePath := filepath.Join(storePath, "store.json")
+
+	globalStore, err := gvstore.NewGlobalStore(globalStorePath)
+	if err != nil {
+		log.Printf("Warning: failed to load global store from %s: %v — starting with empty store", globalStorePath, err)
+		globalStore, _ = gvstore.NewGlobalStore(globalStorePath)
+	}
+
+	sessionCfg := config.SessionConfig{
+		HeaderName:        viper.GetString("session.headerName"),
+		InactivityTimeout: viper.GetDuration("session.inactivityTimeout"),
+		MaxSessions:       viper.GetInt("session.maxSessions"),
+	}
+	if sessionCfg.HeaderName == "" {
+		sessionCfg.HeaderName = "X-Virtual-Session-Id"
+	}
+	if sessionCfg.InactivityTimeout <= 0 {
+		sessionCfg.InactivityTimeout = 30 * time.Minute
+	}
+	if sessionCfg.MaxSessions <= 0 {
+		sessionCfg.MaxSessions = 10000
+	}
+
+	sessionCtx, cancelSessions := context.WithCancel(context.Background())
+	defer cancelSessions()
+
+	sessionManager := gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
+	proxyEngine.SetSessionManager(sessionManager, sessionCfg.HeaderName)
+
 	// Resolve headless mode (flag overrides config)
 	headless := viper.GetBool("server.headless")
 	if headlessFlag {
@@ -128,6 +160,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Setup router
 	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless, branding)
+	router.SetStoreManager(globalStore, sessionManager)
 
 	// Setup UI serving (skipped in headless mode)
 	if !headless {
