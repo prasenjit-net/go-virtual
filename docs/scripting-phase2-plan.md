@@ -100,7 +100,6 @@ Every proxied request is examined for the session header. The header name defaul
 session:
   headerName: "X-Virtual-Session-Id"   # Header to read and write
   inactivityTimeout: 30m               # Idle TTL before session is discarded
-  echoHeader: true                     # Write session ID back into response headers
   maxSessions: 10000                   # Hard cap on concurrent sessions
 ```
 
@@ -112,14 +111,14 @@ Incoming proxied request
         ▼
 Read header: X-Virtual-Session-Id (or configured name)
         │
-   ┌────┴──────────────────────────────────┐
-   │ Header present and session found?     │
-   │                                       │
-   │ YES                    NO             │
-   ▼                        ▼             │
-Load session          Create new session  │
-(update lastActive)   (deep-copy global   │
-                       store entries)     │
+   ┌────┴──────────────────────────────────────────┐
+   │ Header present and session found?             │
+   │                                               │
+   │ YES                    NO (absent or expired) │
+   ▼                        ▼                     │
+Load session          Create new session           │
+(update lastActive)   (generate UUID, deep-copy    │
+                       global store entries)       │
    └────────────────────────┘
         │
         ▼
@@ -129,19 +128,22 @@ Attach session.Store to script execution context
 Scripts execute (may read/write session store)
         │
         ▼
-If echoHeader=true → write session ID into response header
+Always write session ID into response header
 ```
 
 **New session creation:**
-1. Generate a UUID session ID.
-2. Deep-copy all current global store entries into the session's private map.
-3. Set `lastActive = now`.
-4. Store in the in-memory session registry.
+1. If the caller supplied a session ID in the header but it was not found (expired or unknown), that value is discarded — a fresh UUID v4 is generated as the new session ID.
+2. If no session header was provided, a UUID v4 is generated.
+3. Deep-copy all current global store entries into the session's private map.
+4. Set `lastActive = now`.
+5. Store in the in-memory session registry.
+6. Return the session ID in the response header (always).
 
 **Existing session retrieval:**
-1. Look up session ID in the registry.
-2. If found and not expired: update `lastActive`, return session.
-3. If expired or not found: create a new session (step above), return it.
+1. Read the raw string value from the session header.
+2. Look up that string in the registry (any string is a valid lookup key).
+3. If found and not expired: update `lastActive`, return session.
+4. If expired or not found: treat as new session — generate a UUID and follow new session creation steps above.
 
 ### 3.3 Session Expiry
 
@@ -149,14 +151,17 @@ A background goroutine runs every minute (configurable) and removes sessions whe
 
 Expired sessions are simply removed from the in-memory registry. Their data is never written back to the global store.
 
-### 3.4 Anonymous Requests
+### 3.4 Session Header Behaviour
 
-If a request carries no session header, an **ephemeral anonymous session** is created for the duration of that request only:
-- Initialised with a snapshot of the global store.
-- Writes are discarded after the response is sent.
-- No session ID is echoed in the response.
+The session header (`X-Virtual-Session-Id` by default) is **always written in the response** — including the first request that did not supply it. This makes it easy for API clients to pick up and reuse the server-assigned session ID without any special bootstrapping.
 
-This ensures scripts always have a valid `store` object regardless of whether the caller manages sessions.
+| Request header | Server behaviour | Response header |
+|---|---|---|
+| Absent | Create new session (UUID v4) | Echo the new UUID |
+| Present, session found | Resume existing session | Echo the same ID |
+| Present, session expired/unknown | Discard incoming value, create new session (UUID v4) | Echo the new UUID |
+
+There are no ephemeral or anonymous sessions — every request is associated with a persistent session that survives subsequent requests until it expires due to inactivity.
 
 ---
 
@@ -384,8 +389,10 @@ The `store` builtin is injected into the Starlark thread's predeclared values be
 // In engine.go ServeHTTP, after route match:
 
 // 1. Resolve or create session
-sessionID := r.Header.Get(e.cfg.Session.HeaderName)
-session   := e.storeManager.GetOrCreate(sessionID)
+// Accept any string from the header as a lookup key.
+// If absent, expired, or unknown → generate a fresh UUID session.
+rawSessionID := r.Header.Get(e.cfg.Session.HeaderName)
+session      := e.storeManager.GetOrCreate(rawSessionID)
 
 // 2. Run scripts with session store access
 scriptOutput, scriptTraces := e.scriptEngine.RunBindings(
@@ -395,10 +402,8 @@ scriptOutput, scriptTraces := e.scriptEngine.RunBindings(
     session,  // NEW parameter (nil in Phase 1)
 )
 
-// 3. Echo session ID in response if configured
-if e.cfg.Session.EchoHeader {
-    w.Header().Set(e.cfg.Session.HeaderName, session.ID)
-}
+// 3. Always echo session ID in response header
+w.Header().Set(e.cfg.Session.HeaderName, session.ID)
 ```
 
 The Phase 1 `RunBindings` signature adds `session *store.Session` as a new parameter (nil-safe — Phase 1 scripts that don't use `store` are unaffected).
@@ -412,7 +417,6 @@ The Phase 1 `RunBindings` signature adds `session *store.Session` as a new param
 session:
   headerName:        "X-Virtual-Session-Id"  # Request/response header name
   inactivityTimeout: 30m                     # Idle TTL; supports Go duration strings
-  echoHeader:        true                    # Write session ID into response header
   maxSessions:       10000                   # Hard cap; oldest session evicted when exceeded
 ```
 
@@ -422,7 +426,7 @@ session:
 
 | Concern | Mitigation |
 |---|---|
-| Session fixation / hijacking | Session IDs are server-generated UUIDs (v4); caller-provided IDs are treated as lookup keys only — if not found, a new UUID is generated and returned |
+| Session fixation / hijacking | Caller-provided header values are accepted as lookup keys only. If the value is not found in the registry a **new UUID v4 is generated** — the caller's string is never promoted to a live session ID. Session IDs for new sessions are always server-generated UUIDs. |
 | Memory exhaustion (sessions) | `maxSessions` cap; oldest-last-active session evicted when limit is reached |
 | Memory exhaustion (store values) | Cap individual entry value size (1 MB); cap total global store size (10 MB) |
 | Script poisoning global store | Scripts can only write to session copy; global store is read-only from scripts |
@@ -474,7 +478,7 @@ The `storeAccess` log is captured at script execution time and shows exactly whi
 7. `internal/api/router.go` — register `/_api/store` and `/_api/sessions` routes
 8. `internal/scripting/runner.go` — inject `store` builtin into Starlark thread when `session != nil`
 9. `internal/scripting/engine.go` — accept `*store.Session` in `RunBindings`; pass to `Execute`
-10. `internal/proxy/engine.go` — session resolution before script execution; echo header
+10. `internal/proxy/engine.go` — session resolution before script execution; always echo session ID in response header; generate UUID v4 for new sessions regardless of whether caller supplied a header value
 11. `internal/models/trace.go` — add `Session *SessionTrace` to `Trace`
 12. Admin UI — Store list page + Monaco JSON value editor
 13. Admin UI — Sessions inspector page (list + detail panel)
@@ -490,8 +494,9 @@ The `storeAccess` log is captured at script execution time and shows exactly whi
 | Store scope | **Application-wide** — one global store shared across all specs and operations |
 | Script write access | **Session-local only** — scripts cannot modify global store |
 | Global store modification | **Admin UI / Admin API only** |
-| Session identification | **`X-Virtual-Session-Id` header** — name configurable in `config.yaml` |
-| Sessionless requests | **Ephemeral anonymous session** — seeded from global, discarded after response |
+| Session identification | **`X-Virtual-Session-Id` header** — name configurable in `config.yaml`; any string is accepted as a lookup key; new sessions always receive a server-generated UUID v4 |
+| Session header echo | **Always** — the session ID is written into every response header unconditionally; not configurable |
+| Sessionless requests | **Persistent session created automatically** — if no header is present (or the value is unknown/expired), a new session is created with a UUID v4 and the ID is echoed back; there are no ephemeral anonymous sessions |
 | Session expiry | **Inactivity-based** — configurable TTL, default 30 minutes |
 | Persistence | **Global store only** — persisted to `data/store.json`; session copies are in-memory only |
 | Store value types | **Any JSON type** — string, number, boolean, array, object |
