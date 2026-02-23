@@ -3,6 +3,20 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml">
+    <img src="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build Status" />
+  </a>
+  <a href="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/badge/coverage-80%25%2B-brightgreen" alt="Test Coverage 80%+" />
+  </a>
+  <a href="https://github.com/prasenjit-net/go-virtual/releases/latest">
+    <img src="https://img.shields.io/github/v/release/prasenjit-net/go-virtual" alt="Latest Release" />
+  </a>
+  <img src="https://img.shields.io/badge/go-1.21%2B-00ADD8?logo=go" alt="Go 1.21+" />
+  <img src="https://img.shields.io/github/license/prasenjit-net/go-virtual" alt="License" />
+</p>
+
+<p align="center">
   <strong>API Mock &amp; Virtualization for OpenAPI 3</strong><br/>
   Configure dynamic mock responses, trace live traffic, and run chaos experiments — all from a single binary.
 </p>
