@@ -1080,6 +1080,9 @@ func (h *Handler) SetBranding(b config.BrandingConfig) {
 func (h *Handler) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
 	h.globalStore = gs
 	h.sessionManager = sm
+	// Also give the script engine access to the GlobalStore so that TestScript
+	// can seed its ephemeral session with the current store snapshot.
+	h.scriptEngine.SetGlobalStore(gs)
 }
 
 // GetBranding returns the UI branding configuration (app title, subtitle).

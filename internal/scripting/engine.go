@@ -14,6 +14,7 @@ const defaultTimeoutMs = 100
 // ScriptEngine manages script compilation, caching, and execution for the proxy pipeline.
 type ScriptEngine struct {
 	store            storage.Storage
+	globalStore      *store.GlobalStore // optional; seeded into ephemeral sessions for test execution
 	runner           *StarlarkRunner
 	cache            *compiledCache
 	defaultTimeoutMs int
@@ -32,6 +33,12 @@ func NewScriptEngine(store storage.Storage, defaultTimeout int) *ScriptEngine {
 		cache:            newCompiledCache(),
 		defaultTimeoutMs: defaultTimeout,
 	}
+}
+
+// SetGlobalStore wires the GlobalStore into the engine so that TestScript can
+// seed its ephemeral session with the current store snapshot.
+func (e *ScriptEngine) SetGlobalStore(gs *store.GlobalStore) {
+	e.globalStore = gs
 }
 
 // RunBindings executes all enabled script bindings for an operation in Order sequence.
@@ -145,9 +152,20 @@ func (e *ScriptEngine) TestScript(
 		timeoutMs = e.defaultTimeoutMs
 	}
 
+	// Create a throwaway session seeded from the current GlobalStore snapshot
+	// (if available) so store.get/set/has work correctly during test execution.
+	// All mutations are discarded when the session goes out of scope — they
+	// never reach the GlobalStore.
+	var snapshot map[string]any
+	if e.globalStore != nil {
+		snapshot = e.globalStore.Snapshot()
+	}
+	ephemeral := store.NewEphemeralSession(snapshot)
+
+	var accessLog []models.StoreAccessEvent
 	var logBuf []string
 	start := time.Now()
-	result, err := compiled.Execute(ctx, input, timeoutMs, nil, nil, &logBuf)
+	result, err := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf)
 	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 
 	return result, logBuf, durationMs, err
