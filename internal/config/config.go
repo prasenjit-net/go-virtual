@@ -17,6 +17,7 @@ type Config struct {
 	Branding  BrandingConfig  `yaml:"branding"`
 	Scripting ScriptingConfig `yaml:"scripting"`
 	Session   SessionConfig   `yaml:"session"`
+	Proxy     ProxyConfig     `yaml:"proxy"`
 }
 
 // BrandingConfig holds UI branding configuration
@@ -81,6 +82,28 @@ type ScriptingConfig struct {
 	DefaultTimeoutMs int `yaml:"defaultTimeoutMs"`
 }
 
+// ProxyConfig holds configuration for outbound HTTP calls made in proxy/recording mode.
+type ProxyConfig struct {
+	// TimeoutSeconds is the HTTP client timeout for backend requests. Defaults to 30.
+	TimeoutSeconds int `yaml:"timeoutSeconds"`
+	// InsecureSkipVerify disables TLS server certificate verification.
+	// Useful for backends with self-signed certificates. Defaults to false.
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify"`
+	// MTLS configures mutual TLS — presenting a client certificate to the backend.
+	MTLS MTLSConfig `yaml:"mtls"`
+}
+
+// MTLSConfig holds client certificate settings for mutual TLS.
+type MTLSConfig struct {
+	// CertFile is the path to the PEM-encoded client certificate.
+	CertFile string `yaml:"certFile"`
+	// KeyFile is the path to the PEM-encoded client private key.
+	KeyFile string `yaml:"keyFile"`
+	// CACertFile is an optional path to a PEM-encoded CA certificate used to
+	// verify the backend server's certificate. When empty the system CA pool is used.
+	CACertFile string `yaml:"caCertFile"`
+}
+
 // Default returns the default configuration
 func Default() *Config {
 	// Get current working directory for default data path
@@ -124,6 +147,10 @@ func Default() *Config {
 			HeaderName:        "X-Virtual-Session-Id",
 			InactivityTimeout: 30 * time.Minute,
 			MaxSessions:       10000,
+		},
+		Proxy: ProxyConfig{
+			TimeoutSeconds:     30,
+			InsecureSkipVerify: false,
 		},
 	}
 }

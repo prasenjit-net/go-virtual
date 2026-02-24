@@ -79,6 +79,13 @@ func (e *Engine) SetSessionManager(sm *store.SessionManager, headerName string) 
 	e.sessionHeaderName = headerName
 }
 
+// SetProxyHTTPClient replaces the HTTP client used by the proxy recorder for
+// backend requests. Use proxy.BuildClient to construct a client with mTLS or
+// custom CA settings from a ClientConfig.
+func (e *Engine) SetProxyHTTPClient(client *http.Client) {
+	e.recorder.SetHTTPClient(client)
+}
+
 // ReloadRoutes reloads all routes from enabled specs
 func (e *Engine) ReloadRoutes() error {
 	e.mu.Lock()
