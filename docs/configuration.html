@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Configuration — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html" class="active">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html" class="active"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Configuration</div>
+      <h1>Configuration</h1>
+      <p class="lead">Complete reference for <code>config.yaml</code> — all server settings, TLS options, storage backends, tracing, scripting, sessions, proxy, logging, and branding.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#server">server</a></li>
+        <li><a href="#tls">server.tls</a></li>
+        <li><a href="#storage">storage</a></li>
+        <li><a href="#tracing-config">tracing</a></li>
+        <li><a href="#logging">logging</a></li>
+        <li><a href="#scripting-config">scripting</a></li>
+        <li><a href="#session-config">session</a></li>
+        <li><a href="#proxy">proxy</a></li>
+        <li><a href="#branding">branding</a></li>
+        <li><a href="#full-example">Full Example</a></li>
+        <li><a href="#env-vars">Environment Variables</a></li>
+        <li><a href="#precedence">Config Precedence</a></li>
+      </ul>
+    </div>
+
+    <!-- Overview -->
+    <div class="section" id="overview">
+      <h2>Overview</h2>
+      <p>go-virtual uses a YAML configuration file (default: <code>./config.yaml</code>). You can specify a different path with the <code>--config</code> flag:</p>
+      <pre><code>go-virtual serve --config /etc/go-virtual/config.yaml
+</code></pre>
+      <p>Run <code>go-virtual init</code> to generate a default <code>config.yaml</code> in the current directory.</p>
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>CLI flags override config</strong>
+          CLI flags (like <code>--port</code> and <code>--tls</code>) take precedence over values in <code>config.yaml</code>. Environment variables also override config file values.
+        </div>
+      </div>
+    </div>
+
+    <!-- server -->
+    <div class="section" id="server">
+      <h2>server</h2>
+      <p>HTTP server settings.</p>
+      <pre><code><span class="key">server</span><span class="op">:</span>
+  <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>          <span class="cm"># TCP port to listen on</span>
+  <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>    <span class="cm"># Bind address ("0.0.0.0" = all interfaces)</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>server.port</td><td>integer</td><td>8080</td><td>TCP port number. Can be overridden with <code>--port</code> flag.</td></tr>
+            <tr><td>server.host</td><td>string</td><td>"0.0.0.0"</td><td>Bind address. Use "127.0.0.1" to listen only on loopback.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TLS -->
+    <div class="section" id="tls">
+      <h2>server.tls</h2>
+      <p>TLS/HTTPS configuration. go-virtual supports both manually provided certificates and auto-generated self-signed certificates.</p>
+      <pre><code><span class="key">server</span><span class="op">:</span>
+  <span class="key">tls</span><span class="op">:</span>
+    <span class="key">enabled</span><span class="op">:</span> <span class="kw">false</span>           <span class="cm"># Enable HTTPS</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">""</span>             <span class="cm"># Path to PEM certificate file</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">""</span>              <span class="cm"># Path to PEM private key file</span>
+    <span class="key">autoGenerate</span><span class="op">:</span> <span class="kw">true</span>       <span class="cm"># Auto-generate self-signed cert if none provided</span>
+    <span class="key">storePath</span><span class="op">:</span> <span class="str">""</span>            <span class="cm"># Where to store the auto-generated cert (default: data/certs/)</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>tls.enabled</td><td>bool</td><td>false</td><td>Enable TLS. Can be overridden with <code>--tls</code> flag.</td></tr>
+            <tr><td>tls.certFile</td><td>string</td><td>""</td><td>Path to PEM certificate. If empty and <code>autoGenerate</code> is true, a self-signed cert is generated.</td></tr>
+            <tr><td>tls.keyFile</td><td>string</td><td>""</td><td>Path to PEM private key. Must be paired with <code>certFile</code>.</td></tr>
+            <tr><td>tls.autoGenerate</td><td>bool</td><td>true</td><td>Generate a self-signed certificate if no cert files are provided.</td></tr>
+            <tr><td>tls.storePath</td><td>string</td><td>"data/certs"</td><td>Directory where auto-generated certificates are saved between restarts.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Both HTTP and HTTPS</h3>
+      <p>go-virtual uses TLS multiplexing (BoringSSL-style sniffing) to serve both HTTP and HTTPS on the same port simultaneously. Clients that don't initiate a TLS handshake receive plain HTTP.</p>
+
+      <h3>Production TLS setup</h3>
+      <pre><code><span class="key">server</span><span class="op">:</span>
+  <span class="key">port</span><span class="op">:</span> <span class="num">443</span>
+  <span class="key">tls</span><span class="op">:</span>
+    <span class="key">enabled</span><span class="op">:</span> <span class="kw">true</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">/etc/letsencrypt/live/example.com/fullchain.pem</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">/etc/letsencrypt/live/example.com/privkey.pem</span>
+    <span class="key">autoGenerate</span><span class="op">:</span> <span class="kw">false</span>
+</code></pre>
+    </div>
+
+    <!-- Storage -->
+    <div class="section" id="storage">
+      <h2>storage</h2>
+      <p>Configure where go-virtual persists its data.</p>
+      <pre><code><span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>         <span class="cm"># "file" or "memory"</span>
+  <span class="key">path</span><span class="op">:</span> <span class="str">"./data"</span>      <span class="cm"># Base directory (only used with type: file)</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>storage.type</td><td>string</td><td>"file"</td><td><code>"file"</code> for persistent JSON storage, <code>"memory"</code> for ephemeral in-memory storage.</td></tr>
+            <tr><td>storage.path</td><td>string</td><td>"./data"</td><td>Root directory for file storage. Created automatically if it doesn't exist.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>File storage</h3>
+      <p>All data is stored as atomic JSON files in subdirectories of <code>storage.path</code>. Writes use a two-file pattern (write to <code>.tmp</code>, then rename) for crash safety.</p>
+
+      <h3>In-memory storage</h3>
+      <p>Nothing is persisted to disk. All specs, responses, scripts, traces, and session data are lost on restart. Useful for:</p>
+      <ul>
+        <li>Stateless container deployments</li>
+        <li>CI/CD test environments</li>
+        <li>Local development without cluttering the working directory</li>
+      </ul>
+      <pre><code><span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"memory"</span>
+</code></pre>
+    </div>
+
+    <!-- Tracing config -->
+    <div class="section" id="tracing-config">
+      <h2>tracing</h2>
+      <pre><code><span class="key">tracing</span><span class="op">:</span>
+  <span class="key">maxTraces</span><span class="op">:</span> <span class="num">1000</span>       <span class="cm"># Ring buffer size</span>
+  <span class="key">retention</span><span class="op">:</span> <span class="str">"24h"</span>     <span class="cm"># Maximum trace age before eviction</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>tracing.maxTraces</td><td>integer</td><td>1000</td><td>Maximum number of trace records kept in memory. Oldest entries are evicted when full.</td></tr>
+            <tr><td>tracing.retention</td><td>duration</td><td>"24h"</td><td>How long to keep trace records. Format: <code>1h</code>, <code>30m</code>, <code>72h</code>, etc.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Logging -->
+    <div class="section" id="logging">
+      <h2>logging</h2>
+      <pre><code><span class="key">logging</span><span class="op">:</span>
+  <span class="key">level</span><span class="op">:</span> <span class="str">"info"</span>         <span class="cm"># debug, info, warn, error</span>
+  <span class="key">format</span><span class="op">:</span> <span class="str">"json"</span>       <span class="cm"># "json" or "text"</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>logging.level</td><td>string</td><td>"info"</td><td>Log verbosity. Use <code>"debug"</code> to see all request routing decisions and script executions.</td></tr>
+            <tr><td>logging.format</td><td>string</td><td>"json"</td><td><code>"json"</code> for structured logging (recommended for production/log aggregation), <code>"text"</code> for human-readable output.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Scripting config -->
+    <div class="section" id="scripting-config">
+      <h2>scripting</h2>
+      <pre><code><span class="key">scripting</span><span class="op">:</span>
+  <span class="key">defaultTimeoutMs</span><span class="op">:</span> <span class="num">100</span>   <span class="cm"># Default script execution timeout (ms)</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>scripting.defaultTimeoutMs</td><td>integer</td><td>100</td><td>Default timeout applied to scripts that don't specify their own <code>timeoutMs</code>. Minimum is 1ms, maximum is 10000ms (10 seconds).</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Timeout applies to all requests</strong>
+          The script timeout adds to the overall request latency. Keep scripts fast (under 10ms) for best performance. The <code>sleep()</code> builtin is capped at the timeout value.
+        </div>
+      </div>
+    </div>
+
+    <!-- Session config -->
+    <div class="section" id="session-config">
+      <h2>session</h2>
+      <pre><code><span class="key">session</span><span class="op">:</span>
+  <span class="key">headerName</span><span class="op">:</span> <span class="str">"X-Virtual-Session-Id"</span>  <span class="cm"># Request header for session ID</span>
+  <span class="key">inactivityTimeout</span><span class="op">:</span> <span class="str">"30m"</span>          <span class="cm"># Session expiry after inactivity</span>
+  <span class="key">maxSessions</span><span class="op">:</span> <span class="num">10000</span>                <span class="cm"># Max concurrent active sessions</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>session.headerName</td><td>string</td><td>"X-Virtual-Session-Id"</td><td>HTTP header that clients use to identify their session.</td></tr>
+            <tr><td>session.inactivityTimeout</td><td>duration</td><td>"30m"</td><td>A session is deleted if no request uses it for this duration. Resets on each request.</td></tr>
+            <tr><td>session.maxSessions</td><td>integer</td><td>10000</td><td>Maximum concurrent sessions. New sessions are rejected when this limit is reached until existing sessions expire.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Proxy -->
+    <div class="section" id="proxy">
+      <h2>proxy</h2>
+      <p>Settings for when go-virtual forwards requests to a real backend (proxy mode).</p>
+      <pre><code><span class="key">proxy</span><span class="op">:</span>
+  <span class="key">timeoutSeconds</span><span class="op">:</span> <span class="num">30</span>             <span class="cm"># Backend request timeout</span>
+  <span class="key">insecureSkipVerify</span><span class="op">:</span> <span class="kw">false</span>      <span class="cm"># Skip TLS cert verification for backends</span>
+  <span class="key">mtls</span><span class="op">:</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">""</span>                  <span class="cm"># Client certificate for mTLS backends</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">""</span>                   <span class="cm"># Client private key</span>
+    <span class="key">caCertFile</span><span class="op">:</span> <span class="str">""</span>               <span class="cm"># CA cert to verify backend's certificate</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>proxy.timeoutSeconds</td><td>integer</td><td>30</td><td>Maximum time to wait for a backend response before failing with a 504.</td></tr>
+            <tr><td>proxy.insecureSkipVerify</td><td>bool</td><td>false</td><td>Skip TLS certificate verification for backend HTTPS connections. Not recommended for production.</td></tr>
+            <tr><td>proxy.mtls.certFile</td><td>string</td><td>""</td><td>Path to client certificate for mTLS authentication with the backend.</td></tr>
+            <tr><td>proxy.mtls.keyFile</td><td>string</td><td>""</td><td>Path to client private key for mTLS.</td></tr>
+            <tr><td>proxy.mtls.caCertFile</td><td>string</td><td>""</td><td>Path to CA certificate used to verify the backend server's TLS certificate.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>mTLS proxy example</h3>
+      <pre><code><span class="key">proxy</span><span class="op">:</span>
+  <span class="key">timeoutSeconds</span><span class="op">:</span> <span class="num">60</span>
+  <span class="key">mtls</span><span class="op">:</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">/certs/client.crt</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">/certs/client.key</span>
+    <span class="key">caCertFile</span><span class="op">:</span> <span class="str">/certs/ca-bundle.crt</span>
+</code></pre>
+    </div>
+
+    <!-- Branding -->
+    <div class="section" id="branding">
+      <h2>branding</h2>
+      <p>Customize the Admin UI title and subtitle for multi-tenant or white-label deployments.</p>
+      <pre><code><span class="key">branding</span><span class="op">:</span>
+  <span class="key">appTitle</span><span class="op">:</span> <span class="str">""</span>          <span class="cm"># Custom name shown in the UI header</span>
+  <span class="key">appSubtitle</span><span class="op">:</span> <span class="str">""</span>      <span class="cm"># Custom tagline shown below the title</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>branding.appTitle</td><td>string</td><td>"go-virtual"</td><td>Application name displayed in the UI header and browser tab.</td></tr>
+            <tr><td>branding.appSubtitle</td><td>string</td><td>"API Mock &amp; Virtualization"</td><td>Subtitle shown below the title in the Admin UI.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Full example -->
+    <div class="section" id="full-example">
+      <h2>Full Example</h2>
+      <p>A complete <code>config.yaml</code> with all options:</p>
+      <pre><code><span class="cm"># go-virtual configuration</span>
+
+<span class="key">server</span><span class="op">:</span>
+  <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>
+  <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>
+  <span class="key">tls</span><span class="op">:</span>
+    <span class="key">enabled</span><span class="op">:</span> <span class="kw">false</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">autoGenerate</span><span class="op">:</span> <span class="kw">true</span>
+    <span class="key">storePath</span><span class="op">:</span> <span class="str">""</span>
+
+<span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>
+  <span class="key">path</span><span class="op">:</span> <span class="str">"./data"</span>
+
+<span class="key">tracing</span><span class="op">:</span>
+  <span class="key">maxTraces</span><span class="op">:</span> <span class="num">1000</span>
+  <span class="key">retention</span><span class="op">:</span> <span class="str">"24h"</span>
+
+<span class="key">logging</span><span class="op">:</span>
+  <span class="key">level</span><span class="op">:</span> <span class="str">"info"</span>
+  <span class="key">format</span><span class="op">:</span> <span class="str">"json"</span>
+
+<span class="key">scripting</span><span class="op">:</span>
+  <span class="key">defaultTimeoutMs</span><span class="op">:</span> <span class="num">100</span>
+
+<span class="key">session</span><span class="op">:</span>
+  <span class="key">headerName</span><span class="op">:</span> <span class="str">"X-Virtual-Session-Id"</span>
+  <span class="key">inactivityTimeout</span><span class="op">:</span> <span class="str">"30m"</span>
+  <span class="key">maxSessions</span><span class="op">:</span> <span class="num">10000</span>
+
+<span class="key">proxy</span><span class="op">:</span>
+  <span class="key">timeoutSeconds</span><span class="op">:</span> <span class="num">30</span>
+  <span class="key">insecureSkipVerify</span><span class="op">:</span> <span class="kw">false</span>
+  <span class="key">mtls</span><span class="op">:</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">caCertFile</span><span class="op">:</span> <span class="str">""</span>
+
+<span class="key">branding</span><span class="op">:</span>
+  <span class="key">appTitle</span><span class="op">:</span> <span class="str">""</span>
+  <span class="key">appSubtitle</span><span class="op">:</span> <span class="str">""</span>
+</code></pre>
+    </div>
+
+    <!-- Env vars -->
+    <div class="section" id="env-vars">
+      <h2>Environment Variables</h2>
+      <p>All config values can be overridden with environment variables. The naming convention is: uppercase the key path and replace dots with underscores, prefixed with <code>GV_</code>:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Environment Variable</th><th>Config key</th></tr></thead>
+          <tbody>
+            <tr><td>GV_SERVER_PORT</td><td>server.port</td></tr>
+            <tr><td>GV_SERVER_HOST</td><td>server.host</td></tr>
+            <tr><td>GV_SERVER_TLS_ENABLED</td><td>server.tls.enabled</td></tr>
+            <tr><td>GV_SERVER_TLS_CERTFILE</td><td>server.tls.certFile</td></tr>
+            <tr><td>GV_SERVER_TLS_KEYFILE</td><td>server.tls.keyFile</td></tr>
+            <tr><td>GV_STORAGE_TYPE</td><td>storage.type</td></tr>
+            <tr><td>GV_STORAGE_PATH</td><td>storage.path</td></tr>
+            <tr><td>GV_LOGGING_LEVEL</td><td>logging.level</td></tr>
+            <tr><td>GV_LOGGING_FORMAT</td><td>logging.format</td></tr>
+            <tr><td>GV_SESSION_HEADERNAME</td><td>session.headerName</td></tr>
+            <tr><td>GV_SESSION_INACTIVITYTIMEOUT</td><td>session.inactivityTimeout</td></tr>
+            <tr><td>GV_PROXY_TIMEOUTSECONDS</td><td>proxy.timeoutSeconds</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="cm"># Run with custom port and in-memory storage</span>
+GV_SERVER_PORT=3000 GV_STORAGE_TYPE=memory go-virtual serve
+</code></pre>
+    </div>
+
+    <!-- Precedence -->
+    <div class="section" id="precedence">
+      <h2>Config Precedence</h2>
+      <p>Configuration values are resolved in this order (highest priority first):</p>
+      <ol>
+        <li><strong>CLI flags</strong> — <code>--port 3000</code>, <code>--tls</code>, etc.</li>
+        <li><strong>Environment variables</strong> — <code>GV_SERVER_PORT=3000</code></li>
+        <li><strong>config.yaml</strong> — Values in the configuration file</li>
+        <li><strong>Built-in defaults</strong> — Hardcoded defaults as shown in this reference</li>
+      </ol>
+
+      <pre><code><span class="cm"># Port 3000 wins over the 8080 in config.yaml</span>
+go-virtual serve --port 3000 --config config.yaml
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Combining config file and environment</strong>
+          Use the config file for static settings (storage, TLS certs) and environment variables for runtime overrides (port, log level, feature toggles). This pattern works well with container deployments.
+        </div>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="admin-api.html">&#8592; Admin API</a>
+        <a href="index.html">Back to Overview &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Templating &amp; Conditions — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html" class="active"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Templating &amp; Conditions</div>
+      <h1>Templating &amp; Conditions</h1>
+      <p class="lead">Use template variables to produce dynamic response bodies and headers. Match response configurations using flexible condition rules on any part of the request.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#template-syntax">Template Syntax</a></li>
+        <li><a href="#request-vars">Request Variables</a></li>
+        <li><a href="#random">Random &amp; Generated</a></li>
+        <li><a href="#faker">Faker Data</a></li>
+        <li><a href="#timestamps">Timestamps</a></li>
+        <li><a href="#script-output">Script Output Variables</a></li>
+        <li><a href="#conditions">Conditions</a></li>
+        <li><a href="#condition-operators">Condition Operators</a></li>
+        <li><a href="#condition-sources">Condition Sources</a></li>
+        <li><a href="#examples">Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- Template syntax -->
+    <div class="section" id="template-syntax">
+      <h2>Template Syntax</h2>
+      <p>Response bodies and header values are processed through go-virtual's template engine. Variables are referenced with double-curly-brace syntax:</p>
+      <pre><code>{{ <span class="fn">namespace</span>.<span class="fn">variable</span> }}
+{{ <span class="fn">namespace</span>.<span class="fn">function</span>(<span class="str">arg1</span>, <span class="str">arg2</span>) }}
+</code></pre>
+      <p>Templates are rendered per-request, so each call gets fresh values for random/faker variables.</p>
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Faker is deterministic per request</strong>
+          Faker data is seeded from the request path and query parameters. The same URL will always produce the same fake values, making tests reproducible.
+        </div>
+      </div>
+    </div>
+
+    <!-- Request variables -->
+    <div class="section" id="request-vars">
+      <h2>Request Variables</h2>
+      <p>Echo values from the incoming request directly into your response:</p>
+
+      <h3>Path parameters</h3>
+      <pre><code><span class="cm">// Template</span>
+{ <span class="str">"id"</span>: <span class="str">"{{path.id}}"</span> }
+
+<span class="cm">// Request: GET /pets/42</span>
+{ <span class="str">"id"</span>: <span class="str">"42"</span> }
+</code></pre>
+
+      <h3>Query parameters</h3>
+      <pre><code><span class="cm">// Template</span>
+{ <span class="str">"page"</span>: <span class="str">"{{query.page}}"</span>, <span class="str">"status"</span>: <span class="str">"{{query.status}}"</span> }
+
+<span class="cm">// Request: GET /items?page=2&amp;status=active</span>
+{ <span class="str">"page"</span>: <span class="str">"2"</span>, <span class="str">"status"</span>: <span class="str">"active"</span> }
+</code></pre>
+
+      <h3>Headers</h3>
+      <pre><code><span class="cm">// Template</span>
+{ <span class="str">"token"</span>: <span class="str">"{{header.Authorization}}"</span> }
+
+<span class="cm">// Request: GET /me  Authorization: Bearer abc123</span>
+{ <span class="str">"token"</span>: <span class="str">"Bearer abc123"</span> }
+</code></pre>
+
+      <h3>Request body (JSONPath)</h3>
+      <p>Access fields from a JSON request body using dot-notation JSONPath:</p>
+      <pre><code><span class="cm">// Template</span>
+{ <span class="str">"echo_email"</span>: <span class="str">"{{body.user.email}}"</span> }
+
+<span class="cm">// Request body: {"user": {"email": "alice@example.com"}}</span>
+{ <span class="str">"echo_email"</span>: <span class="str">"alice@example.com"</span> }
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>{{path.&lt;name&gt;}}</td><td>URL path parameter value</td></tr>
+            <tr><td>{{query.&lt;name&gt;}}</td><td>Query string parameter value</td></tr>
+            <tr><td>{{header.&lt;name&gt;}}</td><td>HTTP request header value (case-insensitive)</td></tr>
+            <tr><td>{{body.&lt;field&gt;}}</td><td>JSONPath into request body (dot notation)</td></tr>
+            <tr><td>{{body.items[0].name}}</td><td>Array access in request body</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Random -->
+    <div class="section" id="random">
+      <h2>Random &amp; Generated Values</h2>
+      <p>Use the <code>random</code> namespace for generated values. These are randomized on every request.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Output</th></tr></thead>
+          <tbody>
+            <tr><td>{{random.uuid}}</td><td>A UUID v4 string (e.g., <code>f47ac10b-58cc-4372-a567-0e02b2c3d479</code>)</td></tr>
+            <tr><td>{{random.int(min,max)}}</td><td>Random integer between min and max (inclusive)</td></tr>
+            <tr><td>{{random.string(n)}}</td><td>Random alphanumeric string of length n</td></tr>
+            <tr><td>{{random.bool}}</td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td>{{random.float(min,max)}}</td><td>Random floating-point number</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code>{
+  <span class="key">"id"</span>: <span class="str">"{{random.uuid}}"</span>,
+  <span class="key">"score"</span>: <span class="str">"{{random.int(0, 100)}}"</span>,
+  <span class="key">"token"</span>: <span class="str">"{{random.string(32)}}"</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Faker -->
+    <div class="section" id="faker">
+      <h2>Faker Data</h2>
+      <p>The <code>faker</code> namespace provides realistic generated data. Values are <strong>deterministically seeded</strong> per request (from path + query params), so the same URL always returns the same fake data.</p>
+
+      <h3>People &amp; Identity</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker.name.first}}</td><td>James</td></tr>
+            <tr><td>{{faker.name.last}}</td><td>Anderson</td></tr>
+            <tr><td>{{faker.name.full}}</td><td>James Anderson</td></tr>
+            <tr><td>{{faker.name.prefix}}</td><td>Dr.</td></tr>
+            <tr><td>{{faker.internet.email}}</td><td>james.anderson@example.com</td></tr>
+            <tr><td>{{faker.internet.username}}</td><td>janderson42</td></tr>
+            <tr><td>{{faker.phone.number}}</td><td>+1-555-867-5309</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Company &amp; Address</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker.company.name}}</td><td>Acme Corp</td></tr>
+            <tr><td>{{faker.company.suffix}}</td><td>LLC</td></tr>
+            <tr><td>{{faker.address.street}}</td><td>123 Main Street</td></tr>
+            <tr><td>{{faker.address.city}}</td><td>Springfield</td></tr>
+            <tr><td>{{faker.address.state}}</td><td>California</td></tr>
+            <tr><td>{{faker.address.zip}}</td><td>90210</td></tr>
+            <tr><td>{{faker.address.country}}</td><td>United States</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Content &amp; Text</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker.lorem.word}}</td><td>lorem</td></tr>
+            <tr><td>{{faker.lorem.sentence}}</td><td>Lorem ipsum dolor sit amet consectetur.</td></tr>
+            <tr><td>{{faker.lorem.paragraph}}</td><td>Multiple sentences of lorem ipsum text.</td></tr>
+            <tr><td>{{faker.color.name}}</td><td>Cerulean</td></tr>
+            <tr><td>{{faker.color.hex}}</td><td>#2A7FBC</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Finance &amp; Numbers</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker.finance.amount}}</td><td>1234.56</td></tr>
+            <tr><td>{{faker.finance.currency}}</td><td>USD</td></tr>
+            <tr><td>{{faker.finance.iban}}</td><td>GB29NWBK60161331926819</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Internet &amp; Tech</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker.internet.url}}</td><td>https://example.com/path</td></tr>
+            <tr><td>{{faker.internet.ip}}</td><td>192.168.1.42</td></tr>
+            <tr><td>{{faker.internet.ipv6}}</td><td>2001:db8::1</td></tr>
+            <tr><td>{{faker.internet.domain}}</td><td>example.com</td></tr>
+            <tr><td>{{faker.animal.name}}</td><td>Golden Retriever</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Timestamps -->
+    <div class="section" id="timestamps">
+      <h2>Timestamps</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Variable</th><th>Format</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>{{timestamp}}</td><td>Unix epoch (seconds)</td><td>1705320000</td></tr>
+            <tr><td>{{timestamp.iso}}</td><td>ISO 8601</td><td>2024-01-15T10:00:00Z</td></tr>
+            <tr><td>{{timestamp.ms}}</td><td>Unix milliseconds</td><td>1705320000000</td></tr>
+            <tr><td>{{timestamp.date}}</td><td>Date only</td><td>2024-01-15</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre><code>{
+  <span class="key">"createdAt"</span>: <span class="str">"{{timestamp.iso}}"</span>,
+  <span class="key">"expiresAt"</span>: <span class="str">"{{timestamp.iso}}"</span>,
+  <span class="key">"unixTs"</span>: <span class="num">{{timestamp}}</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Script output -->
+    <div class="section" id="script-output">
+      <h2>Script Output Variables</h2>
+      <p>When a <a href="scripting.html">Starlark script</a> is bound to an operation, its return value is available under <code>{{.script.&lt;outputKey&gt;.&lt;field&gt;}}</code>:</p>
+      <pre><code><span class="cm">// Script bound with outputKey = "pricing" returns:</span>
+{ <span class="str">"total"</span>: <span class="num">99.99</span>, <span class="str">"tax"</span>: <span class="num">8.99</span> }
+
+<span class="cm">// Template:</span>
+{
+  <span class="key">"total"</span>: <span class="num">{{.script.pricing.total}}</span>,
+  <span class="key">"tax"</span>: <span class="num">{{.script.pricing.tax}}</span>
+}
+</code></pre>
+      <p>See <a href="scripting.html">Starlark Scripting</a> for full details on creating and binding scripts.</p>
+    </div>
+
+    <!-- Conditions -->
+    <div class="section" id="conditions">
+      <h2>Conditions</h2>
+      <p>Conditions are rules attached to response configurations. A response is selected only when <strong>all</strong> its conditions evaluate to <code>true</code>. An empty conditions array means "always match".</p>
+
+      <h3>Condition structure</h3>
+      <pre><code>{
+  <span class="key">"source"</span>: <span class="str">"query"</span>,      <span class="cm">// Where to read the value from</span>
+  <span class="key">"key"</span>: <span class="str">"status"</span>,       <span class="cm">// Field name within the source</span>
+  <span class="key">"operator"</span>: <span class="str">"eq"</span>,     <span class="cm">// Comparison operator</span>
+  <span class="key">"value"</span>: <span class="str">"active"</span>     <span class="cm">// Value to compare against</span>
+}
+</code></pre>
+
+      <h3>Multiple conditions (AND logic)</h3>
+      <p>All conditions in an array must pass. There is no OR operator — use multiple response configs with different priorities to achieve OR behavior.</p>
+      <pre><code><span class="key">"conditions"</span>: [
+  { <span class="key">"source"</span>: <span class="str">"query"</span>,  <span class="key">"key"</span>: <span class="str">"type"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"premium"</span> },
+  { <span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Authorization"</span>, <span class="key">"operator"</span>: <span class="str">"exists"</span> }
+]
+<span class="cm">// Matches only when type=premium AND Authorization header is present</span>
+</code></pre>
+    </div>
+
+    <!-- Operators -->
+    <div class="section" id="condition-operators">
+      <h2>Condition Operators</h2>
+
+      <h3>Comparison operators</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Operator</th><th>Description</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>eq</td><td>Exact equality (case-sensitive)</td><td><code>"operator": "eq", "value": "active"</code></td></tr>
+            <tr><td>ne</td><td>Not equal</td><td><code>"operator": "ne", "value": "deleted"</code></td></tr>
+            <tr><td>gt</td><td>Greater than (numeric)</td><td><code>"operator": "gt", "value": "100"</code></td></tr>
+            <tr><td>lt</td><td>Less than (numeric)</td><td><code>"operator": "lt", "value": "0"</code></td></tr>
+            <tr><td>gte</td><td>Greater than or equal</td><td><code>"operator": "gte", "value": "18"</code></td></tr>
+            <tr><td>lte</td><td>Less than or equal</td><td><code>"operator": "lte", "value": "100"</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>String operators</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Operator</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>contains</td><td>String contains the value as a substring</td></tr>
+            <tr><td>notContains</td><td>String does not contain the value</td></tr>
+            <tr><td>startsWith</td><td>String starts with the value</td></tr>
+            <tr><td>notStartsWith</td><td>String does not start with the value</td></tr>
+            <tr><td>endsWith</td><td>String ends with the value</td></tr>
+            <tr><td>notEndsWith</td><td>String does not end with the value</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Pattern operators</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Operator</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>regex</td><td>String matches a regular expression pattern</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <pre><code>{
+  <span class="key">"source"</span>: <span class="str">"query"</span>, <span class="key">"key"</span>: <span class="str">"email"</span>,
+  <span class="key">"operator"</span>: <span class="str">"regex"</span>,
+  <span class="key">"value"</span>: <span class="str">"^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$"</span>
+}
+</code></pre>
+
+      <h3>Existence operators</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Operator</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>exists</td><td>The key is present in the source (has any value including empty string)</td></tr>
+            <tr><td>notExists</td><td>The key is absent from the source</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sources -->
+    <div class="section" id="condition-sources">
+      <h2>Condition Sources</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Source</th><th>Key interpretation</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>path</td><td>URL path parameter name</td><td><code>"source": "path", "key": "id"</code></td></tr>
+            <tr><td>query</td><td>Query string parameter name</td><td><code>"source": "query", "key": "filter"</code></td></tr>
+            <tr><td>header</td><td>HTTP header name (case-insensitive)</td><td><code>"source": "header", "key": "Content-Type"</code></td></tr>
+            <tr><td>body</td><td>JSONPath expression into request body</td><td><code>"source": "body", "key": "user.role"</code></td></tr>
+            <tr><td>signature</td><td>A request fingerprint for deterministic matching</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Body conditions with JSONPath</h3>
+      <pre><code><span class="cm">// Request body: {"order": {"items": [{"sku": "ABC"}], "total": 150}}</span>
+
+<span class="cm">// Match on nested field</span>
+{ <span class="key">"source"</span>: <span class="str">"body"</span>, <span class="key">"key"</span>: <span class="str">"order.total"</span>, <span class="key">"operator"</span>: <span class="str">"gt"</span>, <span class="key">"value"</span>: <span class="str">"100"</span> }
+
+<span class="cm">// Match on array element</span>
+{ <span class="key">"source"</span>: <span class="str">"body"</span>, <span class="key">"key"</span>: <span class="str">"order.items[0].sku"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"ABC"</span> }
+</code></pre>
+    </div>
+
+    <!-- Examples -->
+    <div class="section" id="examples">
+      <h2>Examples</h2>
+
+      <h3>Return paginated data</h3>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="str">"Paginated list"</span>,
+  <span class="key">"statusCode"</span>: <span class="num">200</span>,
+  <span class="key">"body"</span>: <span class="str">"{
+    \"data\": [
+      {\"id\": \"{{random.uuid}}\", \"name\": \"{{faker.name.full}}\"},
+      {\"id\": \"{{random.uuid}}\", \"name\": \"{{faker.name.full}}\"},
+      {\"id\": \"{{random.uuid}}\", \"name\": \"{{faker.name.full}}\"}
+    ],
+    \"page\": {{query.page}},
+    \"perPage\": {{query.per_page}},
+    \"total\": 250
+  }"</span>
+}
+</code></pre>
+
+      <h3>Content-type negotiation</h3>
+      <pre><code><span class="cm">// Respond differently based on Accept header</span>
+{
+  <span class="key">"priority"</span>: <span class="num">0</span>,
+  <span class="key">"conditions"</span>: [{ <span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Accept"</span>, <span class="key">"operator"</span>: <span class="str">"contains"</span>, <span class="key">"value"</span>: <span class="str">"text/xml"</span> }],
+  <span class="key">"headers"</span>: { <span class="key">"Content-Type"</span>: <span class="str">"text/xml"</span> },
+  <span class="key">"body"</span>: <span class="str">"&lt;user&gt;&lt;id&gt;{{path.id}}&lt;/id&gt;&lt;name&gt;{{faker.name.full}}&lt;/name&gt;&lt;/user&gt;"</span>
+}
+</code></pre>
+
+      <h3>Echo back the full request</h3>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="str">"Debug echo"</span>,
+  <span class="key">"statusCode"</span>: <span class="num">200</span>,
+  <span class="key">"body"</span>: <span class="str">"{
+    \"path\": \"{{path.id}}\",
+    \"queryFilter\": \"{{query.filter}}\",
+    \"authHeader\": \"{{header.Authorization}}\",
+    \"bodyField\": \"{{body.data.value}}\",
+    \"requestTime\": \"{{timestamp.iso}}\"
+  }"</span>
+}
+</code></pre>
+
+      <h3>Version-based routing</h3>
+      <pre><code><span class="cm">// Priority 0: v2 header → return v2 format</span>
+{
+  <span class="key">"priority"</span>: <span class="num">0</span>,
+  <span class="key">"conditions"</span>: [{ <span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"X-API-Version"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"2"</span> }],
+  <span class="key">"body"</span>: <span class="str">"{\"version\": 2, \"data\": {\"userId\": \"{{path.id}}\"}}"</span>
+}
+
+<span class="cm">// Priority 10: default → v1 format</span>
+{
+  <span class="key">"priority"</span>: <span class="num">10</span>,
+  <span class="key">"body"</span>: <span class="str">"{\"id\": \"{{path.id}}\", \"name\": \"{{faker.name.full}}\"}"</span>
+}
+</code></pre>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="specs-and-responses.html">&#8592; Specs &amp; Responses</a>
+        <a href="scripting.html">Starlark Scripting &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

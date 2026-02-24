@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Starlark Scripting — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html" class="active"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Starlark Scripting</div>
+      <h1>Starlark Scripting</h1>
+      <p class="lead">Write sandboxed Python-like scripts that execute per-request to compute dynamic values, maintain state counters, hash data, parse JSON, and produce named outputs consumed by the template engine.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#writing-scripts">Writing Scripts</a></li>
+        <li><a href="#request-context">Request Context</a></li>
+        <li><a href="#bindings">Script Bindings</a></li>
+        <li><a href="#output-in-templates">Using Output in Templates</a></li>
+        <li><a href="#builtins">Standard Builtins</a></li>
+        <li><a href="#store-builtin">Store Builtin</a></li>
+        <li><a href="#lifecycle">Script Lifecycle</a></li>
+        <li><a href="#testing">Testing Scripts</a></li>
+        <li><a href="#security">Security &amp; Sandboxing</a></li>
+        <li><a href="#examples">Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- Overview -->
+    <div class="section" id="overview">
+      <h2>Overview</h2>
+      <p>Scripts in go-virtual use <a href="https://github.com/google/starlark-go">Starlark</a>, a dialect of Python designed for configuration and scripting. It's deterministic, sandboxed, and has no access to the filesystem, network, or OS.</p>
+      <ul>
+        <li>Scripts are attached to operations via <strong>bindings</strong></li>
+        <li>Each request triggers the bound script before response selection</li>
+        <li>Scripts return a dictionary whose fields become <strong>template variables</strong></li>
+        <li>Script compilation is cached for performance (keyed by script ID + <code>updatedAt</code>)</li>
+        <li>Default execution timeout is 100ms (configurable)</li>
+      </ul>
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>When to use scripts</strong>
+          Use scripts when you need logic that can't be expressed with template variables alone: calculations, hashing, conditionals, counter-based state, or calling into the session store.
+        </div>
+      </div>
+    </div>
+
+    <!-- Writing scripts -->
+    <div class="section" id="writing-scripts">
+      <h2>Writing Scripts</h2>
+      <p>Every script must define a <code>run(req)</code> function that accepts the request context and returns a dictionary (or <code>None</code>).</p>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># req is a dict with path, query, header, body fields</span>
+    user_id = req[<span class="str">"path"</span>].get(<span class="str">"id"</span>, <span class="str">"unknown"</span>)
+
+    <span class="kw">return</span> {
+        <span class="str">"greeting"</span>: <span class="str">"Hello, user "</span> + user_id,
+        <span class="str">"requestedAt"</span>: now(<span class="str">"iso"</span>)
+    }
+</code></pre>
+
+      <h3>Creating a script via API</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/scripts \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "name": "Order Calculator",
+    "source": "def run(req):\n  qty = req[\"body\"].get(\"quantity\", 0)\n  price = req[\"body\"].get(\"unitPrice\", 0)\n  return {\"total\": qty * price, \"currency\": \"USD\"}",
+    "timeoutMs": 100
+  }'</span>
+</code></pre>
+
+      <h3>Script fields</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>name</td><td>string</td><td>Human-readable label</td></tr>
+            <tr><td>source</td><td>string</td><td>Starlark source code (must define <code>run(req)</code>)</td></tr>
+            <tr><td>timeoutMs</td><td>integer</td><td>Max execution time in milliseconds (default: 100)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Request context -->
+    <div class="section" id="request-context">
+      <h2>Request Context</h2>
+      <p>The <code>req</code> dictionary passed to <code>run()</code> contains all request data:</p>
+      <pre><code>req = {
+    <span class="str">"path"</span>:   { <span class="str">"id"</span>: <span class="str">"42"</span>, ... },          <span class="cm"># URL path parameters</span>
+    <span class="str">"query"</span>:  { <span class="str">"page"</span>: <span class="str">"1"</span>, ... },         <span class="cm"># Query string parameters</span>
+    <span class="str">"header"</span>: { <span class="str">"Authorization"</span>: <span class="str">"..."</span> },  <span class="cm"># HTTP headers (lowercased keys)</span>
+    <span class="str">"body"</span>:   { <span class="str">"user"</span>: { ... } }           <span class="cm"># Parsed JSON body (dict/list)</span>
+}
+</code></pre>
+
+      <h3>Accessing request data</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># Safe access with .get() and default values</span>
+    page = req[<span class="str">"query"</span>].get(<span class="str">"page"</span>, <span class="str">"1"</span>)
+    per_page = req[<span class="str">"query"</span>].get(<span class="str">"per_page"</span>, <span class="str">"20"</span>)
+
+    auth = req[<span class="str">"header"</span>].get(<span class="str">"authorization"</span>, <span class="str">""</span>)
+    is_admin = auth.startswith(<span class="str">"Bearer admin-"</span>)
+
+    user_name = req[<span class="str">"body"</span>].get(<span class="str">"name"</span>, <span class="str">"anonymous"</span>)
+
+    <span class="kw">return</span> {
+        <span class="str">"page"</span>: <span class="fn">int</span>(page),
+        <span class="str">"isAdmin"</span>: is_admin,
+        <span class="str">"user"</span>: user_name
+    }
+</code></pre>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Body may be None</strong>
+          If the request has no JSON body (e.g., a GET request), <code>req["body"]</code> will be an empty dict. Always use <code>.get(key, default)</code> to avoid key errors.
+        </div>
+      </div>
+    </div>
+
+    <!-- Bindings -->
+    <div class="section" id="bindings">
+      <h2>Script Bindings</h2>
+      <p>A binding associates a script with an operation. When the operation is called, the bound scripts execute in binding order. Each binding has an <code>outputKey</code> — the name used to reference that script's output in templates.</p>
+
+      <h3>Create a binding</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/operations/&lt;op-id&gt;/scripts \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "scriptId": "&lt;script-id&gt;",
+    "outputKey": "pricing"
+  }'</span>
+</code></pre>
+
+      <h3>Multiple scripts per operation</h3>
+      <p>You can bind multiple scripts to a single operation. Each must have a unique <code>outputKey</code>. All scripts execute in order, and all their outputs are available in templates:</p>
+      <pre><code><span class="cm"># Bind a pricing script</span>
+{ <span class="str">"scriptId"</span>: <span class="str">"script-price-id"</span>, <span class="str">"outputKey"</span>: <span class="str">"pricing"</span> }
+
+<span class="cm"># Bind an audit script</span>
+{ <span class="str">"scriptId"</span>: <span class="str">"script-audit-id"</span>, <span class="str">"outputKey"</span>: <span class="str">"audit"</span> }
+
+<span class="cm"># Template can use both</span>
+{ <span class="str">"total"</span>: <span class="num">{{.script.pricing.total}}</span>, <span class="str">"requestId"</span>: <span class="str">"{{.script.audit.requestId}}"</span> }
+</code></pre>
+
+      <h3>List and remove bindings</h3>
+      <pre><code><span class="cm"># List bindings for an operation</span>
+curl http://localhost:8080/_api/operations/&lt;op-id&gt;/scripts
+
+<span class="cm"># Remove a binding</span>
+curl -X DELETE http://localhost:8080/_api/operations/&lt;op-id&gt;/scripts/&lt;binding-id&gt;
+</code></pre>
+    </div>
+
+    <!-- Template output -->
+    <div class="section" id="output-in-templates">
+      <h2>Using Script Output in Templates</h2>
+      <p>Script output is available in response body and header templates under <code>{{.script.&lt;outputKey&gt;.&lt;field&gt;}}</code>:</p>
+      <pre><code><span class="cm">// Script with outputKey = "order" returns: {"total": 99.95, "items": 3, "currency": "USD"}</span>
+
+<span class="cm">// Response body template:</span>
+{
+  <span class="key">"orderId"</span>: <span class="str">"{{random.uuid}}"</span>,
+  <span class="key">"total"</span>: <span class="num">{{.script.order.total}}</span>,
+  <span class="key">"itemCount"</span>: <span class="num">{{.script.order.items}}</span>,
+  <span class="key">"currency"</span>: <span class="str">"{{.script.order.currency}}"</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Builtins -->
+    <div class="section" id="builtins">
+      <h2>Standard Builtins</h2>
+      <p>go-virtual injects 14 built-in functions into every script's global scope:</p>
+
+      <div class="builtin-grid">
+
+        <div class="builtin-card">
+          <div class="bf-sig">uuid()</div>
+          <div class="bf-desc">Generate a UUID v4 string.</div>
+          <div class="bf-example">
+            <pre><code>id = <span class="fn">uuid</span>()
+<span class="cm"># "f47ac10b-58cc-4372-a567-..."</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">now(format)</div>
+          <div class="bf-desc">Current timestamp. Format: <code>"unix"</code>, <code>"unix_ms"</code>, <code>"iso"</code>, <code>"date"</code>.</div>
+          <div class="bf-example">
+            <pre><code>ts = <span class="fn">now</span>(<span class="str">"iso"</span>)
+<span class="cm"># "2024-01-15T10:00:00Z"</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">rand_int(min, max)</div>
+          <div class="bf-desc">Random integer between min and max (inclusive).</div>
+          <div class="bf-example">
+            <pre><code>score = <span class="fn">rand_int</span>(<span class="num">0</span>, <span class="num">100</span>)</code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">rand_choice(list)</div>
+          <div class="bf-desc">Pick a random element from a list.</div>
+          <div class="bf-example">
+            <pre><code>status = <span class="fn">rand_choice</span>([<span class="str">"active"</span>, <span class="str">"pending"</span>, <span class="str">"closed"</span>])</code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">counter(name, delta)</div>
+          <div class="bf-desc">Atomic persistent counter. <code>name</code> is the counter key, <code>delta</code> is the increment (can be negative). Returns new value. Session-scoped by default.</div>
+          <div class="bf-example">
+            <pre><code>n = <span class="fn">counter</span>(<span class="str">"requests"</span>, <span class="num">1</span>)</code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">base64_encode(str)</div>
+          <div class="bf-desc">Base64-encode a string.</div>
+          <div class="bf-example">
+            <pre><code>encoded = <span class="fn">base64_encode</span>(<span class="str">"hello world"</span>)
+<span class="cm"># "aGVsbG8gd29ybGQ="</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">base64_decode(str)</div>
+          <div class="bf-desc">Decode a base64 string.</div>
+          <div class="bf-example">
+            <pre><code>plain = <span class="fn">base64_decode</span>(<span class="str">"aGVsbG8="</span>)
+<span class="cm"># "hello"</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">hash(algo, str)</div>
+          <div class="bf-desc">Cryptographic hash. Algorithms: <code>"md5"</code>, <code>"sha1"</code>, <code>"sha256"</code>, <code>"sha512"</code>. Returns hex string.</div>
+          <div class="bf-example">
+            <pre><code>h = <span class="fn">hash</span>(<span class="str">"sha256"</span>, <span class="str">"hello"</span>)
+<span class="cm"># "2cf24dba5fb0a..."</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">json_parse(str)</div>
+          <div class="bf-desc">Parse a JSON string into a Starlark dict/list.</div>
+          <div class="bf-example">
+            <pre><code>obj = <span class="fn">json_parse</span>(<span class="str">'{"key": 1}'</span>)
+val = obj[<span class="str">"key"</span>]  <span class="cm"># 1</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">json_stringify(obj)</div>
+          <div class="bf-desc">Serialize a Starlark dict/list to a JSON string.</div>
+          <div class="bf-example">
+            <pre><code>s = <span class="fn">json_stringify</span>({<span class="str">"a"</span>: <span class="num">1</span>})
+<span class="cm"># '{"a":1}'</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">sleep(ms)</div>
+          <div class="bf-desc">Pause execution for ms milliseconds. Capped at the script timeout.</div>
+          <div class="bf-example">
+            <pre><code><span class="fn">sleep</span>(<span class="num">50</span>)  <span class="cm"># wait 50ms</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">regex_match(pattern, str)</div>
+          <div class="bf-desc">Returns <code>True</code> if the entire string matches the pattern.</div>
+          <div class="bf-example">
+            <pre><code>ok = <span class="fn">regex_match</span>(<span class="str">r"\d+"</span>, <span class="str">"123"</span>)
+<span class="cm"># True</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">regex_find(pattern, str)</div>
+          <div class="bf-desc">Returns the first match substring, or empty string.</div>
+          <div class="bf-example">
+            <pre><code>m = <span class="fn">regex_find</span>(<span class="str">r"\d+"</span>, <span class="str">"abc123"</span>)
+<span class="cm"># "123"</span></code></pre>
+          </div>
+        </div>
+
+        <div class="builtin-card">
+          <div class="bf-sig">log(msg, ...)</div>
+          <div class="bf-desc">Emit a log message visible in trace details and the server log.</div>
+          <div class="bf-example">
+            <pre><code><span class="fn">log</span>(<span class="str">"Processing request for"</span>, user_id)</code></pre>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Store builtin -->
+    <div class="section" id="store-builtin">
+      <h2>Store Builtin</h2>
+      <p>Scripts have access to a <code>store</code> object that provides per-session key-value storage. See <a href="sessions-and-store.html">Sessions &amp; Store</a> for full details.</p>
+
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># Read a value from the session store</span>
+    cart_json = store.get(<span class="str">"cart"</span>)
+    cart = <span class="fn">json_parse</span>(cart_json) <span class="kw">if</span> cart_json <span class="kw">else</span> []
+
+    <span class="cm"># Add item to cart</span>
+    item = req[<span class="str">"body"</span>].get(<span class="str">"item"</span>)
+    <span class="kw">if</span> item:
+        cart.append(item)
+        store.set(<span class="str">"cart"</span>, <span class="fn">json_stringify</span>(cart))
+
+    <span class="kw">return</span> { <span class="str">"cartSize"</span>: <span class="fn">len</span>(cart) }
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>store.get(key)</td><td>Read a value by key. Returns the value or <code>None</code>.</td></tr>
+            <tr><td>store.set(key, value)</td><td>Write a value by key.</td></tr>
+            <tr><td>store.delete(key)</td><td>Remove a key.</td></tr>
+            <tr><td>store.keys()</td><td>List all keys in the current session store.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Lifecycle -->
+    <div class="section" id="lifecycle">
+      <h2>Script Lifecycle</h2>
+      <ol class="steps">
+        <li>
+          <div>
+            <p><strong>Compilation</strong> — On first execution, the Starlark source is compiled and cached (keyed by script ID + <code>updatedAt</code> timestamp). Subsequent requests use the cached bytecode.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Execution</strong> — A goroutine runs the script with a deadline equal to <code>timeoutMs</code>. The <code>run(req)</code> function is called with the request context.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Output capture</strong> — The return value of <code>run()</code> is converted to a Go map and stored under the binding's <code>outputKey</code>.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Template rendering</strong> — The response body/headers template is rendered with all script outputs available.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Error handling</strong> — If the script panics, times out, or throws an error, execution falls through gracefully. The script output is empty but the response still renders.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Step limits</strong>
+          Starlark enforces a maximum step count to prevent infinite loops. Scripts that try to compute indefinitely will be terminated before reaching the timeout.
+        </div>
+      </div>
+    </div>
+
+    <!-- Testing -->
+    <div class="section" id="testing">
+      <h2>Testing Scripts</h2>
+      <p>You can validate and test scripts before binding them to operations:</p>
+
+      <h3>Validate syntax</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/scripts/validate \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "source": "def run(req):\n  return {\"ok\": True}"
+  }'</span>
+<span class="cm"># {"valid": true}</span>
+</code></pre>
+
+      <h3>Test with mock input</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/scripts/&lt;script-id&gt;/test \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "req": {
+      "path": {"id": "42"},
+      "query": {"debug": "true"},
+      "header": {"authorization": "Bearer test"},
+      "body": {"quantity": 3, "unitPrice": 29.99}
+    }
+  }'</span>
+
+<span class="cm"># Response:</span>
+{
+  <span class="key">"output"</span>: { <span class="key">"total"</span>: <span class="num">89.97</span>, <span class="key">"currency"</span>: <span class="str">"USD"</span> },
+  <span class="key">"logs"</span>: [],
+  <span class="key">"executionMs"</span>: <span class="num">2</span>
+}
+</code></pre>
+
+      <h3>Admin UI test panel</h3>
+      <p>The Scripts page in the Admin UI has a built-in test panel where you can fill in mock request fields and run the script interactively, seeing output and logs in real time.</p>
+    </div>
+
+    <!-- Security -->
+    <div class="section" id="security">
+      <h2>Security &amp; Sandboxing</h2>
+      <p>Starlark is designed for safe, sandboxed execution:</p>
+      <ul>
+        <li><strong>No file system access</strong> — Scripts cannot read or write files</li>
+        <li><strong>No network access</strong> — Scripts cannot make HTTP requests or open sockets</li>
+        <li><strong>No OS access</strong> — No <code>exec</code>, <code>system</code>, or environment variables</li>
+        <li><strong>No imports</strong> — The standard Starlark library modules are not available (only go-virtual builtins)</li>
+        <li><strong>Step limits</strong> — A maximum step budget prevents infinite loops</li>
+        <li><strong>Timeout</strong> — A goroutine deadline hard-terminates runaway scripts</li>
+        <li><strong>Panic recovery</strong> — Script panics are caught and don't crash the server</li>
+      </ul>
+      <div class="callout success">
+        <span class="callout-icon">🔒</span>
+        <div class="callout-body">
+          <strong>Safe to run untrusted scripts</strong>
+          go-virtual's Starlark sandbox makes it safe to run scripts from less-trusted team members without risk of server compromise.
+        </div>
+      </div>
+    </div>
+
+    <!-- Examples -->
+    <div class="section" id="examples">
+      <h2>Examples</h2>
+
+      <h3>Order total calculator</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    body = req[<span class="str">"body"</span>]
+    items = body.get(<span class="str">"items"</span>, [])
+
+    subtotal = <span class="num">0</span>
+    <span class="kw">for</span> item <span class="kw">in</span> items:
+        subtotal += item.get(<span class="str">"price"</span>, <span class="num">0</span>) * item.get(<span class="str">"qty"</span>, <span class="num">1</span>)
+
+    tax = subtotal * <span class="num">0.08</span>
+    total = subtotal + tax
+
+    <span class="fn">log</span>(<span class="str">"Order total:"</span>, total)
+
+    <span class="kw">return</span> {
+        <span class="str">"subtotal"</span>: subtotal,
+        <span class="str">"tax"</span>: tax,
+        <span class="str">"total"</span>: total,
+        <span class="str">"itemCount"</span>: <span class="fn">len</span>(items),
+        <span class="str">"orderId"</span>: <span class="fn">uuid</span>()
+    }
+</code></pre>
+
+      <h3>Request signature / fingerprint</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># Create a unique fingerprint for this request</span>
+    user_id = req[<span class="str">"path"</span>].get(<span class="str">"id"</span>, <span class="str">""</span>)
+    ts = <span class="fn">now</span>(<span class="str">"unix"</span>)
+    raw = user_id + <span class="str">":"</span> + <span class="fn">str</span>(ts)
+
+    <span class="kw">return</span> {
+        <span class="str">"signature"</span>: <span class="fn">hash</span>(<span class="str">"sha256"</span>, raw),
+        <span class="str">"nonce"</span>: <span class="fn">base64_encode</span>(<span class="fn">uuid</span>())
+    }
+</code></pre>
+
+      <h3>Rate limiter simulation</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    user_id = req[<span class="str">"path"</span>].get(<span class="str">"id"</span>, <span class="str">"anonymous"</span>)
+    key = <span class="str">"ratelimit:"</span> + user_id
+
+    <span class="cm"># Increment request counter</span>
+    count = <span class="fn">counter</span>(key, <span class="num">1</span>)
+    limit = <span class="num">10</span>
+    remaining = limit - count
+
+    <span class="kw">return</span> {
+        <span class="str">"requestCount"</span>: count,
+        <span class="str">"remaining"</span>: remaining <span class="kw">if</span> remaining &gt; <span class="num">0</span> <span class="kw">else</span> <span class="num">0</span>,
+        <span class="str">"exceeded"</span>: count &gt; limit
+    }
+</code></pre>
+
+      <h3>JWT-like token decoder (base64)</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    auth = req[<span class="str">"header"</span>].get(<span class="str">"authorization"</span>, <span class="str">""</span>)
+    <span class="kw">if</span> <span class="kw">not</span> auth.startswith(<span class="str">"Bearer "</span>):
+        <span class="kw">return</span> {<span class="str">"valid"</span>: <span class="kw">False</span>}
+
+    token = auth[<span class="num">7</span>:]  <span class="cm"># strip "Bearer "</span>
+    parts = token.split(<span class="str">"."</span>)
+    <span class="kw">if</span> <span class="fn">len</span>(parts) != <span class="num">3</span>:
+        <span class="kw">return</span> {<span class="str">"valid"</span>: <span class="kw">False</span>}
+
+    <span class="cm"># Decode the payload section</span>
+    payload_raw = <span class="fn">base64_decode</span>(parts[<span class="num">1</span>])
+    payload = <span class="fn">json_parse</span>(payload_raw)
+
+    <span class="kw">return</span> {
+        <span class="str">"valid"</span>: <span class="kw">True</span>,
+        <span class="str">"subject"</span>: payload.get(<span class="str">"sub"</span>, <span class="str">""</span>),
+        <span class="str">"role"</span>: payload.get(<span class="str">"role"</span>, <span class="str">"user"</span>)
+    }
+</code></pre>
+
+      <h3>Random but realistic response</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    statuses = [<span class="str">"active"</span>, <span class="str">"inactive"</span>, <span class="str">"pending"</span>, <span class="str">"suspended"</span>]
+    tiers = [<span class="str">"free"</span>, <span class="str">"pro"</span>, <span class="str">"enterprise"</span>]
+
+    <span class="kw">return</span> {
+        <span class="str">"status"</span>: <span class="fn">rand_choice</span>(statuses),
+        <span class="str">"tier"</span>: <span class="fn">rand_choice</span>(tiers),
+        <span class="str">"score"</span>: <span class="fn">rand_int</span>(<span class="num">0</span>, <span class="num">1000</span>),
+        <span class="str">"generatedAt"</span>: <span class="fn">now</span>(<span class="str">"iso"</span>)
+    }
+</code></pre>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="templating.html">&#8592; Templating &amp; Conditions</a>
+        <a href="sessions-and-store.html">Sessions &amp; Store &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

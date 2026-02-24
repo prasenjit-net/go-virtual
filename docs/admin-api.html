@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin API Reference — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html" class="active">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html" class="active"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Admin API Reference</div>
+      <h1>Admin API Reference</h1>
+      <p class="lead">Complete reference for all REST endpoints under <code>/_api/</code>. All endpoints return JSON. All write operations accept <code>Content-Type: application/json</code>.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#auth">Authentication</a></li>
+        <li><a href="#specs-api">Specs</a></li>
+        <li><a href="#operations-api">Operations</a></li>
+        <li><a href="#responses-api">Responses</a></li>
+        <li><a href="#scripts-api">Scripts</a></li>
+        <li><a href="#bindings-api">Script Bindings</a></li>
+        <li><a href="#store-api">Global Store</a></li>
+        <li><a href="#sessions-api">Sessions</a></li>
+        <li><a href="#traces-api">Traces</a></li>
+        <li><a href="#stats-api">Statistics</a></li>
+        <li><a href="#metrics-api">Prometheus Metrics</a></li>
+        <li><a href="#errors">Error Responses</a></li>
+      </ul>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">ℹ️</span>
+      <div class="callout-body">
+        <strong>Base URL</strong>
+        All endpoints are relative to <code>http://&lt;host&gt;:&lt;port&gt;/_api</code>. In headless mode (<code>--headless</code>), all <code>/_api/</code> endpoints are disabled.
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="section" id="auth">
+      <h2>Authentication</h2>
+      <p>The Admin API has no built-in authentication. In production, protect it with a reverse proxy (e.g., nginx with basic auth) or network-level access controls (firewall, VPN). Never expose it publicly without protection.</p>
+    </div>
+
+    <!-- Specs API -->
+    <div class="section" id="specs-api">
+      <h2>Specs</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/specs</div>
+          <div class="desc">List all uploaded specs.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/specs</div>
+          <div class="desc">Upload a new OpenAPI 3 spec.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Request body</span>
+{
+  <span class="key">"name"</span>: <span class="str">"string"</span>,          <span class="cm">// Required. Display name</span>
+  <span class="key">"content"</span>: <span class="str">"string"</span>,       <span class="cm">// Required. YAML or JSON OpenAPI 3 content</span>
+  <span class="key">"basePath"</span>: <span class="str">"string"</span>,     <span class="cm">// Optional. Mount path prefix</span>
+  <span class="key">"proxyTarget"</span>: <span class="str">"string"</span>   <span class="cm">// Optional. Backend URL for proxy mode</span>
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/specs/:id</div>
+          <div class="desc">Get a single spec by ID.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id</div>
+          <div class="desc">Update a spec (re-parse operations with new content).</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/specs/:id</div>
+          <div class="desc">Delete a spec and all its associated operations and responses.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/enable</div>
+          <div class="desc">Enable a spec (makes its operations active).</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/disable</div>
+          <div class="desc">Disable a spec (operations stop responding).</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/tracing</div>
+          <div class="desc">Toggle tracing for a spec.</div>
+        </div>
+      </div>
+      <pre><code>{ <span class="key">"enabled"</span>: <span class="kw">true</span> }
+</code></pre>
+    </div>
+
+    <!-- Operations API -->
+    <div class="section" id="operations-api">
+      <h2>Operations</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/specs/:specId/operations</div>
+          <div class="desc">List all operations for a spec.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/operations/:id</div>
+          <div class="desc">Get a single operation by ID.</div>
+        </div>
+      </div>
+
+      <h3>Operation response object</h3>
+      <pre><code>{
+  <span class="key">"id"</span>: <span class="str">"op_abc"</span>,
+  <span class="key">"specId"</span>: <span class="str">"spec_xyz"</span>,
+  <span class="key">"operationId"</span>: <span class="str">"getPet"</span>,
+  <span class="key">"method"</span>: <span class="str">"GET"</span>,
+  <span class="key">"path"</span>: <span class="str">"/pets/{id}"</span>,
+  <span class="key">"summary"</span>: <span class="str">"Get a pet by ID"</span>,
+  <span class="key">"tags"</span>: [<span class="str">"pets"</span>],
+  <span class="key">"responseCount"</span>: <span class="num">2</span>,
+  <span class="key">"scriptBindingCount"</span>: <span class="num">1</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Responses API -->
+    <div class="section" id="responses-api">
+      <h2>Responses</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/responses</div>
+          <div class="desc">List all response configs for an operation, ordered by priority.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/responses</div>
+          <div class="desc">Create a new response config for an operation.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Request body</span>
+{
+  <span class="key">"name"</span>: <span class="str">"string"</span>,          <span class="cm">// Required</span>
+  <span class="key">"priority"</span>: <span class="num">0</span>,             <span class="cm">// Required. Lower = evaluated first</span>
+  <span class="key">"statusCode"</span>: <span class="num">200</span>,         <span class="cm">// Required</span>
+  <span class="key">"headers"</span>: {},              <span class="cm">// Optional. Key-value pairs (values are templates)</span>
+  <span class="key">"body"</span>: <span class="str">"string"</span>,          <span class="cm">// Optional. Response body (template)</span>
+  <span class="key">"conditions"</span>: [],          <span class="cm">// Optional. Array of condition objects</span>
+  <span class="key">"delayMs"</span>: <span class="num">0</span>,              <span class="cm">// Optional. Artificial delay</span>
+  <span class="key">"tags"</span>: []                  <span class="cm">// Optional. Tags for organization</span>
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/responses/:id</div>
+          <div class="desc">Get a single response config.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/responses/:id</div>
+          <div class="desc">Update a response config.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/responses/:id</div>
+          <div class="desc">Delete a response config.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/responses/:id/priority</div>
+          <div class="desc">Update only the priority of a response config.</div>
+        </div>
+      </div>
+      <pre><code>{ <span class="key">"priority"</span>: <span class="num">5</span> }
+</code></pre>
+
+      <h3>Condition object schema</h3>
+      <pre><code>{
+  <span class="key">"source"</span>: <span class="str">"path"</span> <span class="op">|</span> <span class="str">"query"</span> <span class="op">|</span> <span class="str">"header"</span> <span class="op">|</span> <span class="str">"body"</span>,
+  <span class="key">"key"</span>: <span class="str">"string"</span>,
+  <span class="key">"operator"</span>: <span class="str">"eq"</span> <span class="op">|</span> <span class="str">"ne"</span> <span class="op">|</span> <span class="str">"gt"</span> <span class="op">|</span> <span class="str">"lt"</span> <span class="op">|</span> <span class="str">"gte"</span> <span class="op">|</span> <span class="str">"lte"</span>
+    <span class="op">|</span> <span class="str">"contains"</span> <span class="op">|</span> <span class="str">"notContains"</span> <span class="op">|</span> <span class="str">"startsWith"</span> <span class="op">|</span> <span class="str">"endsWith"</span>
+    <span class="op">|</span> <span class="str">"exists"</span> <span class="op">|</span> <span class="str">"notExists"</span> <span class="op">|</span> <span class="str">"regex"</span>,
+  <span class="key">"value"</span>: <span class="str">"string"</span>   <span class="cm">// Not required for "exists"/"notExists"</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Scripts API -->
+    <div class="section" id="scripts-api">
+      <h2>Scripts</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/scripts</div>
+          <div class="desc">List all scripts.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/scripts</div>
+          <div class="desc">Create a new script.</div>
+        </div>
+      </div>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="str">"string"</span>,
+  <span class="key">"source"</span>: <span class="str">"string"</span>,     <span class="cm">// Starlark code with def run(req)</span>
+  <span class="key">"timeoutMs"</span>: <span class="num">100</span>
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/scripts/:id</div>
+          <div class="desc">Get a script by ID (includes source code).</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/scripts/:id</div>
+          <div class="desc">Update a script. Invalidates the compiled cache.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/scripts/:id</div>
+          <div class="desc">Delete a script. Fails if the script has active bindings.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/scripts/validate</div>
+          <div class="desc">Validate Starlark syntax without saving.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Request</span>
+{ <span class="key">"source"</span>: <span class="str">"def run(req):\n  return {}"</span> }
+
+<span class="cm">// Response</span>
+{ <span class="key">"valid"</span>: <span class="kw">true</span>, <span class="key">"errors"</span>: [] }
+<span class="cm">// or</span>
+{ <span class="key">"valid"</span>: <span class="kw">false</span>, <span class="key">"errors"</span>: [<span class="str">"line 1: syntax error"</span>] }
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/scripts/:id/test</div>
+          <div class="desc">Execute a script with a mock request and return the output.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Request</span>
+{
+  <span class="key">"req"</span>: {
+    <span class="key">"path"</span>: { <span class="key">"id"</span>: <span class="str">"42"</span> },
+    <span class="key">"query"</span>: { <span class="key">"debug"</span>: <span class="str">"true"</span> },
+    <span class="key">"header"</span>: { <span class="key">"authorization"</span>: <span class="str">"Bearer test"</span> },
+    <span class="key">"body"</span>: { <span class="key">"quantity"</span>: <span class="num">3</span> }
+  }
+}
+
+<span class="cm">// Response</span>
+{
+  <span class="key">"output"</span>: { <span class="key">"total"</span>: <span class="num">29.97</span> },
+  <span class="key">"logs"</span>: [<span class="str">"Computing order for 42"</span>],
+  <span class="key">"executionMs"</span>: <span class="num">3</span>,
+  <span class="key">"error"</span>: <span class="str">""</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Bindings API -->
+    <div class="section" id="bindings-api">
+      <h2>Script Bindings</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/scripts</div>
+          <div class="desc">List all script bindings for an operation.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/scripts</div>
+          <div class="desc">Bind a script to an operation.</div>
+        </div>
+      </div>
+      <pre><code>{
+  <span class="key">"scriptId"</span>: <span class="str">"string"</span>,
+  <span class="key">"outputKey"</span>: <span class="str">"string"</span>   <span class="cm">// Used in templates as {{.script.outputKey.field}}</span>
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/scripts</div>
+          <div class="desc">Replace all script bindings for an operation.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/scripts/:bindingId</div>
+          <div class="desc">Remove a specific script binding.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Store API -->
+    <div class="section" id="store-api">
+      <h2>Global Store</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/store</div>
+          <div class="desc">List all global store entries.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/store/:key</div>
+          <div class="desc">Get a single store entry by key.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Response</span>
+{ <span class="key">"key"</span>: <span class="str">"myKey"</span>, <span class="key">"value"</span>: <span class="str">"myValue"</span> }
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/store/:key</div>
+          <div class="desc">Create or update a store entry.</div>
+        </div>
+      </div>
+      <pre><code>{ <span class="key">"value"</span>: <span class="str">"string"</span> }
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/store/:key</div>
+          <div class="desc">Delete a single store entry.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/store?confirm=true</div>
+          <div class="desc">Clear the entire global store. Requires <code>confirm=true</code> query parameter.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sessions API -->
+    <div class="section" id="sessions-api">
+      <h2>Sessions</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/sessions</div>
+          <div class="desc">List all active sessions.</div>
+        </div>
+      </div>
+      <pre><code>{
+  <span class="key">"sessions"</span>: [
+    {
+      <span class="key">"id"</span>: <span class="str">"string"</span>,
+      <span class="key">"createdAt"</span>: <span class="str">"RFC3339"</span>,
+      <span class="key">"lastActivityAt"</span>: <span class="str">"RFC3339"</span>,
+      <span class="key">"storeKeyCount"</span>: <span class="num">0</span>
+    }
+  ]
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/sessions/:id</div>
+          <div class="desc">Get a session's details including its full store contents.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/sessions/:id</div>
+          <div class="desc">Invalidate (delete) a specific session.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/sessions?confirm=true</div>
+          <div class="desc">Invalidate all active sessions. Requires <code>confirm=true</code>.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Traces API -->
+    <div class="section" id="traces-api">
+      <h2>Traces</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/traces</div>
+          <div class="desc">List traces with optional filtering and pagination.</div>
+        </div>
+      </div>
+
+      <h4>Query parameters</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>limit</td><td>Max results (default: 100, max: 1000)</td></tr>
+            <tr><td>offset</td><td>Pagination offset (default: 0)</td></tr>
+            <tr><td>specId</td><td>Filter by spec ID</td></tr>
+            <tr><td>operationId</td><td>Filter by operation ID</td></tr>
+            <tr><td>q</td><td>Full-text search query</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/traces/:id</div>
+          <div class="desc">Get a single trace by ID with full request/response/script details.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-delete">DELETE</span></div>
+        <div>
+          <div class="path">/_api/traces</div>
+          <div class="desc">Clear all stored traces.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-ws">WS</span></div>
+        <div>
+          <div class="path">/_api/traces/stream</div>
+          <div class="desc">WebSocket endpoint for real-time trace streaming. Each message is a full trace JSON object.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Connect</span>
+ws://localhost:8080/_api/traces/stream
+
+<span class="cm">// Optional query params</span>
+ws://localhost:8080/_api/traces/stream?specId=spec_xyz
+</code></pre>
+    </div>
+
+    <!-- Stats API -->
+    <div class="section" id="stats-api">
+      <h2>Statistics</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/stats</div>
+          <div class="desc">Get global statistics.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/stats/specs/:specId</div>
+          <div class="desc">Get statistics for a specific spec.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/stats/operations/:operationId</div>
+          <div class="desc">Get statistics for a specific operation.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/stats/reset</div>
+          <div class="desc">Reset all statistics counters to zero.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics API -->
+    <div class="section" id="metrics-api">
+      <h2>Prometheus Metrics</h2>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/metrics</div>
+          <div class="desc">Prometheus text format metrics endpoint. Suitable for scraping by Prometheus or any compatible monitoring tool.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Errors -->
+    <div class="section" id="errors">
+      <h2>Error Responses</h2>
+      <p>All API errors return a JSON body with an <code>error</code> field:</p>
+      <pre><code>{
+  <span class="key">"error"</span>: <span class="str">"Spec not found"</span>,
+  <span class="key">"code"</span>: <span class="str">"NOT_FOUND"</span>
+}
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>HTTP Status</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>400 Bad Request</td><td>Invalid request body, missing required fields, or invalid values</td></tr>
+            <tr><td>404 Not Found</td><td>The requested resource ID does not exist</td></tr>
+            <tr><td>409 Conflict</td><td>Resource conflict (e.g., deleting a script with active bindings)</td></tr>
+            <tr><td>422 Unprocessable Entity</td><td>The spec could not be parsed as valid OpenAPI 3</td></tr>
+            <tr><td>500 Internal Server Error</td><td>Unexpected server-side error</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="tracing-and-metrics.html">&#8592; Tracing &amp; Metrics</a>
+        <a href="configuration.html">Configuration &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

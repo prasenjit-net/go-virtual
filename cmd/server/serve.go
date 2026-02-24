@@ -181,12 +181,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless, branding)
 	router.SetStoreManager(globalStore, sessionManager)
 
-	// Setup UI serving (skipped in headless mode)
+	// Setup UI and docs serving (skipped in headless mode)
 	if !headless {
 		if devMode {
-			// In dev mode, serve UI from filesystem
+			// In dev mode, serve UI and docs from filesystem
 			log.Println("Development mode: Serving UI from ./ui/dist")
 			router.ServeUIFromFS("./ui/dist")
+			log.Println("Development mode: Serving docs from ./docs")
+			router.ServeDocsFromFS("./docs")
 		} else {
 			// In production, serve embedded UI
 			uiFS, err := fs.Sub(govirtual.EmbeddedUI, "ui/dist")
@@ -194,6 +196,13 @@ func runServe(cmd *cobra.Command, args []string) error {
 				log.Printf("Warning: Embedded UI not available: %v", err)
 			} else {
 				router.ServeEmbeddedUI(uiFS)
+			}
+			// Serve embedded docs
+			docsFS, err := fs.Sub(govirtual.EmbeddedDocs, "docs")
+			if err != nil {
+				log.Printf("Warning: Embedded docs not available: %v", err)
+			} else {
+				router.ServeEmbeddedDocs(docsFS)
 			}
 		}
 	}
@@ -252,6 +261,7 @@ func startHTTPServer(server *http.Server, addr string, headless bool) {
 		} else {
 			log.Printf("Admin UI available at http://%s/_ui/", addr)
 			log.Printf("Admin API available at http://%s/_api/", addr)
+			log.Printf("Documentation available at http://%s/_docs/", addr)
 		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
@@ -321,6 +331,7 @@ func startTLSServer(server *http.Server, addr string, headless bool) func(contex
 		} else {
 			log.Printf("Admin UI available at https://%s/_ui/ (or http://%s/_ui/)", addr, addr)
 			log.Printf("Admin API available at https://%s/_api/ (or http://%s/_api/)", addr, addr)
+			log.Printf("Documentation available at https://%s/_docs/ (or http://%s/_docs/)", addr, addr)
 		}
 
 		// Serve HTTPS

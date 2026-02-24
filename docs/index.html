@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>go-virtual — API Mock &amp; Virtualization Service</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html" class="active"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="hero">
+      <h1>API Mock &amp; <span>Virtualization</span><br>for OpenAPI 3</h1>
+      <p>go-virtual is a powerful, self-hosted service that lets you mock, virtualize, and proxy OpenAPI 3 APIs — with dynamic responses, Starlark scripting, session state, and real-time tracing.</p>
+      <div class="hero-actions">
+        <a href="getting-started.html" class="btn btn-primary">&#8594; Get Started</a>
+        <a href="admin-ui.html" class="btn btn-secondary">🖥️ Admin UI Guide</a>
+        <a href="proxy-mode.html" class="btn btn-secondary">🔀 Proxy Mode</a>
+        <a href="admin-api.html" class="btn btn-secondary">API Reference</a>
+      </div>
+    </div>
+
+    <div class="section" id="features">
+      <h2>What is go-virtual?</h2>
+      <p>go-virtual sits in front of your services and serves mock responses based on OpenAPI 3 specifications. It is designed for:</p>
+      <ul>
+        <li><strong>Frontend development</strong> — Mock backend APIs without running real services</li>
+        <li><strong>Integration testing</strong> — Simulate edge cases, errors, and latency</li>
+        <li><strong>API contract validation</strong> — Ensure clients respect the spec</li>
+        <li><strong>Demos &amp; staging environments</strong> — Serve predictable, configurable data</li>
+        <li><strong>Traffic recording</strong> — Proxy live traffic and auto-generate mocks</li>
+      </ul>
+
+      <div class="feature-list">
+        <span class="feature-pill"><span class="dot"></span>OpenAPI 3 (YAML/JSON)</span>
+        <span class="feature-pill"><span class="dot"></span>Priority-based response matching</span>
+        <span class="feature-pill"><span class="dot"></span>Request condition evaluation</span>
+        <span class="feature-pill"><span class="dot"></span>Response templating</span>
+        <span class="feature-pill"><span class="dot"></span>Starlark scripting engine</span>
+        <span class="feature-pill"><span class="dot"></span>Session &amp; global key-value store</span>
+        <span class="feature-pill"><span class="dot"></span>WebSocket live tracing</span>
+        <span class="feature-pill"><span class="dot"></span>Prometheus metrics</span>
+        <span class="feature-pill"><span class="dot"></span>TLS &amp; mTLS support</span>
+        <span class="feature-pill"><span class="dot"></span>React admin UI</span>
+        <span class="feature-pill"><span class="dot"></span>File &amp; in-memory storage</span>
+        <span class="feature-pill"><span class="dot"></span>Docker ready</span>
+      </div>
+    </div>
+
+    <div class="section" id="architecture">
+      <h2>How It Works</h2>
+      <p>Every inbound HTTP request passes through a pipeline:</p>
+      <ol class="steps">
+        <li>
+          <div>
+            <p><strong>Route Matching</strong> — The request path and method are matched against all enabled OpenAPI operations across uploaded specs.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Script Execution</strong> — If a Starlark script is bound to the operation, it runs with the request context and produces named output variables.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Condition Evaluation</strong> — Response configurations are evaluated in priority order. The first config whose conditions match (or has no conditions) is selected.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Template Rendering</strong> — The selected response body and headers are rendered with template variables drawn from path, query, headers, request body, faker data, and script output.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Response &amp; Tracing</strong> — The final response is sent to the client. The full request/response cycle is captured as a trace entry.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <div class="section" id="explore">
+      <h2>Explore the Documentation</h2>
+      <div class="card-grid">
+        <a href="getting-started.html" class="card">
+          <div class="card-icon">🚀</div>
+          <div class="card-title">Getting Started</div>
+          <div class="card-desc">Install go-virtual, run your first server, and upload your first OpenAPI spec in minutes.</div>
+        </a>
+        <a href="admin-ui.html" class="card" style="border-color: #6366f1;">
+          <div class="card-icon">🖥️</div>
+          <div class="card-title">Admin UI Guide</div>
+          <div class="card-desc">Full walkthrough of every UI page — Dashboard, Specs, Responses, Scripts, Traces, Store, Sessions, and Tags.</div>
+        </a>
+        <a href="proxy-mode.html" class="card" style="border-color: #6366f1;">
+          <div class="card-icon">🔀</div>
+          <div class="card-title">Proxy Mode</div>
+          <div class="card-desc">Forward requests to a real backend, record live responses, and replay them offline with signature-based deduplication.</div>
+        </a>
+        <a href="specs-and-responses.html" class="card">
+          <div class="card-icon">📄</div>
+          <div class="card-title">Specs &amp; Responses</div>
+          <div class="card-desc">Upload OpenAPI 3 specs, manage operations, and design mock response configurations.</div>
+        </a>
+        <a href="templating.html" class="card">
+          <div class="card-icon">✏️</div>
+          <div class="card-title">Templating &amp; Conditions</div>
+          <div class="card-desc">Use dynamic template variables in response bodies. Match responses using request conditions.</div>
+        </a>
+        <a href="scripting.html" class="card">
+          <div class="card-icon">⚡</div>
+          <div class="card-title">Starlark Scripting</div>
+          <div class="card-desc">Write sandboxed Python-like scripts that compute dynamic values, counters, and logic per request.</div>
+        </a>
+        <a href="sessions-and-store.html" class="card">
+          <div class="card-icon">🗄️</div>
+          <div class="card-title">Sessions &amp; Store</div>
+          <div class="card-desc">Maintain stateful per-client sessions and a global key-value store accessible from scripts.</div>
+        </a>
+        <a href="tracing-and-metrics.html" class="card">
+          <div class="card-icon">📡</div>
+          <div class="card-title">Tracing &amp; Metrics</div>
+          <div class="card-desc">Stream live request traces over WebSocket and monitor per-spec and per-operation statistics.</div>
+        </a>
+        <a href="admin-api.html" class="card">
+          <div class="card-icon">📖</div>
+          <div class="card-title">Admin API Reference</div>
+          <div class="card-desc">Complete REST API reference for all management endpoints under <code>/_api/</code>.</div>
+        </a>
+        <a href="configuration.html" class="card">
+          <div class="card-icon">⚙️</div>
+          <div class="card-title">Configuration</div>
+          <div class="card-desc">Full reference for <code>config.yaml</code>, CLI flags, TLS setup, and storage options.</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="section" id="quickstart">
+      <h2>Quick Start (60 seconds)</h2>
+
+      <h3>1. Install</h3>
+      <pre><code><span class="cm"># Using Go toolchain</span>
+go install github.com/your-org/go-virtual@latest
+
+<span class="cm"># Or build from source</span>
+git clone https://github.com/your-org/go-virtual
+make build
+</code></pre>
+
+      <h3>2. Initialize a workspace</h3>
+      <pre><code>go-virtual init
+<span class="cm"># Creates config.yaml and data/ directory</span>
+</code></pre>
+
+      <h3>3. Start the server</h3>
+      <pre><code>go-virtual serve
+<span class="cm"># Server listening on http://localhost:8080
+# Admin UI at http://localhost:8080/_ui/</span>
+</code></pre>
+
+      <h3>4. Upload an OpenAPI spec</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/specs \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"name": "Pets API", "content": "openapi: \"3.0.0\"\ninfo:\n  title: Pets\n  version: 1.0.0\npaths:\n  /pets/{id}:\n    get:\n      operationId: getPet\n      parameters:\n        - name: id\n          in: path\n          required: true\n          schema:\n            type: string\n      responses:\n        \"200\":\n          description: OK"}'</span>
+</code></pre>
+
+      <h3>5. Create a mock response</h3>
+      <pre><code><span class="cm"># First get the operation ID</span>
+curl http://localhost:8080/_api/specs/&lt;spec-id&gt;/operations
+
+<span class="cm"># Create a response config</span>
+curl -X POST http://localhost:8080/_api/operations/&lt;op-id&gt;/responses \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"name": "Success", "statusCode": 200, "priority": 0,
+     "body": "{\"id\": \"{{path.id}}\", \"name\": \"{{faker.name.first}} {{faker.name.last}}\"}"}'</span>
+</code></pre>
+
+      <h3>6. Test it</h3>
+      <pre><code>curl http://localhost:8080/pets/42
+<span class="cm"># {"id":"42","name":"James Anderson"}</span>
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Admin UI</strong>
+          You can do all of the above (and more) through the visual admin interface at <code>http://localhost:8080/_ui/</code>. No curl required.
+        </div>
+      </div>
+    </div>
+
+    <div class="section" id="versions">
+      <h2>Project Status</h2>
+      <p>go-virtual is actively developed. The current feature set includes all Phase 1 and Phase 2 scripting capabilities (Starlark builtins, session store). See the <a href="https://github.com/your-org/go-virtual">GitHub repository</a> for releases.</p>
+      <div class="callout success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <strong>What's stable</strong>
+          OpenAPI 3 mocking, response templating, condition evaluation, Starlark scripting, session store, tracing, metrics, TLS, and the admin UI are all production-ready.
+        </div>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="getting-started.html">Getting Started &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>
