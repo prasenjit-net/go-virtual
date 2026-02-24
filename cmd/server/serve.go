@@ -146,6 +146,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 	sessionManager := gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
 	proxyEngine.SetSessionManager(sessionManager, sessionCfg.HeaderName)
 
+	// Build the outbound HTTP client used in proxy/recording mode.
+	// This replaces the default insecure-skip-verify client with one that
+	// honours the proxy.* config keys (timeout, mTLS cert/key/CA).
+	proxyClientCfg := proxy.ClientConfig{
+		TimeoutSeconds:     viper.GetInt("proxy.timeoutSeconds"),
+		InsecureSkipVerify: viper.GetBool("proxy.insecureSkipVerify"),
+		CertFile:           viper.GetString("proxy.mtls.certFile"),
+		KeyFile:            viper.GetString("proxy.mtls.keyFile"),
+		CACertFile:         viper.GetString("proxy.mtls.caCertFile"),
+	}
+	if proxyClientCfg.TimeoutSeconds <= 0 {
+		proxyClientCfg.TimeoutSeconds = 30
+	}
+	proxyHTTPClient, err := proxy.BuildClient(proxyClientCfg)
+	if err != nil {
+		return fmt.Errorf("failed to build proxy HTTP client: %w", err)
+	}
+	proxyEngine.SetProxyHTTPClient(proxyHTTPClient)
+
 	// Resolve headless mode (flag overrides config)
 	headless := viper.GetBool("server.headless")
 	if headlessFlag {

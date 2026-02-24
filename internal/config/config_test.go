@@ -366,3 +366,79 @@ branding:
 		t.Errorf("Expected AppSubtitle 'Custom Sub', got %q", cfg.Branding.AppSubtitle)
 	}
 }
+
+func TestDefaultProxyConfig(t *testing.T) {
+	cfg := Default()
+
+	if cfg.Proxy.TimeoutSeconds != 30 {
+		t.Errorf("Expected default proxy timeout 30, got %d", cfg.Proxy.TimeoutSeconds)
+	}
+	if cfg.Proxy.InsecureSkipVerify {
+		t.Error("Expected InsecureSkipVerify to be false by default")
+	}
+	if cfg.Proxy.MTLS.CertFile != "" {
+		t.Errorf("Expected empty default CertFile, got %q", cfg.Proxy.MTLS.CertFile)
+	}
+	if cfg.Proxy.MTLS.KeyFile != "" {
+		t.Errorf("Expected empty default KeyFile, got %q", cfg.Proxy.MTLS.KeyFile)
+	}
+	if cfg.Proxy.MTLS.CACertFile != "" {
+		t.Errorf("Expected empty default CACertFile, got %q", cfg.Proxy.MTLS.CACertFile)
+	}
+}
+
+func TestLoad_ProxyConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+proxy:
+  timeoutSeconds: 60
+  insecureSkipVerify: true
+  mtls:
+    certFile: /certs/client.crt
+    keyFile: /certs/client.key
+    caCertFile: /certs/ca.crt
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Proxy.TimeoutSeconds != 60 {
+		t.Errorf("Expected proxy timeoutSeconds 60, got %d", cfg.Proxy.TimeoutSeconds)
+	}
+	if !cfg.Proxy.InsecureSkipVerify {
+		t.Error("Expected InsecureSkipVerify to be true")
+	}
+	if cfg.Proxy.MTLS.CertFile != "/certs/client.crt" {
+		t.Errorf("Expected certFile '/certs/client.crt', got %q", cfg.Proxy.MTLS.CertFile)
+	}
+	if cfg.Proxy.MTLS.KeyFile != "/certs/client.key" {
+		t.Errorf("Expected keyFile '/certs/client.key', got %q", cfg.Proxy.MTLS.KeyFile)
+	}
+	if cfg.Proxy.MTLS.CACertFile != "/certs/ca.crt" {
+		t.Errorf("Expected caCertFile '/certs/ca.crt', got %q", cfg.Proxy.MTLS.CACertFile)
+	}
+}
+
+func TestMTLSConfig_Struct(t *testing.T) {
+	m := MTLSConfig{
+		CertFile:   "c.crt",
+		KeyFile:    "c.key",
+		CACertFile: "ca.crt",
+	}
+	if m.CertFile != "c.crt" {
+		t.Errorf("CertFile mismatch: %q", m.CertFile)
+	}
+	if m.KeyFile != "c.key" {
+		t.Errorf("KeyFile mismatch: %q", m.KeyFile)
+	}
+	if m.CACertFile != "ca.crt" {
+		t.Errorf("CACertFile mismatch: %q", m.CACertFile)
+	}
+}

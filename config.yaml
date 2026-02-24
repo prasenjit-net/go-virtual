@@ -31,3 +31,11 @@ session:
   headerName: "X-Virtual-Session-Id"  # Header used to identify sessions
   inactivityTimeout: "30m"            # Idle TTL before session is discarded (Go duration string)
   maxSessions: 10000                  # Hard cap on concurrent sessions
+
+proxy:
+  timeoutSeconds: 30          # Timeout (in seconds) for outbound backend requests in proxy mode
+  insecureSkipVerify: false   # Skip TLS server verification (for self-signed certs in dev; never use in prod)
+  mtls:
+    certFile: ""    # Path to PEM-encoded client certificate  (required for mTLS)
+    keyFile: ""     # Path to PEM-encoded client private key  (required for mTLS)
+    caCertFile: ""  # Path to PEM-encoded CA cert to verify the backend server (optional; uses system pool if empty)

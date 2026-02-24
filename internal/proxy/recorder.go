@@ -86,6 +86,12 @@ func NewRecorder(store storage.Storage) *Recorder {
 	}
 }
 
+// SetHTTPClient replaces the HTTP client used for backend requests.
+// Call this after NewRecorder to configure mTLS or custom timeouts.
+func (r *Recorder) SetHTTPClient(client *http.Client) {
+	r.httpClient = client
+}
+
 // ProxyAndRecord forwards the original request to the backend identified by
 // spec.BackendURI, records the response as a ResponseConfig for the operation
 // (keyed by the pre-computed signature), and returns the backend response data
