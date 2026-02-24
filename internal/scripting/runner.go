@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -32,8 +33,8 @@ type StarlarkRunner struct{}
 func (r *StarlarkRunner) Compile(scriptID, source string) (CompiledScript, error) {
 	filename := scriptID + ".star"
 	_, prog, err := starlark.SourceProgram(filename, source, func(name string) bool {
-		// Allow 'store' and 'log' as predeclared names (injected at runtime)
-		return name == "store" || name == "log"
+		// Allow names injected at runtime: store, log, and all registered builtins
+		return name == "store" || name == "log" || builtinNames[name]
 	})
 	if err != nil {
 		return nil, fmt.Errorf("compile error: %w", err)
@@ -97,6 +98,11 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 		}
 		return starlark.None, nil
 	})
+
+	// Inject all standard builtins (uuid, now, rand_int, …)
+	//nolint:gosec — script RNG does not need cryptographic quality
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	injectBuiltins(predeclared, rng, sess)
 
 	globals, execErr := s.prog.Init(thread, predeclared)
 	close(done)
