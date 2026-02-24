@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Specs &amp; Responses — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html" class="active"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Specs &amp; Responses</div>
+      <h1>Specs &amp; Responses</h1>
+      <p class="lead">Upload and manage OpenAPI 3 specifications, browse their operations, and design mock response configurations with priorities, delays, and conditions.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#specs">Managing Specifications</a></li>
+        <li><a href="#operations">Operations</a></li>
+        <li><a href="#responses">Response Configurations</a></li>
+        <li><a href="#priority">Priority &amp; Matching Order</a></li>
+        <li><a href="#delay">Response Delays</a></li>
+        <li><a href="#proxy-mode">Proxy Mode</a></li>
+        <li><a href="#recording">Auto-Recording</a></li>
+        <li><a href="#examples">Complete Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- Specs -->
+    <div class="section" id="specs">
+      <h2>Managing Specifications</h2>
+      <p>go-virtual manages multiple OpenAPI 3 specs simultaneously. Each spec is independently enabled/disabled and its operations are mounted at the server's root path (or a configured base path).</p>
+
+      <h3>Uploading a spec</h3>
+      <p>Specs can be uploaded as YAML or JSON via the REST API or the Admin UI:</p>
+      <pre><code><span class="cm"># Upload YAML spec</span>
+curl -X POST http://localhost:8080/_api/specs \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "name": "My API",
+    "content": "openapi: \"3.0.0\"\ninfo:\n  title: My API\n  version: 1.0.0\npaths: ..."
+  }'</span>
+
+<span class="cm"># Response</span>
+{
+  <span class="key">"id"</span>: <span class="str">"spec_abc123"</span>,
+  <span class="key">"name"</span>: <span class="str">"My API"</span>,
+  <span class="key">"enabled"</span>: <span class="kw">true</span>,
+  <span class="key">"operationCount"</span>: <span class="num">12</span>,
+  <span class="key">"createdAt"</span>: <span class="str">"2024-01-15T10:00:00Z"</span>
+}
+</code></pre>
+
+      <h3>Spec fields</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>name</td><td>string</td><td>Human-readable name displayed in the UI</td></tr>
+            <tr><td>content</td><td>string</td><td>Raw YAML or JSON OpenAPI 3 content</td></tr>
+            <tr><td>basePath</td><td>string</td><td>Optional path prefix for all operations (e.g., <code>/v1</code>)</td></tr>
+            <tr><td>enabled</td><td>bool</td><td>Whether this spec's operations are active (default: true)</td></tr>
+            <tr><td>tracingEnabled</td><td>bool</td><td>Whether requests to this spec are traced (default: true)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Enable / disable a spec</h3>
+      <pre><code><span class="cm"># Disable — all operations stop responding</span>
+curl -X PUT http://localhost:8080/_api/specs/spec_abc123/disable
+
+<span class="cm"># Re-enable</span>
+curl -X PUT http://localhost:8080/_api/specs/spec_abc123/enable
+</code></pre>
+
+      <h3>Update a spec</h3>
+      <p>You can push an updated YAML/JSON content to refresh all operations automatically:</p>
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/spec_abc123 \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"name": "My API v2", "content": "..."}'</span>
+</code></pre>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Path conflicts</strong>
+          If two enabled specs define the same path and method, the first-registered spec wins. Disable conflicting specs or use <code>basePath</code> to namespace them.
+        </div>
+      </div>
+    </div>
+
+    <!-- Operations -->
+    <div class="section" id="operations">
+      <h2>Operations</h2>
+      <p>When a spec is uploaded, go-virtual parses it and creates an <em>operation</em> record for each path+method combination. Operations are referenced when creating response configurations and script bindings.</p>
+
+      <h3>Listing operations</h3>
+      <pre><code>curl http://localhost:8080/_api/specs/spec_abc123/operations
+
+<span class="cm"># Example response item</span>
+{
+  <span class="key">"id"</span>: <span class="str">"op_xyz"</span>,
+  <span class="key">"specId"</span>: <span class="str">"spec_abc123"</span>,
+  <span class="key">"operationId"</span>: <span class="str">"getPet"</span>,
+  <span class="key">"method"</span>: <span class="str">"GET"</span>,
+  <span class="key">"path"</span>: <span class="str">"/pets/{id}"</span>,
+  <span class="key">"summary"</span>: <span class="str">"Get a pet by ID"</span>,
+  <span class="key">"tags"</span>: [<span class="str">"pets"</span>],
+  <span class="key">"responseCount"</span>: <span class="num">2</span>
+}
+</code></pre>
+
+      <h3>Operation fields</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>id</td><td>Internal operation identifier used in API calls</td></tr>
+            <tr><td>operationId</td><td>The <code>operationId</code> from the OpenAPI spec</td></tr>
+            <tr><td>method</td><td>HTTP method (GET, POST, PUT, DELETE, PATCH, etc.)</td></tr>
+            <tr><td>path</td><td>URL path template (e.g., <code>/pets/{id}</code>)</td></tr>
+            <tr><td>tags</td><td>Tags from the spec for filtering</td></tr>
+            <tr><td>responseCount</td><td>Number of response configs attached</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Responses -->
+    <div class="section" id="responses">
+      <h2>Response Configurations</h2>
+      <p>A <strong>response configuration</strong> defines what go-virtual returns when an operation is called. You can attach multiple response configs to a single operation — they're evaluated in priority order, and the first one whose conditions match is used.</p>
+
+      <h3>Creating a response</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/operations/op_xyz/responses \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "name": "Success Response",
+    "priority": 0,
+    "statusCode": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "X-Request-Id": "{{random.uuid}}"
+    },
+    "body": "{\"id\": \"{{path.id}}\", \"name\": \"{{faker.animal.name}}\"}",
+    "delayMs": 50
+  }'</span>
+</code></pre>
+
+      <h3>Response configuration fields</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>name</td><td>string</td><td>Yes</td><td>Human-readable label for the response</td></tr>
+            <tr><td>priority</td><td>integer</td><td>Yes</td><td>Evaluation order — lower numbers run first (0, 1, 2…)</td></tr>
+            <tr><td>statusCode</td><td>integer</td><td>Yes</td><td>HTTP status code to return (200, 404, 500, etc.)</td></tr>
+            <tr><td>headers</td><td>object</td><td>No</td><td>HTTP headers to include in the response. Values support templates.</td></tr>
+            <tr><td>body</td><td>string</td><td>No</td><td>Response body string. Supports template variables.</td></tr>
+            <tr><td>conditions</td><td>array</td><td>No</td><td>Array of condition objects. If empty, this config always matches.</td></tr>
+            <tr><td>delayMs</td><td>integer</td><td>No</td><td>Additional delay in milliseconds before responding</td></tr>
+            <tr><td>tags</td><td>array</td><td>No</td><td>Tags for organizing responses in the UI</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>No conditions = always matches</strong>
+          A response config with no <code>conditions</code> array (or an empty one) acts as a catch-all. Place it at a higher priority number so more specific responses run first.
+        </div>
+      </div>
+
+      <h3>Updating and deleting</h3>
+      <pre><code><span class="cm"># Update response body</span>
+curl -X PUT http://localhost:8080/_api/responses/resp_id \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"statusCode": 200, "body": "{\"updated\": true}"}'</span>
+
+<span class="cm"># Delete</span>
+curl -X DELETE http://localhost:8080/_api/responses/resp_id
+</code></pre>
+    </div>
+
+    <!-- Priority -->
+    <div class="section" id="priority">
+      <h2>Priority &amp; Matching Order</h2>
+      <p>When a request arrives for an operation, go-virtual evaluates all attached response configs in ascending priority order (lowest number first). The <strong>first config whose conditions all pass</strong> is selected.</p>
+
+      <h3>Example scenario</h3>
+      <pre><code><span class="cm"># Priority 0 — Return 401 if Authorization header is missing</span>
+{
+  "priority": 0, "statusCode": 401,
+  "conditions": [{"source": "header", "key": "Authorization", "operator": "notExists"}]
+}
+
+<span class="cm"># Priority 1 — Return 404 for specific IDs</span>
+{
+  "priority": 1, "statusCode": 404,
+  "conditions": [{"source": "path", "key": "id", "operator": "eq", "value": "0"}]
+}
+
+<span class="cm"># Priority 2 — Default success response (no conditions)</span>
+{
+  "priority": 2, "statusCode": 200,
+  "body": "{\"id\": \"{{path.id}}\", \"name\": \"{{faker.name.first}}\"}"
+}
+</code></pre>
+
+      <h3>Reordering via the API</h3>
+      <pre><code>curl -X PUT http://localhost:8080/_api/responses/resp_id/priority \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"priority": 5}'</span>
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Admin UI drag-and-drop</strong>
+          In the Response Designer, you can drag response cards to reorder them visually. Priority numbers are automatically recalculated.
+        </div>
+      </div>
+    </div>
+
+    <!-- Delays -->
+    <div class="section" id="delay">
+      <h2>Response Delays</h2>
+      <p>Simulate realistic network latency by setting <code>delayMs</code> on a response config. The server waits the specified number of milliseconds before sending the response.</p>
+      <pre><code>{
+  <span class="key">"name"</span>: <span class="str">"Slow endpoint"</span>,
+  <span class="key">"statusCode"</span>: <span class="num">200</span>,
+  <span class="key">"delayMs"</span>: <span class="num">2000</span>,  <span class="cm">// 2 second delay</span>
+  <span class="key">"body"</span>: <span class="str">"{\"result\": \"slow\"}"</span>
+}
+</code></pre>
+      <p>Use delays to test:</p>
+      <ul>
+        <li>Frontend loading states and skeleton screens</li>
+        <li>Client timeout handling</li>
+        <li>Perceived performance of different API designs</li>
+      </ul>
+    </div>
+
+    <!-- Proxy mode -->
+    <div class="section" id="proxy-mode">
+      <h2>Proxy Mode</h2>
+      <p>In proxy mode, go-virtual forwards requests to a real backend instead of (or in addition to) serving mock responses. Configure the backend URL in your spec upload:</p>
+      <pre><code>curl -X POST http://localhost:8080/_api/specs \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "name": "Live API",
+    "content": "...",
+    "proxyTarget": "https://api.example.com"
+  }'</span>
+</code></pre>
+
+      <p>When a <code>proxyTarget</code> is set and an operation has no matching response config, the request is forwarded to the target and the real response is returned.</p>
+
+      <h3>mTLS for backend requests</h3>
+      <p>If your backend requires mutual TLS authentication, configure client certificates in <code>config.yaml</code>:</p>
+      <pre><code><span class="key">proxy</span><span class="op">:</span>
+  <span class="key">mtls</span><span class="op">:</span>
+    <span class="key">certFile</span><span class="op">:</span> <span class="str">/etc/certs/client.crt</span>
+    <span class="key">keyFile</span><span class="op">:</span> <span class="str">/etc/certs/client.key</span>
+    <span class="key">caCertFile</span><span class="op">:</span> <span class="str">/etc/certs/ca.crt</span>
+</code></pre>
+      <p>See <a href="configuration.html#proxy">Configuration — Proxy</a> for all proxy options.</p>
+    </div>
+
+    <!-- Recording -->
+    <div class="section" id="recording">
+      <h2>Auto-Recording</h2>
+      <p>When proxy mode is active, go-virtual can automatically record real responses and generate mock response configs from live traffic. This is useful for bootstrapping a mock library from production data.</p>
+      <pre><code><span class="cm"># Enable recording on a spec</span>
+curl -X PUT http://localhost:8080/_api/specs/spec_id/recording/enable
+
+<span class="cm"># After making real requests, recorded responses appear automatically</span>
+curl http://localhost:8080/_api/operations/op_id/responses
+</code></pre>
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Sensitive data</strong>
+          Recorded responses may contain real user data. Review and sanitize recorded mocks before committing them to version control or sharing them.
+        </div>
+      </div>
+    </div>
+
+    <!-- Examples -->
+    <div class="section" id="examples">
+      <h2>Complete Examples</h2>
+
+      <h3>REST CRUD mock — User resource</h3>
+      <pre><code><span class="cm"># POST /users — 201 Created</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Create User"</span>, <span class="key">"priority"</span>: <span class="num">0</span>, <span class="key">"statusCode"</span>: <span class="num">201</span>,
+  <span class="key">"headers"</span>: {<span class="key">"Location"</span>: <span class="str">"/users/{{random.uuid}}"</span>},
+  <span class="key">"body"</span>: <span class="str">"{\"id\": \"{{random.uuid}}\", \"email\": \"{{body.email}}\", \"createdAt\": \"{{timestamp.iso}}\"}"</span>
+}
+
+<span class="cm"># GET /users/{id} — 404 when id starts with "invalid"</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Not Found"</span>, <span class="key">"priority"</span>: <span class="num">0</span>, <span class="key">"statusCode"</span>: <span class="num">404</span>,
+  <span class="key">"conditions"</span>: [{<span class="key">"source"</span>: <span class="str">"path"</span>, <span class="key">"key"</span>: <span class="str">"id"</span>, <span class="key">"operator"</span>: <span class="str">"startsWith"</span>, <span class="key">"value"</span>: <span class="str">"invalid"</span>}],
+  <span class="key">"body"</span>: <span class="str">"{\"error\": \"User not found\", \"id\": \"{{path.id}}\"}"</span>
+}
+
+<span class="cm"># GET /users/{id} — 200 default</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Success"</span>, <span class="key">"priority"</span>: <span class="num">10</span>, <span class="key">"statusCode"</span>: <span class="num">200</span>,
+  <span class="key">"body"</span>: <span class="str">"{\"id\": \"{{path.id}}\", \"name\": \"{{faker.name.first}} {{faker.name.last}}\", \"email\": \"{{faker.internet.email}}\"}"</span>
+}
+</code></pre>
+
+      <h3>Simulating a flaky API (random 500s)</h3>
+      <pre><code><span class="cm"># Trigger 500 when query param ?fail=true</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Server Error"</span>, <span class="key">"priority"</span>: <span class="num">0</span>, <span class="key">"statusCode"</span>: <span class="num">500</span>,
+  <span class="key">"conditions"</span>: [{<span class="key">"source"</span>: <span class="str">"query"</span>, <span class="key">"key"</span>: <span class="str">"fail"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"true"</span>}],
+  <span class="key">"body"</span>: <span class="str">"{\"error\": \"Internal server error\"}"</span>,
+  <span class="key">"delayMs"</span>: <span class="num">3000</span>
+}
+</code></pre>
+
+      <h3>Authentication-aware mock</h3>
+      <pre><code><span class="cm"># 401 when no Authorization header</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Unauthorized"</span>, <span class="key">"priority"</span>: <span class="num">0</span>, <span class="key">"statusCode"</span>: <span class="num">401</span>,
+  <span class="key">"conditions"</span>: [{<span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Authorization"</span>, <span class="key">"operator"</span>: <span class="str">"notExists"</span>}],
+  <span class="key">"body"</span>: <span class="str">"{\"error\": \"Missing Authorization header\"}"</span>
+}
+
+<span class="cm"># 403 when token doesn't start with "Bearer "</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Forbidden"</span>, <span class="key">"priority"</span>: <span class="num">1</span>, <span class="key">"statusCode"</span>: <span class="num">403</span>,
+  <span class="key">"conditions"</span>: [{<span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Authorization"</span>, <span class="key">"operator"</span>: <span class="str">"notStartsWith"</span>, <span class="key">"value"</span>: <span class="str">"Bearer "</span>}],
+  <span class="key">"body"</span>: <span class="str">"{\"error\": \"Invalid token format\"}"</span>
+}
+
+<span class="cm"># 200 success (catch-all)</span>
+{
+  <span class="key">"name"</span>: <span class="str">"Success"</span>, <span class="key">"priority"</span>: <span class="num">10</span>, <span class="key">"statusCode"</span>: <span class="num">200</span>,
+  <span class="key">"body"</span>: <span class="str">"{\"data\": \"{{faker.lorem.sentence}}\"}"</span>
+}
+</code></pre>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="getting-started.html">&#8592; Getting Started</a>
+        <a href="templating.html">Templating &amp; Conditions &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

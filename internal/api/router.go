@@ -245,6 +245,46 @@ func (r *Router) ServeEmbeddedUI(uiFS fs.FS) {
 	})
 }
 
+// ServeDocsFromFS serves the documentation from the filesystem (for development)
+func (r *Router) ServeDocsFromFS(dir string) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		r.engine.GET("/_docs/*filepath", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "docs not found"})
+		})
+		return
+	}
+
+	r.engine.Static("/_docs", dir)
+
+	r.engine.GET("/_docs", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/_docs/")
+	})
+}
+
+// ServeEmbeddedDocs serves the documentation from embedded files (for production)
+func (r *Router) ServeEmbeddedDocs(docsFS fs.FS) {
+	staticServer := http.FileServer(http.FS(docsFS))
+
+	r.engine.GET("/_docs/*filepath", func(c *gin.Context) {
+		path := strings.TrimPrefix(c.Param("filepath"), "/")
+		if path == "" {
+			path = "index.html"
+		}
+
+		if f, err := docsFS.Open(path); err == nil {
+			f.Close()
+			http.StripPrefix("/_docs", staticServer).ServeHTTP(c.Writer, c.Request)
+			return
+		}
+
+		c.Status(http.StatusNotFound)
+	})
+
+	r.engine.GET("/_docs", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/_docs/")
+	})
+}
+
 // SetStoreManager wires Phase 2 GlobalStore and SessionManager into the handler.
 func (r *Router) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
 	r.handler.SetStoreManager(gs, sm)

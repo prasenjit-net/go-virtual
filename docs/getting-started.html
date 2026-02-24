@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html" class="active">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html" class="active"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Getting Started</div>
+      <h1>Getting Started</h1>
+      <p class="lead">Install go-virtual, configure it, and start mocking your first API in a few minutes.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#init">Initialize a Workspace</a></li>
+        <li><a href="#serve">Start the Server</a></li>
+        <li><a href="#first-mock">Your First Mock API</a></li>
+        <li><a href="#admin-ui">Using the Admin UI</a></li>
+        <li><a href="#cli">CLI Reference</a></li>
+        <li><a href="#directory">Directory Structure</a></li>
+        <li><a href="#docker">Docker</a></li>
+        <li><a href="#development">Development Mode</a></li>
+      </ul>
+    </div>
+
+    <!-- Prerequisites -->
+    <div class="section" id="prerequisites">
+      <h2>Prerequisites</h2>
+      <ul>
+        <li><strong>Go 1.21+</strong> — for building from source</li>
+        <li><strong>Node.js 18+</strong> — only if building the UI from source</li>
+        <li><strong>Docker</strong> — optional, for containerized deployments</li>
+      </ul>
+      <p>Pre-built binaries require no runtime dependencies.</p>
+    </div>
+
+    <!-- Installation -->
+    <div class="section" id="installation">
+      <h2>Installation</h2>
+
+      <h3>Build from source</h3>
+      <pre><code>git clone https://github.com/your-org/go-virtual.git
+cd go-virtual
+
+<span class="cm"># Install all dependencies and build UI + Go binary</span>
+make install-deps
+make build
+
+<span class="cm"># Binary is at ./build/go-virtual</span>
+./build/go-virtual --version
+</code></pre>
+
+      <h3>Go install</h3>
+      <pre><code>go install github.com/your-org/go-virtual@latest
+</code></pre>
+
+      <h3>Docker</h3>
+      <pre><code>docker pull ghcr.io/your-org/go-virtual:latest
+docker run -p 8080:8080 -v $(pwd)/data:/app/data ghcr.io/your-org/go-virtual:latest
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">ℹ️</span>
+        <div class="callout-body">
+          <strong>Binary includes the UI</strong>
+          The Go binary embeds the compiled React admin UI. You only need the single binary file to run everything.
+        </div>
+      </div>
+    </div>
+
+    <!-- Init -->
+    <div class="section" id="init">
+      <h2>Initialize a Workspace</h2>
+      <p>The <code>init</code> command creates a <code>config.yaml</code> and the <code>data/</code> directory structure in the current folder (or a specified path).</p>
+      <pre><code>go-virtual init
+
+<span class="cm"># Specify a custom path</span>
+go-virtual init --path /opt/go-virtual
+
+<span class="cm"># Overwrite an existing config</span>
+go-virtual init --force
+</code></pre>
+      <p>This creates:</p>
+      <pre><code>.
+├── config.yaml          <span class="cm"># Main configuration file</span>
+└── data/
+    ├── specs/           <span class="cm"># Uploaded OpenAPI specifications</span>
+    ├── responses/       <span class="cm"># Response configurations</span>
+    ├── operations/      <span class="cm"># Operation bindings</span>
+    ├── scripts/         <span class="cm"># Starlark scripts</span>
+    ├── traces/          <span class="cm"># Trace history</span>
+    ├── stats/           <span class="cm"># Statistics</span>
+    └── store.json       <span class="cm"># Global key-value store</span>
+</code></pre>
+    </div>
+
+    <!-- Serve -->
+    <div class="section" id="serve">
+      <h2>Start the Server</h2>
+      <pre><code><span class="cm"># Start with default config.yaml in current directory</span>
+go-virtual serve
+
+<span class="cm"># Custom config file</span>
+go-virtual serve --config /etc/go-virtual/config.yaml
+
+<span class="cm"># Override port</span>
+go-virtual serve --port 3000
+
+<span class="cm"># Enable TLS</span>
+go-virtual serve --tls
+
+<span class="cm"># Headless mode (proxy only, no admin UI/API)</span>
+go-virtual serve --headless
+</code></pre>
+
+      <p>Once running, you'll see:</p>
+      <pre><code>{"level":"info","msg":"go-virtual starting","port":8080}
+{"level":"info","msg":"Admin UI available","url":"http://localhost:8080/_ui/"}
+{"level":"info","msg":"Admin API available","url":"http://localhost:8080/_api/"}
+{"level":"info","msg":"Server ready"}
+</code></pre>
+
+      <div class="callout success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <strong>Admin UI</strong>
+          Open <code>http://localhost:8080/_ui/</code> in your browser to access the visual management interface.
+        </div>
+      </div>
+    </div>
+
+    <!-- First mock -->
+    <div class="section" id="first-mock">
+      <h2>Your First Mock API</h2>
+      <p>This walkthrough uses <code>curl</code>. You can do the same steps in the Admin UI.</p>
+
+      <h3>Step 1 — Upload an OpenAPI 3 spec</h3>
+      <pre><code>cat &gt; /tmp/petstore.yaml &lt;&lt;'EOF'
+openapi: "3.0.0"
+info:
+  title: Pet Store
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A list of pets
+  /pets/{id}:
+    get:
+      operationId: getPet
+      summary: Get a pet by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A single pet
+        "404":
+          description: Not found
+EOF
+
+curl -X POST http://localhost:8080/_api/specs \
+  -H "Content-Type: application/json" \
+  -d "{\"name\": \"Pet Store\", \"content\": $(cat /tmp/petstore.yaml | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read()))')}"
+</code></pre>
+
+      <h3>Step 2 — Find the operation IDs</h3>
+      <pre><code>SPEC_ID=&lt;id from step 1 response&gt;
+curl http://localhost:8080/_api/specs/$SPEC_ID/operations
+</code></pre>
+      <p>Note the <code>id</code> field for each operation (e.g., <code>getPet</code>, <code>listPets</code>).</p>
+
+      <h3>Step 3 — Create a response for getPet</h3>
+      <pre><code>OP_ID=&lt;operation id for getPet&gt;
+
+curl -X POST http://localhost:8080/_api/operations/$OP_ID/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Found",
+    "priority": 0,
+    "statusCode": 200,
+    "headers": {"Content-Type": "application/json"},
+    "body": "{\"id\": \"{{path.id}}\", \"name\": \"{{faker.animal.name}}\", \"status\": \"available\"}"
+  }'
+</code></pre>
+
+      <h3>Step 4 — Create a 404 response for unknown pets</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/operations/$OP_ID/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Not Found",
+    "priority": 10,
+    "statusCode": 404,
+    "conditions": [{"source": "path", "key": "id", "operator": "eq", "value": "0"}],
+    "body": "{\"error\": \"Pet not found\", \"id\": \"{{path.id}}\"}"
+  }'
+</code></pre>
+
+      <h3>Step 5 — Test your mock</h3>
+      <pre><code>curl http://localhost:8080/pets/42
+<span class="cm"># {"id":"42","name":"Golden Retriever","status":"available"}</span>
+
+curl http://localhost:8080/pets/0
+<span class="cm"># {"error":"Pet not found","id":"0"}</span>
+</code></pre>
+    </div>
+
+    <!-- Admin UI -->
+    <div class="section" id="admin-ui">
+      <h2>Using the Admin UI</h2>
+      <p>The admin UI at <code>/_ui/</code> provides a visual interface for all management tasks:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Page</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Dashboard</td><td>Overview, request statistics, top operations, trend charts</td></tr>
+            <tr><td>Specs</td><td>Upload YAML/JSON specs, enable/disable, view operations</td></tr>
+            <tr><td>Operations</td><td>Browse all operations with tag filtering</td></tr>
+            <tr><td>Responses</td><td>Design mock responses with drag-and-drop priority, condition builder, template editor</td></tr>
+            <tr><td>Scripts</td><td>Write and test Starlark scripts with Monaco editor</td></tr>
+            <tr><td>Store</td><td>Manage global key-value store entries</td></tr>
+            <tr><td>Sessions</td><td>Inspect active sessions and their store data</td></tr>
+            <tr><td>Traces</td><td>Live-stream and search request traces</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- CLI -->
+    <div class="section" id="cli">
+      <h2>CLI Reference</h2>
+
+      <h3>go-virtual serve</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flag</th><th>Short</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>--config</td><td>-c</td><td>./config.yaml</td><td>Path to config file</td></tr>
+            <tr><td>--port</td><td>-p</td><td>8080</td><td>Override server port from config</td></tr>
+            <tr><td>--tls</td><td></td><td>false</td><td>Enable TLS/HTTPS</td></tr>
+            <tr><td>--headless</td><td></td><td>false</td><td>Disable admin API and UI (proxy only)</td></tr>
+            <tr><td>--dev</td><td></td><td>false</td><td>Serve UI from filesystem (for UI development)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>go-virtual init</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flag</th><th>Short</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>--path</td><td>-p</td><td>.</td><td>Directory to initialize</td></tr>
+            <tr><td>--force</td><td>-f</td><td>false</td><td>Overwrite existing config.yaml</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Directory structure -->
+    <div class="section" id="directory">
+      <h2>Directory Structure</h2>
+      <pre><code>data/
+├── specs/
+│   └── &lt;spec-id&gt;.json        <span class="cm"># Spec metadata + raw content</span>
+├── responses/
+│   └── &lt;response-id&gt;.json    <span class="cm"># Response configurations</span>
+├── operations/
+│   └── &lt;op-id&gt;.json          <span class="cm"># Operation state + script bindings</span>
+├── scripts/
+│   ├── &lt;script-id&gt;.json      <span class="cm"># Script metadata</span>
+│   └── &lt;script-id&gt;.star      <span class="cm"># Starlark source</span>
+├── certs/
+│   ├── server.crt             <span class="cm"># Auto-generated TLS cert</span>
+│   └── server.key             <span class="cm"># Auto-generated TLS key</span>
+├── traces/                    <span class="cm"># Trace history (JSON)</span>
+├── stats/                     <span class="cm"># Statistics snapshots</span>
+└── store.json                 <span class="cm"># Global key-value store</span>
+</code></pre>
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Atomic writes</strong>
+          go-virtual uses a two-file write pattern (write to <code>.tmp</code>, then rename) to prevent data corruption on crashes or restarts.
+        </div>
+      </div>
+    </div>
+
+    <!-- Docker -->
+    <div class="section" id="docker">
+      <h2>Docker</h2>
+      <h3>Build the image</h3>
+      <pre><code>make docker-build
+<span class="cm"># Or manually:</span>
+docker build -t go-virtual .
+</code></pre>
+
+      <h3>Run with persistent data</h3>
+      <pre><code>docker run -d \
+  --name go-virtual \
+  -p 8080:8080 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  go-virtual
+</code></pre>
+
+      <h3>Docker Compose</h3>
+      <pre><code><span class="key">version</span><span class="op">:</span> <span class="str">"3.9"</span>
+<span class="key">services</span><span class="op">:</span>
+  <span class="key">go-virtual</span><span class="op">:</span>
+    <span class="key">image</span><span class="op">:</span> <span class="str">ghcr.io/your-org/go-virtual:latest</span>
+    <span class="key">ports</span><span class="op">:</span>
+      <span class="op">-</span> <span class="str">"8080:8080"</span>
+    <span class="key">volumes</span><span class="op">:</span>
+      <span class="op">-</span> <span class="str">./data:/app/data</span>
+      <span class="op">-</span> <span class="str">./config.yaml:/app/config.yaml</span>
+    <span class="key">restart</span><span class="op">:</span> <span class="str">unless-stopped</span>
+</code></pre>
+    </div>
+
+    <!-- Development -->
+    <div class="section" id="development">
+      <h2>Development Mode</h2>
+      <p>When contributing to go-virtual or customizing the UI:</p>
+      <pre><code><span class="cm"># Terminal 1 — Go server (auto-reloads with air or manual restart)</span>
+make dev-server
+
+<span class="cm"># Terminal 2 — Vite dev server with HMR on :5173</span>
+make dev-ui
+</code></pre>
+      <p>The Vite dev server proxies <code>/_api/</code> requests to the Go backend. Open <code>http://localhost:5173</code> for live-reload UI development.</p>
+
+      <h3>Build commands</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Command</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>make build</td><td>Build UI then embed into Go binary</td></tr>
+            <tr><td>make build-ui</td><td>Build React UI only (output: ui/dist/)</td></tr>
+            <tr><td>make build-go</td><td>Compile Go binary only</td></tr>
+            <tr><td>make test</td><td>Run all Go tests</td></tr>
+            <tr><td>make test-coverage</td><td>Generate HTML coverage report</td></tr>
+            <tr><td>make lint</td><td>Run golangci-lint</td></tr>
+            <tr><td>make fmt</td><td>Run gofmt and goimports</td></tr>
+            <tr><td>make clean</td><td>Remove build artifacts</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="index.html">&#8592; Overview</a>
+        <a href="specs-and-responses.html">Specs &amp; Responses &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

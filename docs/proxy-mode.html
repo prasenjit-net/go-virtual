@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Mode &amp; Request Signatures — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.flow-diagram {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin: 16px 0 24px;
+  overflow-x: auto;
+}
+.flow-diagram pre {
+  background: none; border: none; padding: 0; margin: 0;
+  font-size: 12px; line-height: 1.7; color: #c9d1e9;
+}
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.pill {
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 100px; padding: 3px 10px;
+  font-size: 12px; color: var(--text-muted);
+}
+.pill.active { background: #1e1f47; border-color: #6366f1; color: #818cf8; }
+.pill.green  { background: var(--green-dim); border-color: #0d3320; color: var(--green); }
+
+.sig-box {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; margin: 10px 0;
+  display: grid; grid-template-columns: 140px 1fr; gap: 6px 16px;
+  font-size: 13px;
+}
+.sig-label { color: var(--text-dim); font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em; align-self: center; }
+.sig-val { font-family: monospace; color: var(--accent-hover); }
+.sig-val.muted { color: var(--text-muted); font-family: inherit; }
+
+.step-flow { display: flex; flex-direction: column; gap: 0; margin: 16px 0; }
+.step-item {
+  display: flex; gap: 16px; align-items: flex-start;
+  padding: 12px 0; border-bottom: 1px solid var(--border);
+}
+.step-item:last-child { border-bottom: none; }
+.step-num {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent-dim); color: var(--accent-hover);
+  font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-body { flex: 1; }
+.step-body strong { color: var(--text); display: block; margin-bottom: 3px; font-size: 13.5px; }
+.step-body p { color: var(--text-muted); font-size: 13px; margin: 0; }
+
+.hash-demo {
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 20px; margin: 12px 0;
+}
+.hash-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+.hash-row:last-child { margin-bottom: 0; }
+.hash-label { color: var(--text-dim); min-width: 100px; font-family: monospace; font-size: 12px; }
+.hash-val { color: var(--text-muted); font-family: monospace; font-size: 12px; }
+.hash-arrow { color: var(--accent-hover); font-weight: 700; }
+
+.recorded-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #1e1b35; border: 1px solid #4a3f7a;
+  color: #a78bfa; border-radius: 4px; font-size: 11px;
+  padding: 2px 8px; font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html" class="active"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Proxy Mode</div>
+      <h1>Proxy Mode &amp; Request Signatures</h1>
+      <p class="lead">Proxy mode turns go-virtual into a transparent recording proxy — it forwards live traffic to a real backend, captures every response, and replays those exact responses in future offline runs. Request signatures let you fingerprint requests by any combination of path, query, headers, and body fields so each unique variant gets its own recorded mock.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#concepts">How Proxy Mode Works</a></li>
+        <li><a href="#setup">Setting Up Proxy Mode</a></li>
+        <li><a href="#recording">Recording &amp; Deduplication</a></li>
+        <li><a href="#disabling">Switching to Replay Mode</a></li>
+        <li><a href="#signatures">Request Signatures</a></li>
+        <li><a href="#sig-config">Configuring the Signature</a></li>
+        <li><a href="#sig-hash">How the Hash Is Computed</a></li>
+        <li><a href="#sig-condition">Signature Conditions</a></li>
+        <li><a href="#headers">Header Handling</a></li>
+        <li><a href="#mtls">mTLS for Backend Requests</a></li>
+        <li><a href="#errors">Error Handling</a></li>
+        <li><a href="#ui-walkthrough">UI Walkthrough</a></li>
+        <li><a href="#examples">End-to-End Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- How it works -->
+    <div class="section" id="concepts">
+      <h2>How Proxy Mode Works</h2>
+
+      <p>When proxy mode is active on a spec, the request pipeline changes:</p>
+
+      <div class="flow-diagram">
+        <pre>
+  Incoming Request
+        │
+        ▼
+  ┌─────────────────────┐
+  │  Route matching     │  ← matches operation from OpenAPI spec
+  └──────────┬──────────┘
+             │
+             ▼
+  ┌─────────────────────┐
+  │  Signature computed │  ← FNV-64a hash of configurable request fields
+  └──────────┬──────────┘
+             │
+      ┌──────┴───────┐
+      │              │
+  ProxyMode=true   ProxyMode=false
+  + BackendURI set   (or no backend)
+      │              │
+      ▼              ▼
+  ┌─────────┐   ┌───────────────────────┐
+  │ Forward │   │ Evaluate conditions   │
+  │ to real │   │ on response configs   │
+  │ backend │   │ (signature match etc) │
+  └────┬────┘   └──────────┬────────────┘
+       │                   │
+       ▼                   ▼
+  ┌─────────────────┐  ┌───────────────┐
+  │ Record response │  │ Render + send │
+  │ as mock with    │  │ matched mock  │
+  │ signature cond  │  └───────────────┘
+  └────┬────────────┘
+       │
+       ▼
+  Return real response
+  to client (pass-through)
+        </pre>
+      </div>
+
+      <p>Key characteristics:</p>
+      <ul>
+        <li><strong>Pass-through while recording</strong> — the real backend response is returned to the client immediately; recording is async and does not add latency.</li>
+        <li><strong>Deduplication by signature</strong> — the same logical request (same path params, query, headers, body — as defined by the signature config) updates the existing mock rather than creating a duplicate.</li>
+        <li><strong>Zero-edit mocks</strong> — recorded responses are immediately usable without any manual editing.</li>
+        <li><strong>Seamless switch</strong> — turn off proxy mode and all future requests are served from the captured mocks, no code changes needed.</li>
+      </ul>
+    </div>
+
+    <!-- Setup -->
+    <div class="section" id="setup">
+      <h2>Setting Up Proxy Mode</h2>
+
+      <p>Two steps are required: configure the backend URL, then enable proxy mode.</p>
+
+      <h3>Step 1 — Set the backend URL</h3>
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/backend \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"backendUri": "https://api.example.com"}'</span>
+</code></pre>
+      <p>The backend URI is the root URL of the real API. go-virtual strips the spec's <code>basePath</code> from the incoming request path before forwarding, so if your spec is mounted at <code>/v2</code> and the real API doesn't have that prefix, paths resolve correctly.</p>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Clearing the URI disables proxy mode</strong>
+          If you set <code>backendUri</code> to an empty string, proxy mode is automatically disabled.
+        </div>
+      </div>
+
+      <h3>Step 2 — Enable proxy mode</h3>
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/proxy-mode \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"enabled": true}'</span>
+</code></pre>
+      <p>Proxy mode can only be enabled when a <code>backendUri</code> is already set. Attempting to enable it without a backend returns a 400 error.</p>
+
+      <h3>Via the Admin UI</h3>
+      <p>On the <strong>Spec Detail</strong> page, the <strong>Backend Configuration</strong> card lets you paste the backend URI and save it. A <strong>Proxy Mode</strong> toggle appears once the URI is set. When active, an animated <strong>Recording</strong> badge (violet, with a radio icon) appears on each operation row.</p>
+
+      <h3>Verify the setup</h3>
+      <pre><code>curl http://localhost:8080/_api/specs/&lt;spec-id&gt;
+<span class="cm"># Look for:
+# "backendURI": "https://api.example.com",
+# "proxyMode": true</span>
+</code></pre>
+    </div>
+
+    <!-- Recording -->
+    <div class="section" id="recording">
+      <h2>Recording &amp; Deduplication</h2>
+
+      <p>Every request that passes through in proxy mode triggers an async record step after the backend response is returned to the client.</p>
+
+      <h3>What gets recorded</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td>Name</td><td><code>[Recorded] YYYY-MM-DD HH:MM:SS</code></td></tr>
+            <tr><td>Tag</td><td><code>default</code></td></tr>
+            <tr><td>Priority</td><td><code>1</code> — just below manually created responses (priority 0)</td></tr>
+            <tr><td>Condition</td><td><code>{"source": "signature", "operator": "eq", "value": "&lt;hash&gt;"}</code></td></tr>
+            <tr><td>Status code</td><td>Exact status code returned by the backend</td></tr>
+            <tr><td>Headers</td><td>Backend headers minus transport-level headers (see <a href="#headers">Header Handling</a>)</td></tr>
+            <tr><td>Body</td><td>Exact response body string</td></tr>
+            <tr><td>Recorded flag</td><td><code>true</code> — marked visually in the UI with a <span class="recorded-badge">● Recorded</span> badge</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Deduplication logic</h3>
+      <p>Before creating a new response config, go-virtual checks whether a config with a <code>signature</code> condition matching this exact hash already exists for the operation:</p>
+      <ul>
+        <li><strong>Found</strong> — updates the existing config's status code, headers, and body in-place. The ID, name, and creation timestamp are preserved.</li>
+        <li><strong>Not found</strong> — creates a new config with a time-based ID (<code>20060102150405-uuid8</code>).</li>
+      </ul>
+
+      <p>This means re-playing the same request against the backend updates the mock — useful for refreshing stale recordings.</p>
+
+      <h3>Inspecting recorded responses</h3>
+      <pre><code><span class="cm"># List all response configs for an operation</span>
+curl http://localhost:8080/_api/operations/&lt;op-id&gt;/responses
+
+<span class="cm"># Recorded entries are identifiable by:</span>
+<span class="cm"># "recorded": true</span>
+<span class="cm"># "conditions": [{"source": "signature", ...}]</span>
+<span class="cm"># "name": "[Recorded] ..."</span>
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Edit recorded responses freely</strong>
+          Recorded responses are just regular response configs with a <code>recorded: true</code> flag and a signature condition. You can edit the body, change the status code, or add more conditions — it all works exactly the same as manually created responses.
+        </div>
+      </div>
+    </div>
+
+    <!-- Switching to replay -->
+    <div class="section" id="disabling">
+      <h2>Switching to Replay Mode</h2>
+      <p>Once you have captured the responses you need, disable proxy mode. All future requests are served entirely from the recorded (and any manually created) mock responses.</p>
+
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/proxy-mode \
+  -d <span class="str">'{"enabled": false}'</span>
+</code></pre>
+
+      <p>Or toggle the switch on the Spec Detail page in the UI. The animated "Recording" badge disappears, confirming the server is now serving purely from mocks.</p>
+
+      <div class="callout success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <strong>Typical workflow</strong>
+          Record → review in Trace Viewer → disable proxy mode → run tests against captured mocks → edit any edge cases manually → commit the data directory to version control.
+        </div>
+      </div>
+    </div>
+
+    <!-- Signatures -->
+    <div class="section" id="signatures">
+      <h2>Request Signatures</h2>
+
+      <p>A <strong>request signature</strong> is a deterministic 16-character hex fingerprint computed from configurable parts of an incoming request. It is the key that makes deduplication and exact-match replay possible.</p>
+
+      <p>The same logical request — same path params, query string, relevant headers, and body fields — always produces the same hash. A different tenant ID, a different page number, or a different request body produces a different hash and therefore a different recorded mock.</p>
+
+      <h3>What goes into the hash (defaults)</h3>
+      <p>When no custom signature config is set, the defaults are:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Default</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Path parameters</td><td>All included</td><td>Sorted alphabetically before hashing</td></tr>
+            <tr><td>Query parameters</td><td>All included</td><td>Sorted by name, then values sorted per name</td></tr>
+            <tr><td>Headers</td><td>None included</td><td>Must be explicitly listed to include</td></tr>
+            <tr><td>Request body</td><td>Full body included</td><td>Can be narrowed to specific JSON paths</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Sig config -->
+    <div class="section" id="sig-config">
+      <h2>Configuring the Signature</h2>
+
+      <p>The signature config lives on the <strong>operation</strong>, not on individual response configs. It applies globally to all requests for that operation.</p>
+
+      <h3>Signature config fields</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>pathParams</td><td>string[]</td><td>[] (all)</td><td>Path parameter names to include. Empty array = include all.</td></tr>
+            <tr><td>queryParams</td><td>string[]</td><td>[] (all)</td><td>Query parameter names to include. Empty array = include all.</td></tr>
+            <tr><td>headers</td><td>string[]</td><td>[] (none)</td><td>Header names to include (case-insensitive). Empty array = include none.</td></tr>
+            <tr><td>includeBody</td><td>bool</td><td>true</td><td>Whether to include the request body in the hash.</td></tr>
+            <tr><td>bodyJsonPaths</td><td>string[]</td><td>[] (full body)</td><td>gjson paths to extract from the body. Empty = use full raw body. Only applies when <code>includeBody</code> is true.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Get &amp; update via API</h3>
+      <pre><code><span class="cm"># Get current config (null = using defaults)</span>
+curl http://localhost:8080/_api/operations/&lt;op-id&gt;/signature
+
+<span class="cm"># Update</span>
+curl -X PUT http://localhost:8080/_api/operations/&lt;op-id&gt;/signature \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "pathParams": ["id"],
+    "queryParams": [],
+    "headers": ["X-Tenant-Id"],
+    "includeBody": false
+  }'</span>
+</code></pre>
+
+      <h3>Reset to defaults</h3>
+      <pre><code><span class="cm"># Set signatureConfig to null to revert to default behavior</span>
+curl -X PUT http://localhost:8080/_api/operations/&lt;op-id&gt;/signature \
+  -d <span class="str">'{"signatureConfig": null}'</span>
+</code></pre>
+
+      <h3>Common configurations</h3>
+
+      <h4>Match only on path ID — ignore query and body</h4>
+      <pre><code>{
+  <span class="key">"pathParams"</span>: [<span class="str">"id"</span>],
+  <span class="key">"queryParams"</span>: [],
+  <span class="key">"includeBody"</span>: <span class="kw">false</span>
+}
+<span class="cm">// GET /users/42?debug=true and GET /users/42?lang=en → same signature</span>
+</code></pre>
+
+      <h4>Match on tenant header + path ID</h4>
+      <pre><code>{
+  <span class="key">"pathParams"</span>: [<span class="str">"id"</span>],
+  <span class="key">"queryParams"</span>: [],
+  <span class="key">"headers"</span>: [<span class="str">"X-Tenant-Id"</span>],
+  <span class="key">"includeBody"</span>: <span class="kw">false</span>
+}
+<span class="cm">// tenant-a + /users/42 → different signature than tenant-b + /users/42</span>
+</code></pre>
+
+      <h4>Match on specific body fields only</h4>
+      <pre><code>{
+  <span class="key">"includeBody"</span>: <span class="kw">true</span>,
+  <span class="key">"bodyJsonPaths"</span>: [<span class="str">"user.id"</span>, <span class="str">"user.role"</span>]
+}
+<span class="cm">// Only user.id and user.role affect the hash; timestamp or metadata fields do not</span>
+</code></pre>
+
+      <h4>Match on full request (no configuration needed — this is the default)</h4>
+      <pre><code>{
+  <span class="key">"pathParams"</span>: [],    <span class="cm">// empty = all path params</span>
+  <span class="key">"queryParams"</span>: [],   <span class="cm">// empty = all query params</span>
+  <span class="key">"headers"</span>: [],       <span class="cm">// empty = no headers</span>
+  <span class="key">"includeBody"</span>: <span class="kw">true</span>  <span class="cm">// full body</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Hash computation -->
+    <div class="section" id="sig-hash">
+      <h2>How the Hash Is Computed</h2>
+
+      <p>go-virtual uses <strong>FNV-64a</strong> (Fowler–Noll–Vo, 64-bit variant) — a fast, non-cryptographic hash that produces a 16-character lowercase hex string.</p>
+
+      <h3>Input construction</h3>
+      <p>The hash input is built by writing four sections in order into the hash state:</p>
+
+      <div class="hash-demo">
+        <div class="hash-row">
+          <span class="hash-label">path section:</span>
+          <span class="hash-val">"path:id=42&amp;version=v2|"</span>
+        </div>
+        <div class="hash-row">
+          <span class="hash-label">query section:</span>
+          <span class="hash-val">"query:filter=active&amp;sort=name|"</span>
+        </div>
+        <div class="hash-row">
+          <span class="hash-label">headers section:</span>
+          <span class="hash-val">"headers:x-tenant-id=acme|"</span>
+        </div>
+        <div class="hash-row">
+          <span class="hash-label">body section:</span>
+          <span class="hash-val">"body:{\"quantity\":3}"</span>
+        </div>
+        <div class="hash-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);">
+          <span class="hash-label" style="color:var(--accent-hover);">→ result:</span>
+          <span class="hash-val" style="color:var(--accent-hover);">fnv64a → "a1b2c3d4e5f6g7h8"</span>
+        </div>
+      </div>
+
+      <h3>Determinism rules</h3>
+      <ul>
+        <li><strong>Map keys are sorted</strong> alphabetically before writing — <code>{"b":2,"a":1}</code> hashes the same as <code>{"a":1,"b":2}</code>.</li>
+        <li><strong>Header names are lowercased</strong> before comparison — <code>X-Tenant-Id</code> and <code>x-tenant-id</code> are treated identically.</li>
+        <li><strong>Multiple query values</strong> per key are sorted before hashing.</li>
+        <li><strong>Body JSON paths</strong> (when configured) are sorted and extracted individually, not as a re-serialized object.</li>
+      </ul>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Same request = same hash, always</strong>
+          The hash is fully deterministic. The same logical request will always produce the same 16-char hex string regardless of the order fields appear in HTTP or JSON, or which server thread handles the request.
+        </div>
+      </div>
+    </div>
+
+    <!-- Signature conditions -->
+    <div class="section" id="sig-condition">
+      <h2>Signature Conditions</h2>
+
+      <p>The signature condition source (<code>"source": "signature"</code>) lets you attach a response config to a specific hash value — making it match only requests that produce that exact fingerprint.</p>
+
+      <h3>Auto-created by proxy recording</h3>
+      <p>When the recorder captures a backend response it automatically writes a condition like this:</p>
+      <pre><code>{
+  <span class="key">"source"</span>: <span class="str">"signature"</span>,
+  <span class="key">"operator"</span>: <span class="str">"eq"</span>,
+  <span class="key">"value"</span>: <span class="str">"a1b2c3d4e5f6g7h8"</span>
+}
+</code></pre>
+
+      <h3>Manually creating a signature condition</h3>
+      <p>You can write a signature condition by hand on any response config — the hash just needs to match what go-virtual would compute for that request. You can find the hash for a specific request in the trace details (the <strong>Signature</strong> field in the trace metadata).</p>
+      <pre><code><span class="cm"># Add a manual response that only fires for a specific hash</span>
+curl -X POST http://localhost:8080/_api/operations/&lt;op-id&gt;/responses \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{
+    "name": "Specific tenant response",
+    "priority": 0,
+    "statusCode": 200,
+    "conditions": [
+      {"source": "signature", "operator": "eq", "value": "a1b2c3d4e5f6g7h8"}
+    ],
+    "body": "{\"tenantSpecific\": true}"
+  }'</span>
+</code></pre>
+
+      <h3>Signature vs other conditions — which wins?</h3>
+      <p>Signature conditions behave like any other condition — they are evaluated in priority order alongside path, query, header, and body conditions. A response config is selected when <strong>all</strong> its conditions pass. You can mix signature conditions with other condition types:</p>
+      <pre><code>{
+  <span class="key">"conditions"</span>: [
+    { <span class="key">"source"</span>: <span class="str">"signature"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"a1b2c3d4e5f6g7h8"</span> },
+    { <span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Authorization"</span>, <span class="key">"operator"</span>: <span class="str">"exists"</span> }
+  ]
+}
+<span class="cm">// Matches only when signature matches AND Authorization header is present</span>
+</code></pre>
+    </div>
+
+    <!-- Header handling -->
+    <div class="section" id="headers">
+      <h2>Header Handling</h2>
+
+      <p>go-virtual filters headers in both directions to prevent transport-layer leakage.</p>
+
+      <h3>Outbound request headers (go-virtual → backend)</h3>
+      <p>These headers from the original client request are <strong>not forwarded</strong> to the backend:</p>
+      <div class="pill-row">
+        <span class="pill">Host</span>
+        <span class="pill">Accept-Encoding</span>
+        <span class="pill">Connection</span>
+        <span class="pill">Transfer-Encoding</span>
+        <span class="pill">Upgrade</span>
+        <span class="pill">Proxy-Connection</span>
+        <span class="pill">Keep-Alive</span>
+        <span class="pill">TE</span>
+        <span class="pill">Trailers</span>
+        <span class="pill">Proxy-Authorization</span>
+        <span class="pill">Proxy-Authenticate</span>
+      </div>
+      <p>All other request headers are forwarded as-is. This includes <code>Authorization</code>, <code>Content-Type</code>, <code>Cookie</code>, and any custom headers.</p>
+
+      <h3>Recorded response headers (backend → stored mock)</h3>
+      <p>These backend response headers are <strong>stripped</strong> before saving to the response config:</p>
+      <div class="pill-row">
+        <span class="pill">Content-Length</span>
+        <span class="pill">Transfer-Encoding</span>
+        <span class="pill">Content-Encoding</span>
+        <span class="pill">Date</span>
+        <span class="pill">Age</span>
+        <span class="pill">Via</span>
+        <span class="pill">Alt-Svc</span>
+        <span class="pill">Trailer</span>
+      </div>
+      <p>All other response headers (e.g., <code>Content-Type</code>, <code>Cache-Control</code>, <code>X-Request-Id</code>, custom headers) are preserved in the mock.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Why strip these headers?</strong>
+          Transport-level headers like <code>Content-Length</code> and <code>Transfer-Encoding</code> are managed by Go's HTTP stack and would cause read errors if pre-set. Cache/proxy headers (<code>Age</code>, <code>Via</code>) are meaningless for replay and would expose the real backend.
+        </div>
+      </div>
+    </div>
+
+    <!-- mTLS -->
+    <div class="section" id="mtls">
+      <h2>mTLS for Backend Requests</h2>
+
+      <p>If the real backend requires mutual TLS (client certificates), configure go-virtual to present a client certificate when making outbound proxy requests.</p>
+
+      <h3>config.yaml</h3>
+      <pre><code><span class="key">proxy</span><span class="op">:</span>
+  <span class="key">timeoutSeconds</span><span class="op">:</span> <span class="num">30</span>
+  <span class="key">insecureSkipVerify</span><span class="op">:</span> <span class="kw">false</span>   <span class="cm"># Skip backend TLS verification (dev only)</span>
+  <span class="key">mtls</span><span class="op">:</span>
+    <span class="key">certFile</span><span class="op">:</span>   <span class="str">/certs/client.crt</span>   <span class="cm"># PEM client certificate</span>
+    <span class="key">keyFile</span><span class="op">:</span>    <span class="str">/certs/client.key</span>   <span class="cm"># PEM private key</span>
+    <span class="key">caCertFile</span><span class="op">:</span> <span class="str">/certs/ca-bundle.crt</span> <span class="cm"># CA to verify backend's certificate</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Option</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>proxy.timeoutSeconds</td><td>int</td><td>HTTP client timeout for backend requests (default: 30). Backends that don't respond within this time return a 502.</td></tr>
+            <tr><td>proxy.insecureSkipVerify</td><td>bool</td><td>Skip TLS certificate verification for the backend. Only for development with self-signed backend certs.</td></tr>
+            <tr><td>proxy.mtls.certFile</td><td>string</td><td>Path to the PEM client certificate. Must be set together with <code>keyFile</code>.</td></tr>
+            <tr><td>proxy.mtls.keyFile</td><td>string</td><td>Path to the PEM private key matching <code>certFile</code>.</td></tr>
+            <tr><td>proxy.mtls.caCertFile</td><td>string</td><td>Path to a custom CA certificate bundle for verifying the backend's server certificate. Falls back to the OS trust store if not set.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>certFile and keyFile must be set together</strong>
+          Setting only one of <code>certFile</code> / <code>keyFile</code> returns an error at server startup. Either set both or neither.
+        </div>
+      </div>
+    </div>
+
+    <!-- Errors -->
+    <div class="section" id="errors">
+      <h2>Error Handling</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Situation</th><th>Response</th></tr></thead>
+          <tbody>
+            <tr><td>Backend unreachable or connection refused</td><td><code>502 Bad Gateway</code> — <code>{"error":"proxy backend unavailable: ..."}</code></td></tr>
+            <tr><td>Backend request timeout</td><td><code>502 Bad Gateway</code> with timeout message</td></tr>
+            <tr><td>ProxyMode enabled but no backend URI</td><td>Cannot enable — API returns 400</td></tr>
+            <tr><td>mTLS cert/key path not found</td><td>Server fails to start with configuration error</td></tr>
+            <tr><td>Only certFile or only keyFile set</td><td>Server fails to start with configuration error</td></tr>
+            <tr><td>Backend returns 4xx or 5xx</td><td>That status is recorded as-is and returned to the client — not treated as an error by the proxy engine itself</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- UI walkthrough -->
+    <div class="section" id="ui-walkthrough">
+      <h2>UI Walkthrough</h2>
+
+      <h3>Configuring proxy mode (Spec Detail page)</h3>
+      <ol class="steps">
+        <li><div><p><strong>Navigate to the Spec Detail page</strong> — click the spec name on the Specifications page.</p></div></li>
+        <li><div><p><strong>Scroll to Backend Configuration</strong> — paste the backend URL into the URI input and click <strong>Save</strong>. The Proxy Mode toggle appears below.</p></div></li>
+        <li><div><p><strong>Toggle Proxy Mode on</strong> — the toggle turns violet. An animated <strong>● Recording</strong> badge appears on every operation row in the operations list.</p></div></li>
+        <li><div><p><strong>Make real requests</strong> — traffic flows through to the backend and responses are recorded. Watch them appear in the Traces page in real time.</p></div></li>
+        <li><div><p><strong>Toggle Proxy Mode off</strong> — go-virtual now replays the captured mocks for all future requests.</p></div></li>
+      </ol>
+
+      <h3>Configuring the signature (Operation Detail page)</h3>
+      <ol class="steps">
+        <li><div><p><strong>Click an operation row</strong> on the Spec Detail page to open the Operation Detail page.</p></div></li>
+        <li><div><p><strong>Scroll to Signature Configuration</strong> — shows a summary of the current config (or "using defaults").</p></div></li>
+        <li><div><p><strong>Click Configure</strong> — the panel expands into edit mode with four sections: Path Parameters, Query Parameters, Headers, and Body.</p></div></li>
+        <li>
+          <div>
+            <p><strong>Path Parameters</strong> — click <strong>All</strong> to include every path param, or toggle individual param chips (violet = included, white = excluded).</p>
+            <p><strong>Query Parameters</strong> — click <strong>Include All</strong> or type param names one at a time and press Add.</p>
+            <p><strong>Headers</strong> — type exact header names (e.g., <code>X-Tenant-Id</code>) and press Add. Headers are matched case-insensitively.</p>
+            <p><strong>Body</strong> — tick the checkbox to include the body. When ticked, an optional JSON Paths input appears — add dot-notation paths (e.g., <code>user.id</code>) to hash only specific fields.</p>
+          </div>
+        </li>
+        <li><div><p><strong>Click Save</strong> — the new config takes effect immediately for all subsequent requests. Click <strong>Reset to defaults</strong> to revert.</p></div></li>
+      </ol>
+
+      <h3>Finding a request's signature in traces</h3>
+      <p>Open the <strong>Traces</strong> page and click any proxy-mode trace. The detail panel shows a <strong>Signature</strong> field in the metadata section — copy this hash to manually write a matching condition in any response config.</p>
+    </div>
+
+    <!-- Examples -->
+    <div class="section" id="examples">
+      <h2>End-to-End Examples</h2>
+
+      <h3>Example 1 — Record a multi-tenant API</h3>
+      <p>An API returns different data per tenant, identified by the <code>X-Tenant</code> header.</p>
+      <pre><code><span class="cm"># 1. Configure signature to hash only path + tenant header</span>
+curl -X PUT http://localhost:8080/_api/operations/op-get-user/signature \
+  -d <span class="str">'{
+    "pathParams": ["id"],
+    "queryParams": [],
+    "headers": ["X-Tenant"],
+    "includeBody": false
+  }'</span>
+
+<span class="cm"># 2. Enable proxy mode</span>
+curl -X PUT http://localhost:8080/_api/specs/spec-id/backend \
+  -d <span class="str">'{"backendUri": "https://real-api.example.com"}'</span>
+curl -X PUT http://localhost:8080/_api/specs/spec-id/proxy-mode \
+  -d <span class="str">'{"enabled": true}'</span>
+
+<span class="cm"># 3. Make requests for both tenants — two separate mocks are recorded</span>
+curl http://localhost:8080/users/42 -H <span class="str">"X-Tenant: acme"</span>
+curl http://localhost:8080/users/42 -H <span class="str">"X-Tenant: globex"</span>
+
+<span class="cm"># 4. Disable proxy mode — each tenant gets its own isolated response</span>
+curl -X PUT http://localhost:8080/_api/specs/spec-id/proxy-mode \
+  -d <span class="str">'{"enabled": false}'</span>
+
+<span class="cm"># 5. Replay: correct response served for each tenant</span>
+curl http://localhost:8080/users/42 -H <span class="str">"X-Tenant: acme"</span>    <span class="cm"># → acme user data</span>
+curl http://localhost:8080/users/42 -H <span class="str">"X-Tenant: globex"</span>  <span class="cm"># → globex user data</span>
+</code></pre>
+
+      <h3>Example 2 — Capture then refine with manual responses</h3>
+      <p>Record the happy path, then add manual error responses that couldn't be captured from the real API.</p>
+      <pre><code><span class="cm"># After recording, create a manual 404 that fires before recorded responses</span>
+curl -X POST http://localhost:8080/_api/operations/op-get-user/responses \
+  -d <span class="str">'{
+    "name": "Not Found",
+    "priority": 0,
+    "statusCode": 404,
+    "conditions": [
+      {"source": "path", "key": "id", "operator": "startsWith", "value": "invalid-"}
+    ],
+    "body": "{\"error\": \"User not found\"}"
+  }'</span>
+
+<span class="cm"># Recorded responses sit at priority 1 — the manual 404 (priority 0) fires first</span>
+<span class="cm"># for invalid IDs, recorded mock fires for everything else</span>
+</code></pre>
+
+      <h3>Example 3 — Refreshing stale mocks</h3>
+      <p>Re-enable proxy mode and replay the same requests to update the recorded responses:</p>
+      <pre><code><span class="cm"># Re-enable proxy</span>
+curl -X PUT http://localhost:8080/_api/specs/spec-id/proxy-mode \
+  -d <span class="str">'{"enabled": true}'</span>
+
+<span class="cm"># Replay the same requests — recorder finds the existing config by signature</span>
+<span class="cm"># and updates the body/headers in-place rather than creating duplicates</span>
+curl http://localhost:8080/users/42 -H <span class="str">"X-Tenant: acme"</span>
+</code></pre>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="tracing-and-metrics.html">&#8592; Tracing &amp; Metrics</a>
+        <a href="admin-api.html">Admin API &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tracing &amp; Metrics — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html" class="active"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Tracing &amp; Metrics</div>
+      <h1>Tracing &amp; Metrics</h1>
+      <p class="lead">Observe every request in real time through the live trace stream. Monitor performance and error rates with per-spec and per-operation statistics, and expose Prometheus metrics for external monitoring.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#tracing">Request Tracing</a></li>
+        <li><a href="#trace-schema">Trace Schema</a></li>
+        <li><a href="#websocket">WebSocket Live Stream</a></li>
+        <li><a href="#trace-api">Trace API</a></li>
+        <li><a href="#trace-config">Tracing Configuration</a></li>
+        <li><a href="#stats">Statistics</a></li>
+        <li><a href="#prometheus">Prometheus Metrics</a></li>
+      </ul>
+    </div>
+
+    <!-- Tracing -->
+    <div class="section" id="tracing">
+      <h2>Request Tracing</h2>
+      <p>go-virtual captures a complete trace record for every request it handles. Traces include:</p>
+      <ul>
+        <li>Full request details — method, URL, headers, body</li>
+        <li>Response details — status code, headers, body, latency</li>
+        <li>Which response configuration matched (or "no match")</li>
+        <li>Script execution details — output, logs, execution time, errors</li>
+        <li>Session information — session ID and store operations performed</li>
+        <li>Timestamps for each pipeline stage</li>
+      </ul>
+
+      <p>Traces are stored in a configurable ring buffer (default: 1000 traces) and can be streamed over WebSocket for real-time monitoring.</p>
+
+      <h3>Enabling/disabling tracing per spec</h3>
+      <pre><code><span class="cm"># Disable tracing for a noisy spec</span>
+curl -X PUT http://localhost:8080/_api/specs/spec_id/tracing \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"enabled": false}'</span>
+
+<span class="cm"># Re-enable</span>
+curl -X PUT http://localhost:8080/_api/specs/spec_id/tracing \
+  -d <span class="str">'{"enabled": true}'</span>
+</code></pre>
+    </div>
+
+    <!-- Trace schema -->
+    <div class="section" id="trace-schema">
+      <h2>Trace Schema</h2>
+      <p>Each trace record has the following structure:</p>
+      <pre><code>{
+  <span class="key">"id"</span>: <span class="str">"trace_abc123"</span>,
+  <span class="key">"timestamp"</span>: <span class="str">"2024-01-15T10:00:00.123Z"</span>,
+  <span class="key">"specId"</span>: <span class="str">"spec_xyz"</span>,
+  <span class="key">"operationId"</span>: <span class="str">"op_123"</span>,
+  <span class="key">"operationName"</span>: <span class="str">"getPet"</span>,
+
+  <span class="key">"request"</span>: {
+    <span class="key">"method"</span>: <span class="str">"GET"</span>,
+    <span class="key">"url"</span>: <span class="str">"/pets/42"</span>,
+    <span class="key">"headers"</span>: { <span class="key">"Authorization"</span>: <span class="str">"Bearer ..."</span> },
+    <span class="key">"body"</span>: <span class="str">""</span>
+  },
+
+  <span class="key">"response"</span>: {
+    <span class="key">"statusCode"</span>: <span class="num">200</span>,
+    <span class="key">"headers"</span>: { <span class="key">"Content-Type"</span>: <span class="str">"application/json"</span> },
+    <span class="key">"body"</span>: <span class="str">"{\"id\":\"42\",\"name\":\"Max\"}"</span>,
+    <span class="key">"latencyMs"</span>: <span class="num">12</span>
+  },
+
+  <span class="key">"matchedResponse"</span>: {
+    <span class="key">"id"</span>: <span class="str">"resp_456"</span>,
+    <span class="key">"name"</span>: <span class="str">"Success"</span>
+  },
+
+  <span class="key">"scripts"</span>: [
+    {
+      <span class="key">"scriptId"</span>: <span class="str">"script_789"</span>,
+      <span class="key">"outputKey"</span>: <span class="str">"info"</span>,
+      <span class="key">"output"</span>: { <span class="key">"greeting"</span>: <span class="str">"Hello"</span> },
+      <span class="key">"logs"</span>: [<span class="str">"Processing request for 42"</span>],
+      <span class="key">"executionMs"</span>: <span class="num">3</span>,
+      <span class="key">"error"</span>: <span class="str">""</span>
+    }
+  ],
+
+  <span class="key">"session"</span>: {
+    <span class="key">"id"</span>: <span class="str">"user-alice-1"</span>,
+    <span class="key">"storeReads"</span>: [<span class="str">"cart"</span>],
+    <span class="key">"storeWrites"</span>: [<span class="str">"cart"</span>]
+  }
+}
+</code></pre>
+    </div>
+
+    <!-- WebSocket -->
+    <div class="section" id="websocket">
+      <h2>WebSocket Live Stream</h2>
+      <p>Connect to the trace stream WebSocket endpoint to receive trace events in real time as requests arrive:</p>
+
+      <pre><code><span class="cm"># Using wscat or websocat</span>
+wscat -c ws://localhost:8080/_api/traces/stream
+
+<span class="cm"># Using websocat</span>
+websocat ws://localhost:8080/_api/traces/stream
+</code></pre>
+
+      <p>Each message received is a full trace record serialized as JSON, followed by a newline.</p>
+
+      <h3>Filter by spec</h3>
+      <pre><code>wscat -c "ws://localhost:8080/_api/traces/stream?specId=spec_xyz"
+</code></pre>
+
+      <h3>Using the trace stream from JavaScript</h3>
+      <pre><code><span class="kw">const</span> ws = <span class="kw">new</span> <span class="fn">WebSocket</span>(<span class="str">'ws://localhost:8080/_api/traces/stream'</span>)
+
+ws.onmessage = (event) =&gt; {
+    <span class="kw">const</span> trace = <span class="fn">JSON.parse</span>(event.data)
+    console.log(<span class="str">`[${trace.response.statusCode}] ${trace.request.method} ${trace.request.url} — ${trace.response.latencyMs}ms`</span>)
+}
+
+ws.onerror = console.error
+</code></pre>
+
+      <h3>Admin UI Trace Viewer</h3>
+      <p>The <strong>Traces</strong> page in the admin UI provides a live feed of trace events with:</p>
+      <ul>
+        <li>Auto-scroll as new traces arrive</li>
+        <li>Full-text search across all trace fields</li>
+        <li>Filter by spec or operation</li>
+        <li>Click to expand trace details (request/response body, script output)</li>
+        <li>JSON syntax highlighting</li>
+        <li>Clear all traces button</li>
+      </ul>
+    </div>
+
+    <!-- Trace API -->
+    <div class="section" id="trace-api">
+      <h2>Trace API</h2>
+
+      <h3>List traces (paginated)</h3>
+      <pre><code><span class="cm"># List recent traces</span>
+curl "http://localhost:8080/_api/traces?limit=50&amp;offset=0"
+
+<span class="cm"># Filter by spec</span>
+curl "http://localhost:8080/_api/traces?specId=spec_xyz"
+
+<span class="cm"># Filter by operation</span>
+curl "http://localhost:8080/_api/traces?operationId=op_abc"
+
+<span class="cm"># Search full text</span>
+curl "http://localhost:8080/_api/traces?q=error"
+</code></pre>
+
+      <h3>Get a single trace</h3>
+      <pre><code>curl http://localhost:8080/_api/traces/trace_abc123
+</code></pre>
+
+      <h3>Clear all traces</h3>
+      <pre><code>curl -X DELETE http://localhost:8080/_api/traces
+</code></pre>
+    </div>
+
+    <!-- Trace config -->
+    <div class="section" id="trace-config">
+      <h2>Tracing Configuration</h2>
+      <pre><code><span class="key">tracing</span><span class="op">:</span>
+  <span class="key">maxTraces</span><span class="op">:</span> <span class="num">1000</span>     <span class="cm"># Maximum trace records to keep in memory</span>
+  <span class="key">retention</span><span class="op">:</span> <span class="str">"24h"</span>   <span class="cm"># Time to retain traces</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Option</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>maxTraces</td><td>1000</td><td>Ring buffer size. When full, oldest traces are evicted.</td></tr>
+            <tr><td>retention</td><td>24h</td><td>Maximum age of a trace before it's removed regardless of buffer size.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>High-traffic environments</strong>
+          In high-traffic environments, reduce <code>maxTraces</code> or disable tracing for noisy specs to limit memory usage. Trace bodies are not compressed.
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="section" id="stats">
+      <h2>Statistics</h2>
+      <p>go-virtual tracks request counts, response times, and error rates at three levels: global, per-spec, and per-operation.</p>
+
+      <h3>Global statistics</h3>
+      <pre><code>curl http://localhost:8080/_api/stats
+
+<span class="cm"># Response</span>
+{
+  <span class="key">"totalRequests"</span>: <span class="num">1523</span>,
+  <span class="key">"totalErrors"</span>: <span class="num">42</span>,
+  <span class="key">"averageLatencyMs"</span>: <span class="num">18.4</span>,
+  <span class="key">"p99LatencyMs"</span>: <span class="num">120</span>,
+  <span class="key">"activeSpecs"</span>: <span class="num">3</span>,
+  <span class="key">"uptime"</span>: <span class="str">"2h15m"</span>
+}
+</code></pre>
+
+      <h3>Per-spec statistics</h3>
+      <pre><code>curl http://localhost:8080/_api/stats/specs/spec_xyz
+
+{
+  <span class="key">"specId"</span>: <span class="str">"spec_xyz"</span>,
+  <span class="key">"totalRequests"</span>: <span class="num">850</span>,
+  <span class="key">"errorRate"</span>: <span class="num">0.02</span>,
+  <span class="key">"averageLatencyMs"</span>: <span class="num">14.2</span>
+}
+</code></pre>
+
+      <h3>Per-operation statistics</h3>
+      <pre><code>curl http://localhost:8080/_api/stats/operations/op_abc
+
+{
+  <span class="key">"operationId"</span>: <span class="str">"op_abc"</span>,
+  <span class="key">"operationName"</span>: <span class="str">"getPet"</span>,
+  <span class="key">"totalRequests"</span>: <span class="num">320</span>,
+  <span class="key">"successCount"</span>: <span class="num">310</span>,
+  <span class="key">"errorCount"</span>: <span class="num">10</span>,
+  <span class="key">"averageLatencyMs"</span>: <span class="num">11.8</span>
+}
+</code></pre>
+
+      <h3>Reset statistics</h3>
+      <pre><code>curl -X POST http://localhost:8080/_api/stats/reset
+</code></pre>
+
+      <h3>Admin UI Dashboard</h3>
+      <p>The <strong>Dashboard</strong> page visualizes statistics with:</p>
+      <ul>
+        <li>Total request count and error rate gauges</li>
+        <li>Average and P99 latency charts over time</li>
+        <li>Top operations by request volume</li>
+        <li>Per-spec breakdown table</li>
+        <li>Real-time trend lines (updates as requests arrive)</li>
+      </ul>
+    </div>
+
+    <!-- Prometheus -->
+    <div class="section" id="prometheus">
+      <h2>Prometheus Metrics</h2>
+      <p>go-virtual exposes Prometheus-compatible metrics at <code>/_api/metrics</code>.</p>
+
+      <pre><code>curl http://localhost:8080/_api/metrics
+
+<span class="cm"># HELP go_virtual_requests_total Total number of requests handled</span>
+<span class="cm"># TYPE go_virtual_requests_total counter</span>
+go_virtual_requests_total{spec="pet-store",operation="getPet",status="200"} 320
+go_virtual_requests_total{spec="pet-store",operation="listPets",status="200"} 150
+
+<span class="cm"># HELP go_virtual_latency_seconds Request latency in seconds</span>
+<span class="cm"># TYPE go_virtual_latency_seconds histogram</span>
+go_virtual_latency_seconds_bucket{le="0.01"} 280
+...
+
+<span class="cm"># HELP go_virtual_active_specs Number of enabled specs</span>
+<span class="cm"># TYPE go_virtual_active_specs gauge</span>
+go_virtual_active_specs 3
+</code></pre>
+
+      <h3>Prometheus scrape config</h3>
+      <pre><code><span class="cm"># prometheus.yml</span>
+<span class="key">scrape_configs</span><span class="op">:</span>
+  <span class="op">-</span> <span class="key">job_name</span><span class="op">:</span> <span class="str">"go-virtual"</span>
+    <span class="key">static_configs</span><span class="op">:</span>
+      <span class="op">-</span> <span class="key">targets</span><span class="op">:</span> [<span class="str">"localhost:8080"</span>]
+    <span class="key">metrics_path</span><span class="op">:</span> <span class="str">"/_api/metrics"</span>
+    <span class="key">scrape_interval</span><span class="op">:</span> <span class="str">15s</span>
+</code></pre>
+
+      <h3>Available metrics</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Metric</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>go_virtual_requests_total</td><td>Counter</td><td>Total requests by spec, operation, and status code</td></tr>
+            <tr><td>go_virtual_latency_seconds</td><td>Histogram</td><td>Request latency distribution</td></tr>
+            <tr><td>go_virtual_errors_total</td><td>Counter</td><td>Error count by spec and error type</td></tr>
+            <tr><td>go_virtual_active_specs</td><td>Gauge</td><td>Number of currently enabled specs</td></tr>
+            <tr><td>go_virtual_active_sessions</td><td>Gauge</td><td>Number of active sessions</td></tr>
+            <tr><td>go_virtual_script_executions_total</td><td>Counter</td><td>Script execution count by script ID and status</td></tr>
+            <tr><td>go_virtual_script_duration_seconds</td><td>Histogram</td><td>Script execution duration</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="sessions-and-store.html">&#8592; Sessions &amp; Store</a>
+        <a href="admin-api.html">Admin API &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

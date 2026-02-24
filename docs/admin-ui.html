@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin UI Guide — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* Extra styles for UI docs */
+.ui-screen {
+  background: #0d1120;
+  border: 1px solid #252d42;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 16px 0 24px;
+}
+.ui-screen-bar {
+  background: #161b27;
+  border-bottom: 1px solid #252d42;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #4a5568;
+}
+.ui-screen-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
+.ui-screen-bar .dot.r { background: #ef4444; }
+.ui-screen-bar .dot.y { background: #f59e0b; }
+.ui-screen-bar .dot.g { background: #10b981; }
+.ui-screen-bar .url { margin-left: 8px; flex: 1; background: #0d1120; border-radius: 4px; padding: 3px 10px; color: #7d8ea8; font-family: monospace; font-size: 11px; }
+.ui-body { padding: 20px 24px; }
+
+/* Mock UI element styles */
+.mock-sidebar {
+  display: inline-flex; flex-direction: column; gap: 2px;
+  background: #0d1120; border: 1px solid #252d42; border-radius: 6px;
+  padding: 10px 8px; font-size: 12px; min-width: 140px; vertical-align: top; margin-right: 12px;
+}
+.mock-nav-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-radius: 4px; color: #7d8ea8; font-size: 12px;
+  border-left: 2px solid transparent;
+}
+.mock-nav-item.active { color: #818cf8; background: #1e1f47; border-left-color: #6366f1; }
+.mock-nav-label { font-size: 10px; color: #4a5568; text-transform: uppercase; letter-spacing: 0.08em; padding: 8px 8px 4px; font-weight: 700; }
+
+.mock-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: monospace; }
+.mock-badge.get { background: #0d1e35; color: #60a5fa; }
+.mock-badge.post { background: #0d2e20; color: #34d399; }
+.mock-badge.put { background: #2d2310; color: #fbbf24; }
+.mock-badge.delete { background: #2d1212; color: #f87171; }
+.mock-badge.patch { background: #1e1b35; color: #a78bfa; }
+.mock-badge.status-2 { background: #0d2e20; color: #34d399; }
+.mock-badge.status-4 { background: #2d1212; color: #f87171; }
+.mock-badge.status-5 { background: #2d1212; color: #f87171; }
+
+.ui-flow { display: flex; align-items: flex-start; gap: 0; margin: 16px 0; flex-wrap: wrap; }
+.ui-flow-step {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px 16px;
+  font-size: 13px; color: var(--text-muted); min-width: 160px; flex: 1;
+}
+.ui-flow-step .step-num { font-size: 11px; font-weight: 700; color: var(--accent-hover); margin-bottom: 4px; }
+.ui-flow-step .step-action { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.ui-flow-arrow {
+  align-self: center; color: var(--text-dim); font-size: 18px; padding: 0 6px;
+}
+
+.form-mock { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 12px 0; }
+.form-mock-field { margin-bottom: 12px; }
+.form-mock-label { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.form-mock-input { background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: 12.5px; color: var(--text-muted); font-family: inherit; width: 100%; }
+.form-mock-input.mono { font-family: monospace; }
+.form-mock-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-mock-select { background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: 12.5px; color: var(--text-muted); font-family: inherit; width: 100%; }
+
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.pill { background: var(--bg-code); border: 1px solid var(--border); border-radius: 100px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); }
+.pill.active { background: #1e1f47; border-color: #6366f1; color: #818cf8; }
+.pill.green { background: var(--green-dim); border-color: #0d3320; color: var(--green); }
+.pill.red { background: var(--red-dim); border-color: #3d1212; color: var(--red); }
+
+.kv-row { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.kv-row:last-child { border-bottom: none; }
+.kv-key { color: #60a5fa; font-family: monospace; flex: 1; }
+.kv-val { color: var(--text-muted); flex: 2; font-family: monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.page-section-anchor { font-size: 11px; color: var(--accent-hover); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; }
+
+.op-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; }
+.op-path { font-family: monospace; font-size: 13px; color: var(--text); flex: 1; }
+.op-summary { font-size: 12px; color: var(--text-muted); }
+
+.trace-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.trace-row:last-child { border-bottom: none; }
+.trace-row.selected { background: #1a1f3a; border-left: 2px solid var(--accent); }
+.trace-time { color: var(--text-dim); font-size: 11px; min-width: 44px; }
+.trace-path { font-family: monospace; color: var(--text); flex: 1; }
+.trace-dur { color: var(--text-dim); font-size: 11px; min-width: 44px; text-align: right; }
+
+.script-binding { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; }
+.binding-num { width: 20px; height: 20px; border-radius: 50%; background: #1e1f47; color: #818cf8; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.binding-name { font-weight: 600; font-size: 13px; flex: 1; }
+.binding-key { background: #0d2e20; color: #34d399; font-family: monospace; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html" class="active"><span class="nav-icon">🖥️</span>UI Guide</a>
+      <a href="admin-ui.html#dashboard"><span class="nav-icon"> </span>Dashboard</a>
+      <a href="admin-ui.html#specs-ui"><span class="nav-icon"> </span>Specifications</a>
+      <a href="admin-ui.html#responses-ui"><span class="nav-icon"> </span>Responses</a>
+      <a href="admin-ui.html#scripts-ui"><span class="nav-icon"> </span>Scripts</a>
+      <a href="admin-ui.html#traces-ui"><span class="nav-icon"> </span>Traces</a>
+      <a href="admin-ui.html#store-ui"><span class="nav-icon"> </span>Store &amp; Sessions</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Admin UI Guide</div>
+      <h1>Admin UI Guide</h1>
+      <p class="lead">go-virtual ships with a full-featured web interface at <code>/_ui/</code>. This guide walks through every page — what it shows, how to interact with it, and what you can accomplish without writing a single API call.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#opening">Opening the UI</a></li>
+        <li><a href="#navigation">Navigation &amp; Theme</a></li>
+        <li><a href="#dashboard">Dashboard</a></li>
+        <li><a href="#specs-ui">Specifications</a></li>
+        <li><a href="#spec-detail">Spec Detail &amp; Operations</a></li>
+        <li><a href="#responses-ui">Response Configuration</a></li>
+        <li><a href="#template-ref">Template Variable Reference</a></li>
+        <li><a href="#signature-ui">Signature Configuration</a></li>
+        <li><a href="#scripts-ui">Scripts</a></li>
+        <li><a href="#script-bindings">Script Bindings</a></li>
+        <li><a href="#traces-ui">Trace Viewer</a></li>
+        <li><a href="#store-ui">Global Store</a></li>
+        <li><a href="#sessions-ui">Sessions</a></li>
+        <li><a href="#tags-ui">Tags</a></li>
+      </ul>
+    </div>
+
+    <!-- Opening -->
+    <div class="section" id="opening">
+      <h2>Opening the UI</h2>
+      <p>Start the server and navigate to <code>http://localhost:8080/_ui/</code> in any modern browser. The UI works on Chrome, Firefox, Safari, and Edge.</p>
+      <pre><code>go-virtual serve
+<span class="cm"># Admin UI at http://localhost:8080/_ui/</span>
+</code></pre>
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Headless mode disables the UI</strong>
+          Running with <code>--headless</code> disables both the Admin UI and the Admin API. Use this flag for production proxy deployments where you only need the mocking/proxy engine.
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="section" id="navigation">
+      <h2>Navigation &amp; Theme</h2>
+      <p>The left sidebar is always visible on desktop. It contains seven top-level sections:</p>
+
+      <div style="display:flex;gap:24px;margin:16px 0;flex-wrap:wrap;">
+        <div class="mock-sidebar">
+          <div class="mock-nav-label">Main</div>
+          <div class="mock-nav-item active">📊 Dashboard</div>
+          <div class="mock-nav-item">📄 API Specs</div>
+          <div class="mock-nav-item">📡 Traces</div>
+          <div class="mock-nav-item">⚡ Scripts</div>
+          <div class="mock-nav-item">🗄️ Store</div>
+          <div class="mock-nav-item">👤 Sessions</div>
+          <div class="mock-nav-item">🏷️ Tags</div>
+          <div class="mock-nav-label" style="margin-top:12px;">Theme</div>
+          <div class="mock-nav-item">☀️ Light</div>
+          <div class="mock-nav-item active">🌑 Dark</div>
+          <div class="mock-nav-item">🖥️ System</div>
+        </div>
+        <div style="flex:1;min-width:200px;">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nav item</th><th>What you'll find</th></tr></thead>
+              <tbody>
+                <tr><td>Dashboard</td><td>KPI cards, charts, error log, operation stats table</td></tr>
+                <tr><td>API Specs</td><td>Upload, enable/disable, delete specs. Navigate to spec detail</td></tr>
+                <tr><td>Traces</td><td>Live WebSocket stream + historical search of all requests</td></tr>
+                <tr><td>Scripts</td><td>Create/edit/delete Starlark scripts with Monaco editor</td></tr>
+                <tr><td>Store</td><td>CRUD for global key-value store entries</td></tr>
+                <tr><td>Sessions</td><td>View active sessions and their store snapshots</td></tr>
+                <tr><td>Tags</td><td>Create custom tags for organizing response configs</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>Theme toggle</h3>
+          <p>At the bottom of the sidebar, three buttons let you switch between <strong>Light</strong>, <strong>Dark</strong>, and <strong>System</strong> (follows OS preference). Your choice is saved in <code>localStorage</code> and persists across page reloads.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="section" id="dashboard">
+      <h2>Dashboard</h2>
+      <p>The Dashboard is the first page you see. It gives a real-time overview of server health and usage.</p>
+
+      <h3>KPI Cards</h3>
+      <p>Five metric cards span the top of the page:</p>
+      <div class="card-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));">
+        <div class="card" style="cursor:default;text-decoration:none;">
+          <div class="card-icon" style="font-size:18px;">📈</div>
+          <div class="card-title" style="font-size:13px;">Total Requests</div>
+          <div class="card-desc">Lifetime request count across all specs</div>
+        </div>
+        <div class="card" style="cursor:default;text-decoration:none;">
+          <div class="card-icon" style="font-size:18px;">📄</div>
+          <div class="card-title" style="font-size:13px;">Active Specs</div>
+          <div class="card-desc">Number of enabled OpenAPI specs</div>
+        </div>
+        <div class="card" style="cursor:default;text-decoration:none;">
+          <div class="card-icon" style="font-size:18px;">🔀</div>
+          <div class="card-title" style="font-size:13px;">Total Operations</div>
+          <div class="card-desc">All parsed API operations</div>
+        </div>
+        <div class="card" style="cursor:default;text-decoration:none;">
+          <div class="card-icon" style="font-size:18px;">⏱️</div>
+          <div class="card-title" style="font-size:13px;">Avg Response Time</div>
+          <div class="card-desc">Mean latency in milliseconds</div>
+        </div>
+        <div class="card" style="cursor:default;text-decoration:none;">
+          <div class="card-icon" style="font-size:18px;">⚡</div>
+          <div class="card-title" style="font-size:13px;">Requests / sec</div>
+          <div class="card-desc">Current throughput rate</div>
+        </div>
+      </div>
+
+      <h3>Charts</h3>
+      <ul>
+        <li><strong>Requests &amp; Errors over time</strong> — Area chart of the last 24 hours. Two series: total requests (blue) and errors (red).</li>
+        <li><strong>Top Operations by Request Volume</strong> — Horizontal bar chart of the six busiest operations.</li>
+        <li><strong>Response-Time Breakdown</strong> — Bar chart of min / avg / max latency for the top eight operations.</li>
+      </ul>
+
+      <h3>Server Status panel</h3>
+      <p>Shows uptime, start time, requests/sec, and total errors. A color-coded progress bar turns yellow above 5% error rate and red above 20%.</p>
+
+      <h3>Recent Errors panel</h3>
+      <p>A scrollable log of the latest error responses. Each entry shows the HTTP method badge, path (monospace), status code, timestamp, and a snippet of the error message. Empty when all is healthy.</p>
+
+      <h3>Operation Statistics table</h3>
+      <p>A sortable table with one row per operation: method, path, request count, error count (red when non-zero), average / min / max response time, and last-hit timestamp. Click any column header to sort.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Prometheus link</strong>
+          The Dashboard header includes a "Prometheus Metrics" link that opens <code>/_api/metrics</code> directly — handy for quickly checking the raw Prometheus output.
+        </div>
+      </div>
+    </div>
+
+    <!-- Specs -->
+    <div class="section" id="specs-ui">
+      <h2>Specifications</h2>
+      <p>The <strong>API Specs</strong> page lists every uploaded OpenAPI specification. Click <strong>Upload Spec</strong> (top-right) to add your first one.</p>
+
+      <h3>Upload Spec modal</h3>
+      <p>A modal dialog opens with two ways to provide your spec:</p>
+
+      <div class="form-mock">
+        <div class="form-mock-field">
+          <div class="form-mock-label">Specification File</div>
+          <div class="form-mock-input" style="border-style:dashed;text-align:center;padding:20px;color:#4a5568;">
+            📂 Drag and drop .yaml / .yml / .json — or click to browse
+          </div>
+        </div>
+        <div class="form-mock-field">
+          <div class="form-mock-label">Or Paste Specification Content</div>
+          <div class="form-mock-input mono" style="height:60px;color:#4a5568;">openapi: "3.0.0" ...</div>
+        </div>
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Name <span style="color:#f87171;">*</span></div>
+            <div class="form-mock-input">Auto-filled from spec info.title</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Base Path</div>
+            <div class="form-mock-input mono">/</div>
+          </div>
+        </div>
+        <div class="form-mock-field">
+          <div class="form-mock-label">Description</div>
+          <div class="form-mock-input" style="height:40px;color:#4a5568;">Optional description</div>
+        </div>
+      </div>
+
+      <ul>
+        <li><strong>Specification File</strong> — Drag-and-drop area or click to browse. Accepts <code>.yaml</code>, <code>.yml</code>, <code>.json</code>. Dropping a file auto-fills Name and Description from the spec's <code>info</code> block.</li>
+        <li><strong>Paste Content</strong> — Alternatively paste raw YAML or JSON. Mutually exclusive with file upload.</li>
+        <li><strong>Name</strong> — Auto-filled from <code>info.title</code> when a file is selected. Editable.</li>
+        <li><strong>Base Path</strong> — Path prefix for all operations in this spec (default <code>/</code>). Useful when mounting two specs that have overlapping paths.</li>
+        <li><strong>Description</strong> — Optional free-text description.</li>
+      </ul>
+
+      <h3>Spec cards</h3>
+      <p>After upload, each spec appears as a card. The right side of every card has four action buttons:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Button</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>Example Fallback toggle (amber)</td><td>When enabled, operations with no matching response config fall back to the OpenAPI spec's built-in example values instead of returning a 404.</td></tr>
+            <tr><td>Tracing toggle (yellow)</td><td>Enable or disable trace capture for all operations in this spec.</td></tr>
+            <tr><td>Enable / Disable toggle (green)</td><td>Enable or disable all operations in the spec. Disabled specs are completely inactive.</td></tr>
+            <tr><td>Delete (trash)</td><td>Permanently removes the spec and all its response configs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Click the spec name to navigate to the <strong>Spec Detail</strong> page.</p>
+    </div>
+
+    <!-- Spec Detail -->
+    <div class="section" id="spec-detail">
+      <h2>Spec Detail &amp; Operations</h2>
+      <p>The Spec Detail page shows all operations in the spec, grouped by tag. It also lets you configure a real backend for proxy mode and control which tags are enabled.</p>
+
+      <h3>Operations list</h3>
+      <p>Operations are grouped under expandable tag sections. Each row shows:</p>
+
+      <div class="op-row"><span class="mock-badge get">GET</span><span class="op-path">/pets/{id}</span><span class="op-summary">Get a pet by ID</span><span style="color:#7d8ea8;font-size:12px;">2 responses →</span></div>
+      <div class="op-row"><span class="mock-badge post">POST</span><span class="op-path">/pets</span><span class="op-summary">Create a new pet</span><span style="color:#7d8ea8;font-size:12px;">1 response →</span></div>
+      <div class="op-row"><span class="mock-badge delete">DELETE</span><span class="op-path">/pets/{id}</span><span class="op-summary">Delete a pet</span><span style="color:#7d8ea8;font-size:12px;">0 responses →</span></div>
+
+      <p style="margin-top:12px;">Click any row to open the <strong>Operation Detail</strong> page for that operation.</p>
+      <ul>
+        <li>An <strong>amber sparkles icon</strong> (✨) on an operation row means the OpenAPI spec has example values for that operation, and the "Example Fallback" feature can use them.</li>
+        <li>The <strong>response count badge</strong> shows how many mock response configs are attached.</li>
+      </ul>
+
+      <h3>Backend Configuration</h3>
+      <p>Paste a backend URL to enable <strong>Proxy Mode</strong> for this spec. When active, requests that don't match any mock response config are forwarded to the real backend.</p>
+      <div class="form-mock">
+        <div class="form-mock-field">
+          <div class="form-mock-label">Backend URI</div>
+          <div class="form-mock-input mono">https://api.example.com</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <div class="pill green">● Proxy Mode Active</div>
+        </div>
+      </div>
+      <p>Click <strong>Save</strong> to apply. An animated <strong>Recording</strong> badge (violet, with a Radio icon) appears on operations when proxy mode is active and recording is enabled.</p>
+
+      <h3>Enabled Tags</h3>
+      <p>Tags control which response configs are considered for matching. The <strong>default</strong> tag is always active and cannot be disabled. Custom tags appear as toggleable buttons — click a tag button to enable or disable it for this spec.</p>
+      <div class="pill-row">
+        <span class="pill" style="color:#4a5568;">default (always on)</span>
+        <span class="pill active">v2</span>
+        <span class="pill">beta</span>
+        <span class="pill active">premium</span>
+      </div>
+    </div>
+
+    <!-- Responses -->
+    <div class="section" id="responses-ui">
+      <h2>Response Configuration</h2>
+      <p>The <strong>Operation Detail</strong> page is where you build mock response configs. Click <strong>Add Response</strong> to open the Response Config Editor.</p>
+
+      <h3>Response cards</h3>
+      <p>Each response config appears as an expandable card on the operation detail page. Collapsed view shows:</p>
+      <ul>
+        <li>A <strong>drag handle</strong> icon on the left (visual; re-ordering is done via the priority field or Edit)</li>
+        <li>A <strong>priority badge</strong> (circle with number — lower numbers evaluate first)</li>
+        <li>Response name, tag badge, status code badge (green for 2xx, red for 4xx/5xx)</li>
+        <li>Number of conditions</li>
+        <li>Enable / Edit / Delete buttons on the right</li>
+      </ul>
+      <p>Click the chevron or anywhere on the card to expand it and see conditions, headers, and the response body preview.</p>
+
+      <h3>Response Config Editor</h3>
+      <p>The editor is a full-featured form that opens as a modal when creating and as a dedicated page when editing. It has five sections:</p>
+
+      <h4>1 — Basic Info</h4>
+      <div class="form-mock">
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Name <span style="color:#f87171;">*</span></div>
+            <div class="form-mock-input">Success Response</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Description</div>
+            <div class="form-mock-input">Returns the user object</div>
+          </div>
+        </div>
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Tag</div>
+            <div class="form-mock-select">default ▾</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Priority</div>
+            <div class="form-mock-input">0</div>
+          </div>
+        </div>
+      </div>
+
+      <h4>2 — Conditions</h4>
+      <p>Click <strong>Add Condition</strong> to append a condition row. Each row has four controls:</p>
+      <div class="form-mock">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <div class="form-mock-select" style="flex:1;min-width:80px;">query ▾</div>
+          <div class="form-mock-input" style="flex:1;min-width:80px;">status</div>
+          <div class="form-mock-select" style="flex:1;min-width:80px;">eq ▾</div>
+          <div class="form-mock-input" style="flex:1;min-width:80px;">active</div>
+          <span style="color:#f87171;cursor:pointer;">✕</span>
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:#4a5568;">Source: path | query | header | body — Operators: eq, ne, gt, lt, gte, lte, contains, notContains, startsWith, endsWith, regex, exists, notExists</div>
+      </div>
+      <p>The <strong>Key</strong> field is hidden for the <code>exists</code> and <code>notExists</code> operators (they only need a source and a field name). Multiple conditions use AND logic — all must pass.</p>
+
+      <h4>3 — Status Code &amp; Delay</h4>
+      <div class="form-mock">
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Status Code</div>
+            <div class="form-mock-input">200</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Delay (ms)</div>
+            <div class="form-mock-input">0</div>
+          </div>
+        </div>
+      </div>
+
+      <h4>4 — Headers</h4>
+      <p>Add key-value pairs using the input row at the bottom. Each added header appears in a monospace list with a delete button. Template variables work in header values.</p>
+      <div class="form-mock">
+        <div class="kv-row"><span class="kv-key">Content-Type</span><span class="kv-val">application/json</span><span style="color:#f87171;cursor:pointer;">✕</span></div>
+        <div class="kv-row"><span class="kv-key">X-Request-Id</span><span class="kv-val">{{random.uuid}}</span><span style="color:#f87171;cursor:pointer;">✕</span></div>
+        <div style="display:flex;gap:6px;margin-top:8px;">
+          <div class="form-mock-input" style="flex:1;">Header-Name</div>
+          <div class="form-mock-input" style="flex:2;">Header Value</div>
+          <div class="pill green" style="cursor:pointer;">+ Add</div>
+        </div>
+      </div>
+
+      <h4>5 — Response Body (Monaco Editor)</h4>
+      <p>A full Monaco code editor (the same engine as VS Code) with the <code>go-template</code> language. Features:</p>
+      <ul>
+        <li>Syntax highlighting for template expressions (<code>{{...}}</code>), JSON structure, and string values</li>
+        <li>Real-time template validation — errors are underlined and shown in a red banner below the editor</li>
+        <li>Word wrap enabled by default</li>
+        <li>Dark theme matching the UI</li>
+      </ul>
+      <pre><code>{
+  <span class="key">"id"</span>: <span class="str">"{{path.id}}"</span>,
+  <span class="key">"name"</span>: <span class="str">"{{faker.name.full}}"</span>,
+  <span class="key">"email"</span>: <span class="str">"{{faker.internet.email}}"</span>,
+  <span class="key">"status"</span>: <span class="str">"{{query.status}}"</span>,
+  <span class="key">"createdAt"</span>: <span class="str">"{{timestamp.iso}}"</span>
+}</code></pre>
+    </div>
+
+    <!-- Template Reference -->
+    <div class="section" id="template-ref">
+      <h2>Template Variable Reference Panel</h2>
+      <p>Alongside the Monaco editor, a collapsible reference panel lists every available template variable, organized into five categories. No need to remember syntax — just expand the category and copy the snippet:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Category</th><th>Examples</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Request Variables</strong></td><td><code>{{.Path.id}}</code>, <code>{{index .Query "page"}}</code>, <code>{{index .Header "authorization"}}</code>, <code>{{body "user.email"}}</code></td></tr>
+            <tr><td><strong>Control Flow</strong></td><td><code>{{if (eq ...)}}...{{else}}...{{end}}</code>, <code>{{range $k,$v := .Query}}{{end}}</code>, <code>{{with .Path}}{{end}}</code></td></tr>
+            <tr><td><strong>Random Functions</strong></td><td><code>{{random "uuid"}}</code>, <code>{{random "int" 1 100}}</code>, <code>{{random "string" 8}}</code>, <code>{{random "bool"}}</code>, <code>{{random "email"}}</code></td></tr>
+            <tr><td><strong>Faker Functions</strong></td><td><code>{{faker "name.first"}}</code>, <code>{{faker "company.name"}}</code>, <code>{{faker "address.city"}}</code>, <code>{{faker "internet.url"}}</code>, <code>{{faker "lorem.sentence"}}</code></td></tr>
+            <tr><td><strong>Timestamp Functions</strong></td><td><code>{{timestamp}}</code>, <code>{{timestamp "iso"}}</code>, <code>{{timestamp "date"}}</code>, <code>{{timestamp "add" "1h"}}</code>, <code>{{timestamp "format" "2006/01/02"}}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Script output variables</strong>
+          If a script is bound to the operation, its output fields are accessible as <code>{{.script.&lt;outputKey&gt;.fieldName}}</code>. These appear in the template panel once a binding exists. See <a href="#script-bindings">Script Bindings</a> below.
+        </div>
+      </div>
+    </div>
+
+    <!-- Signature Config -->
+    <div class="section" id="signature-ui">
+      <h2>Signature Configuration</h2>
+      <p>Each operation has an optional <strong>Signature</strong> configuration that controls what parts of the request are hashed to produce a deterministic identifier. This lets you create response configs that match only specific combinations of request parameters.</p>
+
+      <p>On the Operation Detail page, scroll to the <strong>Signature Configuration</strong> section and click <strong>Configure</strong>.</p>
+
+      <h3>Configure panel</h3>
+
+      <h4>Path Parameters</h4>
+      <p>Click <strong>All</strong> to include every path param, or toggle individual path parameters on/off using the chip buttons (violet = included, white = excluded).</p>
+      <div class="pill-row">
+        <span class="pill" style="cursor:pointer;background:#252d42;color:#7d8ea8;">All</span>
+        <span class="pill active">id</span>
+        <span class="pill active">version</span>
+        <span class="pill">format</span>
+      </div>
+
+      <h4>Query Parameters</h4>
+      <p>Click <strong>Include All</strong> to track all query params, or type individual parameter names into the input and press <strong>Add</strong>. Added params appear as chips with an ✕ to remove.</p>
+
+      <h4>Headers</h4>
+      <p>Add specific header names to include in the signature (e.g., <code>X-Tenant-Id</code>). Leave empty to include no headers.</p>
+
+      <h4>Request Body</h4>
+      <p>A checkbox enables body inclusion in the signature. When ticked, an additional input section lets you add JSONPath selectors (e.g., <code>user.id</code>, <code>items.0.sku</code>) to hash only specific fields instead of the whole body.</p>
+
+      <p>Click <strong>Save</strong> to apply or <strong>Reset to defaults</strong> to clear the configuration.</p>
+    </div>
+
+    <!-- Scripts UI -->
+    <div class="section" id="scripts-ui">
+      <h2>Scripts</h2>
+      <p>Navigate to <strong>Scripts</strong> in the sidebar to see all Starlark scripts. Click <strong>New Script</strong> to create one.</p>
+
+      <h3>Script list</h3>
+      <p>Each script card shows: name, status badge ("Disabled" when inactive), description, timeout, and script ID (monospace). Action buttons on the right let you enable/disable, edit, or delete the script.</p>
+
+      <h3>Script Editor</h3>
+      <p>The editor page has three sections:</p>
+
+      <h4>Metadata</h4>
+      <div class="form-mock">
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Name <span style="color:#f87171;">*</span></div>
+            <div class="form-mock-input">Order Calculator</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Timeout (ms)</div>
+            <div class="form-mock-input">100</div>
+          </div>
+        </div>
+        <div class="form-mock-field">
+          <div class="form-mock-label">Description</div>
+          <div class="form-mock-input">Calculates order totals from request body</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+          <span class="pill green">● Enabled</span>
+        </div>
+      </div>
+
+      <h4>Validate button</h4>
+      <p>Click <strong>Validate</strong> before saving to check your Starlark syntax. A green message confirms the script is valid; a red message shows the specific syntax error line.</p>
+
+      <h4>Monaco Code Editor (Python/Starlark)</h4>
+      <p>Full-featured editor with Python syntax highlighting, line numbers, and inline hints. The default template explains the available context:</p>
+      <pre><code><span class="cm"># Available context:
+# req["path"]   — path params dict
+# req["query"]  — query params dict
+# req["header"] — headers dict
+# req["body"]   — parsed JSON body
+# store         — session store object
+# log(msg)      — emit a log line</span>
+
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="kw">return</span> {}
+</code></pre>
+
+      <h4>Test Panel</h4>
+      <p>Expand the <strong>Test Panel</strong> below the editor to run your script against mock input without saving it first.</p>
+
+      <div class="form-mock">
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Path (JSON)</div>
+            <div class="form-mock-input mono">{"id": "42"}</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Query (JSON)</div>
+            <div class="form-mock-input mono">{"debug": "true"}</div>
+          </div>
+        </div>
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Header (JSON)</div>
+            <div class="form-mock-input mono">{"authorization": "Bearer test"}</div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Body (JSON)</div>
+            <div class="form-mock-input mono">{"quantity": 3, "unitPrice": 9.99}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;">
+          <div class="pill green" style="cursor:pointer;">▶ Run Test</div>
+        </div>
+        <div style="margin-top:10px;background:var(--bg-code);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:12px;">
+          <div style="color:#7d8ea8;margin-bottom:4px;">Output:</div>
+          <div class="mono" style="color:#c3e88d;">{"total": 29.97, "currency": "USD"}</div>
+          <div style="color:#7d8ea8;margin-top:8px;">Duration: <span style="color:#60a5fa;">3ms</span></div>
+        </div>
+      </div>
+
+      <p>The test panel shows: output dictionary, execution duration, any error message, and log lines emitted by <code>log()</code>.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Test is only available for saved scripts</strong>
+          The Test button works when editing an already-saved script. When creating a new script, save it first, then open Edit to test it.
+        </div>
+      </div>
+    </div>
+
+    <!-- Script Bindings -->
+    <div class="section" id="script-bindings">
+      <h2>Script Bindings</h2>
+      <p>Script Bindings live on the <strong>Operation Detail</strong> page, below the response configs. A binding connects a script to an operation and gives its output a name used in templates.</p>
+
+      <h3>Bindings list</h3>
+      <div class="script-binding">
+        <div style="color:#7d8ea8;font-size:14px;">⇅</div>
+        <div class="binding-num">1</div>
+        <div class="binding-name">Order Calculator</div>
+        <div class="binding-key">pricing</div>
+        <a href="#" style="color:#7d8ea8;font-size:12px;">↗ edit</a>
+        <div style="display:flex;gap:6px;">
+          <span class="pill green" style="cursor:pointer;">● on</span>
+          <span class="pill red" style="cursor:pointer;">🗑</span>
+        </div>
+      </div>
+      <div class="script-binding">
+        <div style="color:#7d8ea8;font-size:14px;">⇅</div>
+        <div class="binding-num">2</div>
+        <div class="binding-name">Audit Logger</div>
+        <div class="binding-key">audit</div>
+        <a href="#" style="color:#7d8ea8;font-size:12px;">↗ edit</a>
+        <div style="display:flex;gap:6px;">
+          <span class="pill green" style="cursor:pointer;">● on</span>
+          <span class="pill red" style="cursor:pointer;">🗑</span>
+        </div>
+      </div>
+
+      <ul style="margin-top:12px;">
+        <li>The <strong>chevron up/down arrows</strong> on the left adjust execution order.</li>
+        <li>The <strong>order badge</strong> (circled number) shows the position in the execution chain.</li>
+        <li>The <strong>output key</strong> (green monospace) is what you use in templates: <code>{{.script.pricing.total}}</code></li>
+        <li>A link icon next to the script name opens the Script Editor in a new tab.</li>
+      </ul>
+
+      <h3>Attach Script modal</h3>
+      <p>Click <strong>Attach Script</strong> to open the attachment dialog:</p>
+      <div class="form-mock">
+        <div class="form-mock-field">
+          <div class="form-mock-label">Script</div>
+          <div class="form-mock-select">Order Calculator ▾</div>
+        </div>
+        <div class="form-mock-field">
+          <div class="form-mock-label">Output Key</div>
+          <div class="form-mock-input mono">pricing</div>
+          <div style="font-size:11px;color:#4a5568;margin-top:3px;">Access in templates as <code style="color:#818cf8;">{{.script.pricing.fieldName}}</code></div>
+        </div>
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Execution Order</div>
+            <div class="form-mock-input">1</div>
+          </div>
+          <div class="form-mock-field" style="display:flex;align-items:center;gap:8px;margin-top:18px;">
+            <span class="pill green">● Enabled</span>
+          </div>
+        </div>
+      </div>
+      <ul>
+        <li><strong>Output Key</strong> must be alphanumeric + underscores (e.g., <code>pricing</code>, <code>user_info</code>). The input sanitizes the value automatically.</li>
+        <li><strong>Execution Order</strong> — lower numbers run first. Scripts run in order; later scripts can depend on earlier output only through the store.</li>
+      </ul>
+    </div>
+
+    <!-- Traces UI -->
+    <div class="section" id="traces-ui">
+      <h2>Trace Viewer</h2>
+      <p>The <strong>Traces</strong> page provides a split-panel view: a scrollable trace list on the left and a detail panel on the right.</p>
+
+      <h3>Live vs History mode</h3>
+      <ul>
+        <li><strong>Live mode</strong> (default) — A WebSocket connection streams new traces in real time as requests arrive. The button shows a pulsing green Activity icon and the label "Live". New traces appear at the top of the list (newest first). Up to 100 traces are kept in the in-page buffer.</li>
+        <li><strong>History mode</strong> — Click the Live button to pause. The list freezes. Use the <strong>Refresh</strong> button to reload from the server, or click <strong>Go Live</strong> to resume streaming.</li>
+      </ul>
+
+      <h3>Filters</h3>
+      <ul>
+        <li><strong>Search box</strong> — Type to filter traces by path, HTTP method, or spec name. The filter applies instantly to both the list and the live stream.</li>
+        <li><strong>Spec dropdown</strong> — Show traces from only one spec.</li>
+      </ul>
+
+      <h3>Trace list (left panel)</h3>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:12px 0;">
+        <div class="trace-row selected"><span class="mock-badge get">GET</span><span class="trace-path">/pets/42</span><span class="trace-time">12:01:05</span><span class="trace-dur">18ms</span><span class="mock-badge status-2" style="margin-left:6px;">200</span></div>
+        <div class="trace-row"><span class="mock-badge post">POST</span><span class="trace-path">/orders</span><span class="trace-time">12:00:58</span><span class="trace-dur">42ms</span><span class="mock-badge status-2" style="margin-left:6px;">201</span></div>
+        <div class="trace-row"><span class="mock-badge get">GET</span><span class="trace-path">/pets/0</span><span class="trace-time">12:00:51</span><span class="trace-dur">8ms</span><span class="mock-badge status-4" style="margin-left:6px;">404</span></div>
+      </div>
+
+      <h3>Detail panel (right panel)</h3>
+      <p>Click any trace row to open its full detail on the right. The panel is organized into sub-sections:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Sub-section</th><th>What it shows</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Request</strong></td><td>Method, full URL, all headers, query params, request body (JSON formatted)</td></tr>
+            <tr><td><strong>Response</strong></td><td>Status code (color-coded), response headers, body (pretty-printed JSON)</td></tr>
+            <tr><td><strong>Metadata</strong></td><td>Total latency, timestamp, which response config matched (name + ID), "Recorded" badge if captured via proxy</td></tr>
+            <tr><td><strong>Script Execution</strong></td><td>For each bound script: script name, output key, execution time (ms), output dict, error (if any), expandable log lines from <code>log()</code></td></tr>
+            <tr><td><strong>Session</strong></td><td>Session ID, whether this was a new session, list of store operations (get/set/has/delete/keys) with keys and timestamps</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Clear traces</h3>
+      <p>The red <strong>Clear</strong> button (top right of the page) permanently removes all stored trace records from the server.</p>
+    </div>
+
+    <!-- Store UI -->
+    <div class="section" id="store-ui">
+      <h2>Global Store</h2>
+      <p>The <strong>Store</strong> page manages the persistent key-value store that seeds every new session. It has a dark indigo aesthetic distinct from the rest of the UI.</p>
+
+      <h3>Store entries table</h3>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin:12px 0;">
+        <div class="kv-row" style="padding:8px 14px;border-bottom:1px solid var(--border);font-size:11px;color:#4a5568;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;">
+          <span class="kv-key">Key</span><span class="kv-val">Value</span><span>Updated</span>
+        </div>
+        <div class="kv-row" style="padding:8px 14px;"><span class="kv-key">defaultCurrency</span><span class="kv-val">USD</span><span style="font-size:11px;color:#4a5568;">2 min ago</span></div>
+        <div class="kv-row" style="padding:8px 14px;"><span class="kv-key">features</span><span class="kv-val">{"betaMode": true, "maxItems": 50}</span><span style="font-size:11px;color:#4a5568;">1 hr ago</span></div>
+        <div class="kv-row" style="padding:8px 14px;"><span class="kv-key">products</span><span class="kv-val">[{"id":"p1","name":"Widget","price":9.99}]</span><span style="font-size:11px;color:#4a5568;">3 hr ago</span></div>
+      </div>
+      <p>Each row has <strong>Edit</strong> (pencil) and <strong>Delete</strong> (trash) action buttons. A search box above filters by key name.</p>
+
+      <h3>Add / Edit Entry modal</h3>
+      <p>Click <strong>Add Entry</strong> or the pencil button. A Monaco JSON editor allows you to write any string value — JSON objects, arrays, or plain strings. Validation feedback appears if the JSON is malformed.</p>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Danger Zone — Clear All</strong>
+          At the bottom of the Store page is an expandable "Danger Zone" section with a <strong>Clear All</strong> button (red). This removes every key from the global store. A confirmation modal warns that active sessions will retain their current snapshots until they expire.
+        </div>
+      </div>
+    </div>
+
+    <!-- Sessions UI -->
+    <div class="section" id="sessions-ui">
+      <h2>Sessions</h2>
+      <p>The <strong>Sessions</strong> page shows all active sessions — clients that have sent requests with an <code>X-Virtual-Session-Id</code> header. The page has a dark teal aesthetic.</p>
+
+      <h3>Session table</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Column</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>Session ID</td><td>Truncated to 8 characters + ellipsis for readability. Full ID shown in the detail panel.</td></tr>
+            <tr><td>Created</td><td>When the session was first created (relative time).</td></tr>
+            <tr><td>Last Active</td><td>When the most recent request used this session. Clock icon shown.</td></tr>
+            <tr><td>Entries</td><td>Number of key-value pairs in the session's store snapshot.</td></tr>
+            <tr><td>Actions</td><td><strong>Invalidate</strong> (trash icon, red on hover) deletes the session immediately.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Session Detail panel</h3>
+      <p>Click any row to open a right-side detail panel (width: 320px). It shows:</p>
+      <ul>
+        <li>Full session ID (monospace, teal)</li>
+        <li>Created and Last Active timestamps (full ISO format)</li>
+        <li>Entry count</li>
+        <li><strong>Store Snapshot</strong> — all key-value pairs in this session's store, formatted as JSON</li>
+        <li><strong>Store Access Events</strong> (if tracing has captured them) — a list of <code>get/set/has/delete/keys</code> operations with keys and relative timestamps</li>
+      </ul>
+
+      <h3>Invalidate All</h3>
+      <p>The red <strong>Invalidate All</strong> button (top right, visible when sessions exist) shows a confirmation modal before wiping all sessions. A <strong>Refresh</strong> button reloads the session list.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Sessions expire automatically</strong>
+          You don't need to manually invalidate sessions. They are automatically cleaned up after the configured inactivity timeout (default: 30 minutes). Use the Sessions page mainly to debug stateful script behavior or force-reset a specific client's session.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tags UI -->
+    <div class="section" id="tags-ui">
+      <h2>Tags</h2>
+      <p>Tags are labels you attach to response configurations to group them. The Spec Detail page lets you enable or disable whole groups of responses at once by toggling tags.</p>
+
+      <h3>Tag Manager page</h3>
+      <p>The <strong>Tags</strong> page lists all tags. Click <strong>Create Tag</strong> to add a new one:</p>
+      <div class="form-mock">
+        <div class="form-mock-field">
+          <div class="form-mock-label">Name <span style="color:#f87171;">*</span></div>
+          <div class="form-mock-input">v2</div>
+        </div>
+        <div class="form-mock-field">
+          <div class="form-mock-label">Description</div>
+          <div class="form-mock-input">Responses for API version 2 clients</div>
+        </div>
+      </div>
+      <ul>
+        <li>The <strong>default</strong> tag always exists and cannot be edited or deleted. Response configs with no tag are assigned to <code>default</code> automatically.</li>
+        <li>Custom tags can be edited (pencil) or deleted (trash). Deleting a tag removes it from all response configs that referenced it — those configs fall back to the default tag.</li>
+      </ul>
+
+      <h3>Using tags on spec detail</h3>
+      <p>Once you have custom tags, go to any Spec Detail page and find the <strong>Enabled Tags</strong> section. Toggle tags on/off to instantly include or exclude entire groups of response configs from the matching pipeline — no editing of individual responses needed.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Tag use case: A/B testing and feature rollouts</strong>
+          Create a <code>feature-x</code> tag. Add response configs with new behavior and tag them <code>feature-x</code>. When you want to activate the feature, enable the tag on the spec. When you want to roll back, disable it — no code changes required.
+        </div>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="getting-started.html">&#8592; Getting Started</a>
+        <a href="specs-and-responses.html">Specs &amp; Responses &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

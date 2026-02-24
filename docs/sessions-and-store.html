@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sessions &amp; Store — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html" class="active"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Sessions &amp; Store</div>
+      <h1>Sessions &amp; Store</h1>
+      <p class="lead">Maintain stateful data across requests using per-client sessions and a persistent global key-value store. Scripts can read and write session data; admins manage the global store.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#concepts">Concepts</a></li>
+        <li><a href="#global-store">Global Store</a></li>
+        <li><a href="#sessions">Sessions</a></li>
+        <li><a href="#session-header">Session Header</a></li>
+        <li><a href="#deep-copy">Deep Copy Semantics</a></li>
+        <li><a href="#script-access">Script Access</a></li>
+        <li><a href="#admin-api-store">Managing via Admin API</a></li>
+        <li><a href="#expiry">Session Expiry</a></li>
+        <li><a href="#use-cases">Use Cases &amp; Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- Concepts -->
+    <div class="section" id="concepts">
+      <h2>Concepts</h2>
+      <p>go-virtual has two layers of state storage:</p>
+
+      <div class="card-grid">
+        <div class="card" style="text-decoration:none; cursor:default;">
+          <div class="card-icon">🌐</div>
+          <div class="card-title">Global Store</div>
+          <div class="card-desc">Application-wide persistent key-value store. Managed by admins. Acts as the seed data for new sessions. Scripts cannot directly modify it (read-only from scripts).</div>
+        </div>
+        <div class="card" style="text-decoration:none; cursor:default;">
+          <div class="card-icon">👤</div>
+          <div class="card-title">Sessions</div>
+          <div class="card-desc">Per-client ephemeral store. Created automatically on first request with a session ID. Scripts can freely read and write. Expires after inactivity.</div>
+        </div>
+      </div>
+
+      <p>When a new session is created, it receives a <strong>deep copy</strong> of the global store. Subsequent writes by scripts only affect the session copy, not the global store.</p>
+    </div>
+
+    <!-- Global Store -->
+    <div class="section" id="global-store">
+      <h2>Global Store</h2>
+      <p>The global store is a flat key-value map where keys and values are strings. It is persisted to <code>data/store.json</code> and survives server restarts.</p>
+
+      <h3>Setting global values</h3>
+      <pre><code><span class="cm"># Set a value</span>
+curl -X PUT http://localhost:8080/_api/store/config.featureFlags \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"value": "{\"betaMode\": true, \"maxItems\": 50}"}'</span>
+
+<span class="cm"># Set another value</span>
+curl -X PUT http://localhost:8080/_api/store/defaultCurrency \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"value": "USD"}'</span>
+</code></pre>
+
+      <h3>Reading global values</h3>
+      <pre><code>curl http://localhost:8080/_api/store/defaultCurrency
+<span class="cm"># {"key": "defaultCurrency", "value": "USD"}</span>
+
+<span class="cm"># List all keys</span>
+curl http://localhost:8080/_api/store
+<span class="cm"># {"items": [{"key": "defaultCurrency", "value": "USD"}, ...]}</span>
+</code></pre>
+
+      <h3>Deleting global values</h3>
+      <pre><code><span class="cm"># Delete a single key</span>
+curl -X DELETE http://localhost:8080/_api/store/defaultCurrency
+
+<span class="cm"># Clear entire global store (requires confirmation)</span>
+curl -X DELETE "http://localhost:8080/_api/store?confirm=true"
+</code></pre>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Scripts cannot write to the global store</strong>
+          The <code>store</code> builtin in scripts is session-scoped. Admin API calls are the only way to modify global store values. This prevents script bugs from corrupting shared state.
+        </div>
+      </div>
+    </div>
+
+    <!-- Sessions -->
+    <div class="section" id="sessions">
+      <h2>Sessions</h2>
+      <p>Sessions are automatically created for clients that include an <code>X-Virtual-Session-Id</code> header (configurable). A session is a private key-value store initialized with a snapshot of the global store.</p>
+
+      <h3>Session lifecycle</h3>
+      <ol class="steps">
+        <li>
+          <div><p><strong>First request with session header</strong> — go-virtual looks up the session ID. If no session exists, one is created with a deep copy of the global store.</p></div>
+        </li>
+        <li>
+          <div><p><strong>Script execution</strong> — The bound script's <code>store</code> object is scoped to this session. Reads and writes affect only this session's copy.</p></div>
+        </li>
+        <li>
+          <div><p><strong>Response</strong> — The session ID is echoed back in the response header, confirming the session was used.</p></div>
+        </li>
+        <li>
+          <div><p><strong>Inactivity expiry</strong> — If no request is made with this session ID for the configured inactivity timeout (default 30 minutes), the session is cleaned up.</p></div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- Session header -->
+    <div class="section" id="session-header">
+      <h2>Session Header</h2>
+      <p>The default session header is <code>X-Virtual-Session-Id</code>. You can configure a different name in <code>config.yaml</code>.</p>
+
+      <pre><code><span class="cm"># Client sends a session ID (can be any string)</span>
+curl http://localhost:8080/api/cart \
+  -H <span class="str">"X-Virtual-Session-Id: user-alice-session-1"</span>
+
+<span class="cm"># Server echoes it back in the response</span>
+<span class="cm"># X-Virtual-Session-Id: user-alice-session-1</span>
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Choose any session ID</strong>
+          The session ID is just a string key. Use whatever is convenient — a UUID, a user ID, a test name. Different IDs get different isolated session stores.
+        </div>
+      </div>
+
+      <h3>Request without a session header</h3>
+      <p>If a request arrives without a session header, scripts still run but the <code>store</code> object operates on an ephemeral in-memory store that is discarded after the request. No session record is persisted.</p>
+    </div>
+
+    <!-- Deep copy -->
+    <div class="section" id="deep-copy">
+      <h2>Deep Copy Semantics</h2>
+      <p>When a session is first created, it receives a <strong>deep copy</strong> of the entire global store at that moment. This means:</p>
+      <ul>
+        <li>Sessions start with any seed data you put in the global store</li>
+        <li>Changes to the global store after session creation do <em>not</em> affect existing sessions</li>
+        <li>Two sessions are completely isolated — one session's writes don't affect another</li>
+        <li>You can reset a session by deleting it; the next request creates a fresh copy from global store</li>
+      </ul>
+
+      <h3>Use case: Seeding test data</h3>
+      <pre><code><span class="cm"># Put initial catalog into global store</span>
+curl -X PUT http://localhost:8080/_api/store/products \
+  -d <span class="str">'{"value": "[{\"id\":\"p1\",\"name\":\"Widget\",\"price\":9.99}]"}'</span>
+
+<span class="cm"># Each new session starts with this product catalog</span>
+<span class="cm"># Tests can add/remove products within their session without affecting others</span>
+</code></pre>
+    </div>
+
+    <!-- Script access -->
+    <div class="section" id="script-access">
+      <h2>Script Access</h2>
+      <p>The <code>store</code> object is automatically available in all scripts. It operates on the current session's store (or an ephemeral store if no session header is present).</p>
+
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># Shopping cart example</span>
+    cart_raw = store.get(<span class="str">"cart"</span>)
+    cart = <span class="fn">json_parse</span>(cart_raw) <span class="kw">if</span> cart_raw <span class="kw">else</span> []
+
+    <span class="cm"># Add item from request body</span>
+    new_item = req[<span class="str">"body"</span>].get(<span class="str">"item"</span>)
+    <span class="kw">if</span> new_item:
+        cart.append(new_item)
+        store.set(<span class="str">"cart"</span>, <span class="fn">json_stringify</span>(cart))
+
+    total = <span class="fn">sum</span>([item.get(<span class="str">"price"</span>, <span class="num">0</span>) <span class="kw">for</span> item <span class="kw">in</span> cart])
+
+    <span class="kw">return</span> {
+        <span class="str">"cartItems"</span>: <span class="fn">len</span>(cart),
+        <span class="str">"cartTotal"</span>: total
+    }
+</code></pre>
+
+      <h3>Counter pattern</h3>
+      <pre><code><span class="kw">def</span> <span class="fn">run</span>(req):
+    <span class="cm"># Track per-session request count using the counter builtin</span>
+    count = <span class="fn">counter</span>(<span class="str">"request_count"</span>, <span class="num">1</span>)
+    <span class="fn">log</span>(<span class="str">"Session request #"</span>, count)
+
+    <span class="kw">return</span> { <span class="str">"sessionRequests"</span>: count }
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>store.get(key)</td><td>Read value. Returns <code>None</code> if key doesn't exist.</td></tr>
+            <tr><td>store.set(key, value)</td><td>Write a string value. Overwrites existing values.</td></tr>
+            <tr><td>store.delete(key)</td><td>Remove a key from the session store.</td></tr>
+            <tr><td>store.keys()</td><td>Return a list of all key names in the session store.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Admin API for sessions/store -->
+    <div class="section" id="admin-api-store">
+      <h2>Managing via Admin API</h2>
+
+      <h3>Session management</h3>
+      <pre><code><span class="cm"># List all active sessions</span>
+curl http://localhost:8080/_api/sessions
+
+<span class="cm"># Response</span>
+{
+  <span class="key">"sessions"</span>: [
+    {
+      <span class="key">"id"</span>: <span class="str">"user-alice-session-1"</span>,
+      <span class="key">"createdAt"</span>: <span class="str">"2024-01-15T10:00:00Z"</span>,
+      <span class="key">"lastActivityAt"</span>: <span class="str">"2024-01-15T10:05:00Z"</span>,
+      <span class="key">"storeKeyCount"</span>: <span class="num">3</span>
+    }
+  ]
+}
+</code></pre>
+
+      <pre><code><span class="cm"># Inspect a specific session's store</span>
+curl http://localhost:8080/_api/sessions/user-alice-session-1
+
+<span class="cm"># Invalidate (delete) a session</span>
+curl -X DELETE http://localhost:8080/_api/sessions/user-alice-session-1
+
+<span class="cm"># Invalidate all sessions</span>
+curl -X DELETE "http://localhost:8080/_api/sessions?confirm=true"
+</code></pre>
+
+      <h3>Admin UI</h3>
+      <p>The <strong>Store</strong> page lets you create, edit, and delete global store entries with a key-value editor. The <strong>Sessions</strong> page shows all active sessions, their last activity time, and lets you inspect or delete individual sessions.</p>
+    </div>
+
+    <!-- Expiry -->
+    <div class="section" id="expiry">
+      <h2>Session Expiry</h2>
+      <p>Sessions are automatically cleaned up after a period of inactivity. Configure this in <code>config.yaml</code>:</p>
+      <pre><code><span class="key">session</span><span class="op">:</span>
+  <span class="key">headerName</span><span class="op">:</span> <span class="str">"X-Virtual-Session-Id"</span>   <span class="cm"># Header name</span>
+  <span class="key">inactivityTimeout</span><span class="op">:</span> <span class="str">"30m"</span>             <span class="cm"># Expire after 30 min of inactivity</span>
+  <span class="key">maxSessions</span><span class="op">:</span> <span class="num">10000</span>                   <span class="cm"># Max concurrent sessions</span>
+</code></pre>
+
+      <p>Valid duration units: <code>s</code> (seconds), <code>m</code> (minutes), <code>h</code> (hours). Example: <code>"2h30m"</code>.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Inactivity vs total lifetime</strong>
+          The timeout is based on <em>inactivity</em> — each request with the session ID resets the timer. A session that receives regular traffic will never expire unless you explicitly delete it or restart the server with in-memory storage.
+        </div>
+      </div>
+    </div>
+
+    <!-- Use cases -->
+    <div class="section" id="use-cases">
+      <h2>Use Cases &amp; Examples</h2>
+
+      <h3>Stateful shopping cart</h3>
+      <p>Multiple endpoints (add item, view cart, checkout) share session state:</p>
+      <pre><code><span class="cm">## POST /cart/items — bound script</span>
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    cart = <span class="fn">json_parse</span>(store.get(<span class="str">"cart"</span>) <span class="kw">or</span> <span class="str">"[]"</span>)
+    item = req[<span class="str">"body"</span>]
+    cart.append({<span class="str">"id"</span>: <span class="fn">uuid</span>(), <span class="str">"name"</span>: item[<span class="str">"name"</span>], <span class="str">"price"</span>: item[<span class="str">"price"</span>]})
+    store.set(<span class="str">"cart"</span>, <span class="fn">json_stringify</span>(cart))
+    <span class="kw">return</span> {<span class="str">"count"</span>: <span class="fn">len</span>(cart)}
+
+<span class="cm">## GET /cart — bound script</span>
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    cart = <span class="fn">json_parse</span>(store.get(<span class="str">"cart"</span>) <span class="kw">or</span> <span class="str">"[]"</span>)
+    total = <span class="fn">sum</span>([i[<span class="str">"price"</span>] <span class="kw">for</span> i <span class="kw">in</span> cart])
+    <span class="kw">return</span> {<span class="str">"items"</span>: cart, <span class="str">"total"</span>: total, <span class="str">"count"</span>: <span class="fn">len</span>(cart)}
+</code></pre>
+
+      <h3>Login flow simulation</h3>
+      <pre><code><span class="cm">## POST /auth/login — bound script</span>
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    email = req[<span class="str">"body"</span>].get(<span class="str">"email"</span>, <span class="str">""</span>)
+    password = req[<span class="str">"body"</span>].get(<span class="str">"password"</span>, <span class="str">""</span>)
+
+    <span class="cm"># Simple mock auth check</span>
+    <span class="kw">if</span> email == <span class="str">"admin@example.com"</span> <span class="kw">and</span> password == <span class="str">"secret"</span>:
+        token = <span class="fn">uuid</span>()
+        store.set(<span class="str">"authenticated"</span>, <span class="str">"true"</span>)
+        store.set(<span class="str">"userEmail"</span>, email)
+        store.set(<span class="str">"authToken"</span>, token)
+        <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">True</span>, <span class="str">"token"</span>: token}
+    <span class="kw">else</span>:
+        store.set(<span class="str">"authenticated"</span>, <span class="str">"false"</span>)
+        <span class="kw">return</span> {<span class="str">"success"</span>: <span class="kw">False</span>}
+
+<span class="cm">## GET /me — bound script (checks auth)</span>
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    authenticated = store.get(<span class="str">"authenticated"</span>) == <span class="str">"true"</span>
+    email = store.get(<span class="str">"userEmail"</span>) <span class="kw">or</span> <span class="str">""</span>
+    <span class="kw">return</span> {<span class="str">"authenticated"</span>: authenticated, <span class="str">"email"</span>: email}
+</code></pre>
+
+      <h3>Configurable feature flags</h3>
+      <pre><code><span class="cm"># Admin sets feature flags in global store</span>
+curl -X PUT http://localhost:8080/_api/store/features \
+  -d <span class="str">'{"value": "{\"newCheckout\": true, \"betaSearch\": false}"}'</span>
+
+<span class="cm">## Script reads feature flags (inherited from global store)</span>
+<span class="kw">def</span> <span class="fn">run</span>(req):
+    features_raw = store.get(<span class="str">"features"</span>) <span class="kw">or</span> <span class="str">"{}"</span>
+    features = <span class="fn">json_parse</span>(features_raw)
+    <span class="kw">return</span> {
+        <span class="str">"newCheckout"</span>: features.get(<span class="str">"newCheckout"</span>, <span class="kw">False</span>),
+        <span class="str">"betaSearch"</span>: features.get(<span class="str">"betaSearch"</span>, <span class="kw">False</span>)
+    }
+</code></pre>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="scripting.html">&#8592; Starlark Scripting</a>
+        <a href="tracing-and-metrics.html">Tracing &amp; Metrics &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>
