@@ -285,13 +285,35 @@ func TestSessionManager_GetOrCreate_Resume(t *testing.T) {
 func TestSessionManager_GetOrCreate_UnknownIDCreatesNew(t *testing.T) {
 	_, sm := newManager(t)
 
-	sess, isNew := sm.GetOrCreate("unknown-id-does-not-exist")
+	sess, isNew := sm.GetOrCreate("my-custom-session-id")
 	if !isNew {
 		t.Fatal("unknown ID should produce a new session")
 	}
-	// The new session's ID must be a server-generated UUID, NOT "unknown-id-does-not-exist"
-	if sess.ID == "unknown-id-does-not-exist" {
-		t.Fatal("unknown caller ID must not be promoted to session ID")
+	// The provided ID must be adopted as the session ID
+	if sess.ID != "my-custom-session-id" {
+		t.Fatalf("expected session ID 'my-custom-session-id', got %q", sess.ID)
+	}
+}
+
+func TestSessionManager_GetOrCreate_UnknownIDCanBeResumed(t *testing.T) {
+	_, sm := newManager(t)
+
+	// First request with a custom ID creates the session
+	sess1, isNew := sm.GetOrCreate("user-session-abc")
+	if !isNew {
+		t.Fatal("first request should create a new session")
+	}
+	if sess1.ID != "user-session-abc" {
+		t.Fatalf("expected ID 'user-session-abc', got %q", sess1.ID)
+	}
+
+	// Second request with the same custom ID resumes the session
+	sess2, isNew := sm.GetOrCreate("user-session-abc")
+	if isNew {
+		t.Fatal("second request with same ID should resume existing session")
+	}
+	if sess2.ID != "user-session-abc" {
+		t.Fatalf("expected ID 'user-session-abc', got %q", sess2.ID)
 	}
 }
 

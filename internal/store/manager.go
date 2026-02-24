@@ -36,8 +36,10 @@ func NewSessionManager(ctx context.Context, global *GlobalStore, cfg config.Sess
 
 // GetOrCreate resolves or creates a session:
 //   - If rawID is non-empty and exists in the registry → resume it, touch lastActive.
-//   - Otherwise (absent, unknown, or expired) → generate a new UUID v4 session seeded
-//     from the current global store snapshot. The caller's rawID is never promoted.
+//   - If rawID is non-empty but unknown → create a new session using rawID as the ID.
+//   - If rawID is empty → generate a new UUID v4 session ID.
+//
+// In all cases the session is seeded from the current global store snapshot.
 func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
 	// Fast path: try to find an existing valid session
 	if rawID != "" {
@@ -68,7 +70,11 @@ func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
 		m.evictOldestLocked()
 	}
 
-	id := uuid.New().String()
+	// Use the caller-supplied ID if provided, otherwise generate a fresh UUID.
+	id := rawID
+	if id == "" {
+		id = uuid.New().String()
+	}
 	sess := newSession(id, m.global.Snapshot())
 	m.sessions[id] = sess
 
