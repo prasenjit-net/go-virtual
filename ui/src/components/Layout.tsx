@@ -11,7 +11,8 @@ import {
     Tags,
     Code2,
     Database,
-    Users
+    Users,
+    BookOpen
 } from 'lucide-react'
 import { LogoFull } from './Logo'
 import { brandingApi } from '../services/api'
@@ -134,6 +135,17 @@ export default function Layout() {
                                 </NavLink>
                             </li>
                         ))}
+                        <li>
+                            <a
+                                href="/_docs/"
+                                target="_blank"
+                                rel="noreferrer"
+                                className="flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                            >
+                                <BookOpen className="w-5 h-5 mr-3" />
+                                Docs
+                            </a>
+                        </li>
                     </ul>
                 </nav>
 
