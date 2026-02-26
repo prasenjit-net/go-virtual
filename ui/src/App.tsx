@@ -12,6 +12,7 @@ import ScriptViewer from './components/ScriptManager/ScriptViewer'
 import ScriptEditor from './components/ScriptManager/ScriptEditor'
 import StoreManager from './components/StoreManager/StoreManager'
 import SessionManager from './components/SessionManager/SessionManager'
+import ArchiveManager from './components/ArchiveManager/ArchiveManager'
 
 function App() {
     return (
@@ -32,6 +33,7 @@ function App() {
                 <Route path="scripts/:scriptId/edit" element={<ScriptEditor />} />
                 <Route path="store" element={<StoreManager />} />
                 <Route path="sessions" element={<SessionManager />} />
+                <Route path="archives" element={<ArchiveManager />} />
             </Route>
         </Routes>
     )

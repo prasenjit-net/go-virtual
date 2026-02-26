@@ -19,6 +19,7 @@ import (
 
 	govirtual "github.com/prasenjit/go-virtual"
 	"github.com/prasenjit/go-virtual/internal/api"
+	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
@@ -180,6 +181,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Setup router
 	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless, branding)
 	router.SetStoreManager(globalStore, sessionManager)
+
+	// Initialize archive manager.
+	archivesDir := filepath.Join(storePath, "archives")
+	archiveManager, err := archive.NewArchiveManager(archivesDir, store, globalStore)
+	if err != nil {
+		log.Printf("Warning: failed to init archive manager at %s: %v", archivesDir, err)
+	} else {
+		router.SetArchiveManager(archiveManager)
+	}
 
 	// Setup UI and docs serving (skipped in headless mode)
 	if !headless {

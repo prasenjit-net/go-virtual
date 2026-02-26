@@ -12,7 +12,8 @@ import {
     Code2,
     Database,
     Users,
-    BookOpen
+    BookOpen,
+    Archive
 } from 'lucide-react'
 import { LogoFull } from './Logo'
 import { brandingApi } from '../services/api'
@@ -26,6 +27,7 @@ const navItems = [
     { to: '/scripts', icon: Code2, label: 'Scripts' },
     { to: '/store', icon: Database, label: 'Store' },
     { to: '/sessions', icon: Users, label: 'Sessions' },
+    { to: '/archives', icon: Archive, label: 'Archives' },
     { to: '/tags', icon: Tags, label: 'Tags' },
 ]
 

@@ -158,6 +158,13 @@ func (g *GlobalStore) Clear() error {
 	return g.save()
 }
 
+// Len returns the number of entries currently in the store.
+func (g *GlobalStore) Len() int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return len(g.entries)
+}
+
 // List returns all entries sorted by key.
 func (g *GlobalStore) List() []models.StoreEntry {
 	g.mu.RLock()

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
@@ -164,6 +165,15 @@ func (r *Router) setupRoutes() {
 		api.GET("/sessions/:id", r.handler.GetSession)
 		api.DELETE("/sessions/:id", r.handler.InvalidateSession)
 		api.DELETE("/sessions", r.handler.InvalidateAllSessions)
+
+		// Archives
+		api.GET("/archives", r.handler.ListArchives)
+		api.POST("/archives", r.handler.CreateArchive)
+		api.POST("/archives/upload", r.handler.UploadArchive)
+		api.GET("/archives/:id", r.handler.GetArchive)
+		api.DELETE("/archives/:id", r.handler.DeleteArchive)
+		api.GET("/archives/:id/download", r.handler.DownloadArchive)
+		api.POST("/archives/:id/restore", r.handler.RestoreArchive)
 	}
 
 	// WebSocket for live tracing
@@ -288,6 +298,11 @@ func (r *Router) ServeEmbeddedDocs(docsFS fs.FS) {
 // SetStoreManager wires Phase 2 GlobalStore and SessionManager into the handler.
 func (r *Router) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
 	r.handler.SetStoreManager(gs, sm)
+}
+
+// SetArchiveManager wires the ArchiveManager into the handler.
+func (r *Router) SetArchiveManager(am *archive.ArchiveManager) {
+	r.handler.SetArchiveManager(am)
 }
 
 // Handler returns the http.Handler
