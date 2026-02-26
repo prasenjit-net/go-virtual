@@ -495,3 +495,62 @@ export const sessionsApi = {
         }
     },
 };
+// Archives API
+export const archivesApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/archives`);
+        return handleResponse<import('../types').ArchiveMeta[]>(response);
+    },
+
+    get: async (id: string) => {
+        const response = await fetch(`${API_BASE}/archives/${id}`);
+        return handleResponse<import('../types').ArchiveMeta>(response);
+    },
+
+    create: async (label?: string) => {
+        const response = await fetch(`${API_BASE}/archives`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ label: label ?? '' }),
+        });
+        return handleResponse<import('../types').ArchiveMeta>(response);
+    },
+
+    delete: async (id: string) => {
+        const response = await fetch(`${API_BASE}/archives/${id}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    downloadUrl: (id: string) => `${API_BASE}/archives/${id}/download`,
+
+    upload: async (file: File, label?: string) => {
+        const form = new FormData();
+        form.append('archive', file);
+        if (label) form.append('label', label);
+        const response = await fetch(`${API_BASE}/archives/upload`, {
+            method: 'POST',
+            body: form,
+        });
+        return handleResponse<import('../types').ArchiveMeta>(response);
+    },
+
+    restore: async (id: string, opts: {
+        createBackupFirst: boolean;
+        backupLabel?: string;
+        wipeFirst: boolean;
+    }) => {
+        const response = await fetch(`${API_BASE}/archives/${id}/restore`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                createBackupFirst: opts.createBackupFirst,
+                backupLabel: opts.backupLabel ?? '',
+                wipeFirst: opts.wipeFirst,
+            }),
+        });
+        return handleResponse<import('../types').RestoreResponse>(response);
+    },
+};

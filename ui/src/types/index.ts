@@ -306,3 +306,40 @@ export interface SessionTrace {
     isNew: boolean;
     storeAccess?: StoreAccessEvent[];
 }
+
+// ---- Archives ----
+
+export interface ArchiveCounts {
+    specs: number;
+    responses: number;
+    scripts: number;
+    tags: number;
+    storeEntries: number;
+}
+
+export interface ArchiveMeta {
+    id: string;
+    filename: string;
+    label: string;
+    createdAt: string;
+    sizeBytes: number;
+    appVersion: string;
+    counts: ArchiveCounts;
+}
+
+export interface RestoreError {
+    path: string;
+    message: string;
+}
+
+export interface RestoreResult {
+    created: Record<string, number>;
+    updated: Record<string, number>;
+    wipedFirst: boolean;
+    errors?: RestoreError[];
+}
+
+export interface RestoreResponse {
+    backupCreated?: ArchiveMeta;
+    result: RestoreResult;
+}
