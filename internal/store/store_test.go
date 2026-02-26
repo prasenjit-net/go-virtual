@@ -515,3 +515,123 @@ func TestStoreBuiltin_AttrNames(t *testing.T) {
 		t.Errorf("missing attrs: %v", expected)
 	}
 }
+
+// ── GlobalStore.Len ──────────────────────────────────────────────────────────
+
+func TestGlobalStore_Len(t *testing.T) {
+	gs, _ := store.NewGlobalStore(tempStorePath(t))
+
+	if gs.Len() != 0 {
+		t.Errorf("expected Len=0 for empty store, got %d", gs.Len())
+	}
+	_ = gs.Set("a", 1.0)
+	_ = gs.Set("b", 2.0)
+	if gs.Len() != 2 {
+		t.Errorf("expected Len=2, got %d", gs.Len())
+	}
+	_ = gs.Delete("a")
+	if gs.Len() != 1 {
+		t.Errorf("expected Len=1 after delete, got %d", gs.Len())
+	}
+}
+
+// ── NewEphemeralSession ───────────────────────────────────────────────────────
+
+func TestNewEphemeralSession(t *testing.T) {
+	sess := store.NewEphemeralSession(map[string]any{"k": "v"})
+	if sess == nil {
+		t.Fatal("expected non-nil session")
+	}
+	if sess.ID != "__ephemeral__" {
+		t.Errorf("ID = %q, want __ephemeral__", sess.ID)
+	}
+	v, ok := sess.Get("k")
+	if !ok || v != "v" {
+		t.Errorf("expected k=v, got %v, %v", v, ok)
+	}
+}
+
+func TestNewEphemeralSession_NilSnapshot(t *testing.T) {
+	sess := store.NewEphemeralSession(nil)
+	if sess == nil {
+		t.Fatal("expected non-nil session even with nil snapshot")
+	}
+	// Should not panic and should have empty store.
+	if sess.Has("anything") {
+		t.Error("expected empty session store")
+	}
+}
+
+// ── StoreBuiltin interface methods ───────────────────────────────────────────
+
+func TestStoreBuiltin_Interface(t *testing.T) {
+	sb, _ := makeBuiltin()
+
+	if got := sb.String(); got != "store" {
+		t.Errorf("String() = %q, want 'store'", got)
+	}
+	if got := sb.Type(); got != "store" {
+		t.Errorf("Type() = %q, want 'store'", got)
+	}
+	if sb.Truth() != starlark.True {
+		t.Error("Truth() should be True")
+	}
+	sb.Freeze() // must not panic
+	if _, err := sb.Hash(); err == nil {
+		t.Error("Hash() should return an error (store is not hashable)")
+	}
+}
+
+// ── goToStar / starToGo type coverage ────────────────────────────────────────
+
+func TestStoreBuiltin_TypeConversions(t *testing.T) {
+	sess := store.NewEphemeralSession(map[string]any{
+		"str":  "hello",
+		"num":  42.0,
+		"bval": true,
+		"list": []any{"a", "b"},
+		"dict": map[string]any{"x": 1.0},
+	})
+	sb := store.NewStoreBuiltin(sess, nil)
+
+	// Execute Starlark that reads complex types (goToStar) and writes them back (starToGo).
+	src := `
+bval   = store.get("bval")
+lval   = store.get("list")
+dval   = store.get("dict")
+store.set("new_bool",  True)
+store.set("new_int",   99)
+store.set("new_list",  ["x", "y"])
+store.set("new_dict",  {"key": "val"})
+store.set("nil_val",   None)
+`
+	thread := &starlark.Thread{Name: "type-test"}
+	_, err := starlark.ExecFile(thread, "test.star", src, starlark.StringDict{"store": sb})
+	if err != nil {
+		t.Fatalf("ExecFile: %v", err)
+	}
+
+	// Verify starToGo round-trips.
+	if v, ok := sess.Get("new_bool"); !ok || v != true {
+		t.Errorf("new_bool = %v, want true", v)
+	}
+	if v, ok := sess.Get("new_int"); !ok {
+		t.Error("new_int missing")
+	} else if n, ok2 := v.(int64); !ok2 || n != 99 {
+		t.Errorf("new_int = %v (%T), want int64(99)", v, v)
+	}
+	if v, ok := sess.Get("new_list"); !ok {
+		t.Error("new_list missing")
+	} else if sl, ok2 := v.([]any); !ok2 || len(sl) != 2 {
+		t.Errorf("new_list = %v, want []any len 2", v)
+	}
+	if v, ok := sess.Get("new_dict"); !ok {
+		t.Error("new_dict missing")
+	} else if m, ok2 := v.(map[string]any); !ok2 || m["key"] != "val" {
+		t.Errorf("new_dict = %v", v)
+	}
+	if v, ok := sess.Get("nil_val"); !ok || v != nil {
+		t.Errorf("nil_val = %v, want nil", v)
+	}
+}
+

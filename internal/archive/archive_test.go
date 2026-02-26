@@ -1,6 +1,8 @@
 package archive_test
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -314,3 +316,200 @@ paths:
         "200":
           description: A list of pets
 `
+
+// TestManagerSave validates that an externally supplied ZIP can be saved and retrieved.
+func TestManagerSave(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	seedStorage(t, stor)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+
+	// Build a valid ZIP to use as the upload payload.
+	zipBytes, _, err := archive.BuildZIP("external", stor, gs)
+	if err != nil {
+		t.Fatalf("BuildZIP: %v", err)
+	}
+
+	meta, err := mgr.Save(bytes.NewReader(zipBytes), int64(len(zipBytes)), "uploaded-label")
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if meta.Label != "uploaded-label" {
+		t.Errorf("label = %q, want %q", meta.Label, "uploaded-label")
+	}
+	if len(mgr.List()) != 1 {
+		t.Errorf("expected 1 archive after Save, got %d", len(mgr.List()))
+	}
+}
+
+// TestManagerSave_TooLarge ensures oversized uploads are rejected.
+func TestManagerSave_TooLarge(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+
+	_, err = mgr.Save(bytes.NewReader([]byte("data")), 60<<20, "x")
+	if err == nil {
+		t.Error("expected error for oversized upload")
+	}
+}
+
+// TestManagerSave_InvalidZIP ensures garbage bytes are rejected.
+func TestManagerSave_InvalidZIP(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+
+	_, err = mgr.Save(bytes.NewReader([]byte("not a zip file")), 14, "x")
+	if err == nil {
+		t.Error("expected error for invalid zip payload")
+	}
+}
+
+// TestManagerRebuildIndex tests that a deleted index.json is rebuilt from disk ZIPs.
+func TestManagerRebuildIndex(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	seedStorage(t, stor)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+	if _, err := mgr.Create("snap"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Remove the index to force rebuild on next open.
+	if err := os.Remove(filepath.Join(dir, "index.json")); err != nil {
+		t.Fatalf("remove index: %v", err)
+	}
+
+	mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager after index removal: %v", err)
+	}
+	if len(mgr2.List()) != 1 {
+		t.Errorf("expected 1 archive after rebuild, got %d", len(mgr2.List()))
+	}
+}
+
+// TestManagerLoadIndex_Corrupt tests that a corrupt index.json is rebuilt from disk ZIPs.
+func TestManagerLoadIndex_Corrupt(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	seedStorage(t, stor)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+	if _, err := mgr.Create("snap"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Overwrite the index with garbage.
+	if err := os.WriteFile(filepath.Join(dir, "index.json"), []byte("{{corrupt}}"), 0o644); err != nil {
+		t.Fatalf("write corrupt index: %v", err)
+	}
+
+	mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager with corrupt index: %v", err)
+	}
+	if len(mgr2.List()) != 1 {
+		t.Errorf("expected 1 archive after corrupt-index rebuild, got %d", len(mgr2.List()))
+	}
+}
+
+// TestManagerGet_NotFound checks that Get returns an error for an unknown ID.
+func TestManagerGet_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+	if _, err := mgr.Get("nonexistent"); err == nil {
+		t.Error("expected error for nonexistent archive")
+	}
+}
+
+// TestManagerDelete_NotFound checks that Delete returns an error for an unknown ID.
+func TestManagerDelete_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+	if err := mgr.Delete("nonexistent"); err == nil {
+		t.Error("expected error for nonexistent archive")
+	}
+}
+
+// TestManagerFilePath_NotFound checks that FilePath returns an error for an unknown ID.
+func TestManagerFilePath_NotFound(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+	if _, err := mgr.FilePath("nonexistent"); err == nil {
+		t.Error("expected error for nonexistent archive")
+	}
+}
+
+// TestManagerSortOrder verifies that archives are returned newest-first.
+func TestManagerSortOrder(t *testing.T) {
+	dir := t.TempDir()
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	seedStorage(t, stor)
+
+	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	if err != nil {
+		t.Fatalf("NewArchiveManager: %v", err)
+	}
+
+	if _, err := mgr.Create("first"); err != nil {
+		t.Fatalf("Create first: %v", err)
+	}
+	// Small sleep so timestamps differ.
+	time.Sleep(2 * time.Millisecond)
+	if _, err := mgr.Create("second"); err != nil {
+		t.Fatalf("Create second: %v", err)
+	}
+
+	list := mgr.List()
+	if len(list) != 2 {
+		t.Fatalf("expected 2 archives, got %d", len(list))
+	}
+	if list[0].Label != "second" {
+		t.Errorf("expected newest-first; list[0].Label = %q, want %q", list[0].Label, "second")
+	}
+}
