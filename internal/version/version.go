@@ -24,7 +24,7 @@ type Info struct {
 // Get returns version metadata for the running binary.
 func Get() Info {
 	info := Info{
-		Version:   Version,
+		Version:   stripV(Version),
 		Commit:    Commit,
 		BuildDate: BuildDate,
 		GoVersion: runtime.Version(),
@@ -33,9 +33,17 @@ func Get() Info {
 	if buildInfo, ok := debug.ReadBuildInfo(); ok {
 		info.Module = buildInfo.Main.Path
 		if info.Version == "dev" && buildInfo.Main.Version != "" && buildInfo.Main.Version != "(devel)" {
-			info.Version = buildInfo.Main.Version
+			info.Version = stripV(buildInfo.Main.Version)
 		}
 	}
 
 	return info
+}
+
+// stripV removes a leading "v" from a version string (e.g. "v1.2.0" → "1.2.0").
+func stripV(v string) string {
+	if len(v) > 0 && v[0] == 'v' {
+		return v[1:]
+	}
+	return v
 }

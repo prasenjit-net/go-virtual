@@ -128,7 +128,7 @@ export default function ArchiveManager() {
                                                 {formatRelativeTime(meta.createdAt)}
                                             </span>
                                             <span>{formatBytes(meta.sizeBytes)}</span>
-                                            <span>v{meta.appVersion}</span>
+                                            <span>{meta.appVersion}</span>
                                         </div>
                                     </div>
 
@@ -179,7 +179,7 @@ export default function ArchiveManager() {
                                             { label: 'Tags', value: meta.counts.tags },
                                             { label: 'Store entries', value: meta.counts.storeEntries },
                                             { label: 'Size', value: formatBytes(meta.sizeBytes) },
-                                            { label: 'App version', value: `v${meta.appVersion}` },
+                                            { label: 'App version', value: meta.appVersion },
                                         ].map(({ label, value }) => (
                                             <div key={label} className="bg-gray-50 dark:bg-gray-700/50 rounded p-2">
                                                 <div className="text-xs text-gray-500 dark:text-gray-400">{label}</div>

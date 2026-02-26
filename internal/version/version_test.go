@@ -30,3 +30,28 @@ func TestGet(t *testing.T) {
 	Commit = origCommit
 	BuildDate = origBuildDate
 }
+
+func TestGet_StripLeadingV(t *testing.T) {
+	origVersion := Version
+	Version = "v1.2.3"
+	defer func() { Version = origVersion }()
+
+	info := Get()
+	if info.Version != "1.2.3" {
+		t.Fatalf("expected v-prefix stripped, got %q", info.Version)
+	}
+}
+
+func TestStripV(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"v1.2.3", "1.2.3"},
+		{"1.2.3", "1.2.3"},
+		{"dev", "dev"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := stripV(c.in); got != c.want {
+			t.Errorf("stripV(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

@@ -174,7 +174,7 @@ func BuildZIP(label string, stor storage.Storage, gs *store.GlobalStore) ([]byte
 	manifest := &Manifest{
 		ID:         id,
 		Version:    ManifestVersion,
-		AppVersion: version.Version,
+		AppVersion: version.Get().Version,
 		Label:      label,
 		ExportedAt: time.Now().UTC(),
 		Counts:     counts,
