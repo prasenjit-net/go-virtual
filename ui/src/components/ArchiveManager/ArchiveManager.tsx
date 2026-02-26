@@ -178,6 +178,7 @@ export default function ArchiveManager() {
                                             { label: 'Scripts', value: meta.counts.scripts },
                                             { label: 'Tags', value: meta.counts.tags },
                                             { label: 'Store entries', value: meta.counts.storeEntries },
+                                            { label: 'Size', value: formatBytes(meta.sizeBytes) },
                                             { label: 'App version', value: `v${meta.appVersion}` },
                                         ].map(({ label, value }) => (
                                             <div key={label} className="bg-gray-50 dark:bg-gray-700/50 rounded p-2">
