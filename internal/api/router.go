@@ -50,8 +50,13 @@ func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	}
 
 	// Create handler
-	r.handler = NewHandler(store, statsCollector, tracingService, proxyEngine)
-	r.handler.SetBranding(b)
+	r.handler = NewHandler(HandlerConfig{
+		Store:          store,
+		StatsCollector: statsCollector,
+		TracingService: tracingService,
+		ProxyEngine:    proxyEngine,
+		Branding:       b,
+	})
 
 	// Setup middleware
 	r.engine.Use(gin.Recovery())
@@ -297,12 +302,14 @@ func (r *Router) ServeEmbeddedDocs(docsFS fs.FS) {
 
 // SetStoreManager wires Phase 2 GlobalStore and SessionManager into the handler.
 func (r *Router) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
-	r.handler.SetStoreManager(gs, sm)
+	r.handler.globalStore = gs
+	r.handler.sessionManager = sm
+	r.handler.scriptEngine.SetGlobalStore(gs)
 }
 
 // SetArchiveManager wires the ArchiveManager into the handler.
 func (r *Router) SetArchiveManager(am *archive.ArchiveManager) {
-	r.handler.SetArchiveManager(am)
+	r.handler.archiveManager = am
 }
 
 // Handler returns the http.Handler
