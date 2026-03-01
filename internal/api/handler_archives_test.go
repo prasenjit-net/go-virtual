@@ -10,14 +10,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/archive"
+	"github.com/prasenjit/go-virtual/internal/proxy"
+	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/store"
+	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
 // setupTestHandlerWithArchives creates a Handler with an ArchiveManager wired in.
 func setupTestHandlerWithArchives(t *testing.T) (*Handler, storage.Storage, *gin.Engine) {
 	t.Helper()
-	handler, stor, r := setupTestHandler(t)
+	gin.SetMode(gin.TestMode)
+
+	stor := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	proxyEngine := proxy.NewEngine(stor, collector, tracingSvc)
 
 	gs, err := store.NewGlobalStore(filepath.Join(t.TempDir(), "store.json"))
 	if err != nil {
@@ -27,7 +35,16 @@ func setupTestHandlerWithArchives(t *testing.T) (*Handler, storage.Storage, *gin
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
-	handler.SetArchiveManager(am)
+
+	handler := NewHandler(HandlerConfig{
+		Store:          stor,
+		StatsCollector: collector,
+		TracingService: tracingSvc,
+		ProxyEngine:    proxyEngine,
+		ArchiveManager: am,
+	})
+
+	r := gin.New()
 	return handler, stor, r
 }
 

@@ -178,18 +178,29 @@ func runServe(cmd *cobra.Command, args []string) error {
 		AppSubtitle: viper.GetString("branding.appSubtitle"),
 	}
 
-	// Setup router
-	router := api.NewRouter(store, statsCollector, tracingService, proxyEngine, headless, branding)
-	router.SetStoreManager(globalStore, sessionManager)
-
-	// Initialize archive manager.
+	// Initialize archive manager before creating the router so all deps can
+	// be passed in one shot via RouterConfig.
+	var archiveManager *archive.ArchiveManager
 	archivesDir := filepath.Join(storePath, "archives")
-	archiveManager, err := archive.NewArchiveManager(archivesDir, store, globalStore)
-	if err != nil {
+	if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
 		log.Printf("Warning: failed to init archive manager at %s: %v", archivesDir, err)
 	} else {
-		router.SetArchiveManager(archiveManager)
+		archiveManager = am
 	}
+
+	// Setup router — all dependencies injected upfront, no post-construction setters.
+	router := api.NewRouter(api.RouterConfig{
+		Store:          store,
+		StatsCollector: statsCollector,
+		TracingService: tracingService,
+		ProxyEngine:    proxyEngine,
+		GlobalStore:    globalStore,
+		SessionManager: sessionManager,
+		ArchiveManager: archiveManager,
+		Branding:       branding,
+		Headless:       headless,
+		ScriptTimeout:  scriptTimeoutMs,
+	})
 
 	// Setup UI and docs serving (skipped in headless mode)
 	if !headless {
