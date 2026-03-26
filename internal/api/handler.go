@@ -76,33 +76,6 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	return h
 }
 
-// ── Post-construction setters (also used by router for deferred wiring) ─────
-
-// SetBranding updates the branding configuration on an already-created handler.
-func (h *Handler) SetBranding(b config.BrandingConfig) {
-	if b.AppTitle == "" {
-		b.AppTitle = "go-virtual"
-	}
-	if b.AppSubtitle == "" {
-		b.AppSubtitle = "API Mock & Virtualization"
-	}
-	h.branding = b
-}
-
-// SetStoreManager wires GlobalStore and SessionManager after construction.
-func (h *Handler) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
-	h.globalStore = gs
-	h.sessionManager = sm
-	if gs != nil {
-		h.scriptEngine.SetGlobalStore(gs)
-	}
-}
-
-// SetArchiveManager wires the ArchiveManager after construction.
-func (h *Handler) SetArchiveManager(am *archive.ArchiveManager) {
-	h.archiveManager = am
-}
-
 // ── Shared helpers ───────────────────────────────────────────────────────────
 
 // generateID generates a unique ID

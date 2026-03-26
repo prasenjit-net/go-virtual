@@ -266,10 +266,12 @@ func TestGetBranding_Defaults(t *testing.T) {
 
 func TestGetBranding_WithCustomValues(t *testing.T) {
 	handler, _, r := setupTestHandler(t)
-	handler.SetBranding(config.BrandingConfig{
+	// Direct field assignment is valid in package api (same package as implementation).
+	// This tests that the branding data flows through correctly to the GetBranding handler.
+	handler.branding = config.BrandingConfig{
 		AppTitle:    "My Custom App",
 		AppSubtitle: "Great Subtitle",
-	})
+	}
 	r.GET("/branding", handler.GetBranding)
 
 	req := httptest.NewRequest("GET", "/branding", nil)
@@ -291,9 +293,8 @@ func TestGetBranding_WithCustomValues(t *testing.T) {
 	}
 }
 
-func TestSetBranding_NormalizesEmptyValues(t *testing.T) {
-	handler, _, r := setupTestHandler(t)
-	handler.SetBranding(config.BrandingConfig{}) // empty → defaults
+func TestGetBranding_DefaultsWhenEmpty(t *testing.T) {
+	handler, _, r := setupTestHandler(t) // empty Branding → NewHandler applies defaults
 	r.GET("/branding", handler.GetBranding)
 
 	req := httptest.NewRequest("GET", "/branding", nil)

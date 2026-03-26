@@ -11,13 +11,22 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/config"
+	"github.com/prasenjit/go-virtual/internal/proxy"
+	"github.com/prasenjit/go-virtual/internal/stats"
+	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/store"
+	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
 // setupTestHandlerWithStore creates a Handler with GlobalStore + SessionManager wired in.
 func setupTestHandlerWithStore(t *testing.T) (*Handler, *store.GlobalStore, *store.SessionManager, *gin.Engine) {
 	t.Helper()
-	handler, _, r := setupTestHandler(t)
+	gin.SetMode(gin.TestMode)
+
+	stor := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	proxyEngine := proxy.NewEngine(stor, collector, tracingSvc)
 
 	gs, err := store.NewGlobalStore(filepath.Join(t.TempDir(), "store.json"))
 	if err != nil {
@@ -29,7 +38,17 @@ func setupTestHandlerWithStore(t *testing.T) (*Handler, *store.GlobalStore, *sto
 		MaxSessions:       100,
 	}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
-	handler.SetStoreManager(gs, sm)
+
+	handler := NewHandler(HandlerConfig{
+		Store:          stor,
+		StatsCollector: collector,
+		TracingService: tracingSvc,
+		ProxyEngine:    proxyEngine,
+		GlobalStore:    gs,
+		SessionManager: sm,
+	})
+
+	r := gin.New()
 	return handler, gs, sm, r
 }
 

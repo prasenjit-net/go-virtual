@@ -20,7 +20,12 @@ func setupTestRouter() *Router {
 	collector := stats.NewCollector()
 	tracingSvc := tracing.NewService(100)
 	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
-	return NewRouter(store, collector, tracingSvc, proxyEngine, false)
+	return NewRouter(RouterConfig{
+		Store:          store,
+		StatsCollector: collector,
+		TracingService: tracingSvc,
+		ProxyEngine:    proxyEngine,
+	})
 }
 
 func TestRouter_CORSOptions(t *testing.T) {
@@ -110,11 +115,17 @@ func TestServeEmbeddedUI(t *testing.T) {
 }
 
 func TestHeadlessRouter_AdminAPIDisabled(t *testing.T) {
-	store := storage.NewMemoryStorage()
+	stor := storage.NewMemoryStorage()
 	collector := stats.NewCollector()
 	tracingSvc := tracing.NewService(100)
-	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
-	router := NewRouter(store, collector, tracingSvc, proxyEngine, true)
+	proxyEngine := proxy.NewEngine(stor, collector, tracingSvc)
+	router := NewRouter(RouterConfig{
+		Store:          stor,
+		StatsCollector: collector,
+		TracingService: tracingSvc,
+		ProxyEngine:    proxyEngine,
+		Headless:       true,
+	})
 
 	// Admin API should return 404 (not registered)
 	for _, path := range []string{"/_api/health", "/_api/specs", "/_api/routes"} {
@@ -128,11 +139,17 @@ func TestHeadlessRouter_AdminAPIDisabled(t *testing.T) {
 }
 
 func TestHeadlessRouter_UIDisabled(t *testing.T) {
-	store := storage.NewMemoryStorage()
+	stor := storage.NewMemoryStorage()
 	collector := stats.NewCollector()
 	tracingSvc := tracing.NewService(100)
-	proxyEngine := proxy.NewEngine(store, collector, tracingSvc)
-	router := NewRouter(store, collector, tracingSvc, proxyEngine, true)
+	proxyEngine := proxy.NewEngine(stor, collector, tracingSvc)
+	router := NewRouter(RouterConfig{
+		Store:          stor,
+		StatsCollector: collector,
+		TracingService: tracingSvc,
+		ProxyEngine:    proxyEngine,
+		Headless:       true,
+	})
 
 	// UI routes should not be registered; request goes to proxy (which returns 404 for no match)
 	req := httptest.NewRequest("GET", "/_ui/", nil)

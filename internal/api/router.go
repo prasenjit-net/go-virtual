@@ -18,44 +18,51 @@ import (
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
+// RouterConfig holds all dependencies and options for creating a Router.
+type RouterConfig struct {
+	Store          storage.Storage
+	StatsCollector *stats.Collector
+	TracingService *tracing.Service
+	ProxyEngine    *proxy.Engine
+	GlobalStore    *store.GlobalStore      // optional; nil = Phase 1 mode
+	SessionManager *store.SessionManager   // optional; nil = Phase 1 mode
+	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
+	Branding       config.BrandingConfig
+	Headless       bool
+	ScriptTimeout  int // ms; 0 = use default (100)
+}
+
 // Router handles HTTP routing
 type Router struct {
 	engine         *gin.Engine
-	store          storage.Storage
-	statsCollector *stats.Collector
 	tracingService *tracing.Service
 	proxyEngine    *proxy.Engine
 	handler        *Handler
 	headless       bool
-	branding       config.BrandingConfig
 }
 
-// NewRouter creates a new router
-func NewRouter(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, proxyEngine *proxy.Engine, headless bool, branding ...config.BrandingConfig) *Router {
+// NewRouter creates a new router from a RouterConfig.
+func NewRouter(cfg RouterConfig) *Router {
 	gin.SetMode(gin.ReleaseMode)
-
-	var b config.BrandingConfig
-	if len(branding) > 0 {
-		b = branding[0]
-	}
 
 	r := &Router{
 		engine:         gin.New(),
-		store:          store,
-		statsCollector: statsCollector,
-		tracingService: tracingService,
-		proxyEngine:    proxyEngine,
-		headless:       headless,
-		branding:       b,
+		tracingService: cfg.TracingService,
+		proxyEngine:    cfg.ProxyEngine,
+		headless:       cfg.Headless,
 	}
 
-	// Create handler
+	// Create handler with all dependencies in one shot — no post-construction setters needed.
 	r.handler = NewHandler(HandlerConfig{
-		Store:          store,
-		StatsCollector: statsCollector,
-		TracingService: tracingService,
-		ProxyEngine:    proxyEngine,
-		Branding:       b,
+		Store:          cfg.Store,
+		StatsCollector: cfg.StatsCollector,
+		TracingService: cfg.TracingService,
+		ProxyEngine:    cfg.ProxyEngine,
+		GlobalStore:    cfg.GlobalStore,
+		SessionManager: cfg.SessionManager,
+		ArchiveManager: cfg.ArchiveManager,
+		Branding:       cfg.Branding,
+		ScriptTimeout:  cfg.ScriptTimeout,
 	})
 
 	// Setup middleware
@@ -298,18 +305,6 @@ func (r *Router) ServeEmbeddedDocs(docsFS fs.FS) {
 	r.engine.GET("/_docs", func(c *gin.Context) {
 		c.Redirect(http.StatusMovedPermanently, "/_docs/")
 	})
-}
-
-// SetStoreManager wires Phase 2 GlobalStore and SessionManager into the handler.
-func (r *Router) SetStoreManager(gs *store.GlobalStore, sm *store.SessionManager) {
-	r.handler.globalStore = gs
-	r.handler.sessionManager = sm
-	r.handler.scriptEngine.SetGlobalStore(gs)
-}
-
-// SetArchiveManager wires the ArchiveManager into the handler.
-func (r *Router) SetArchiveManager(am *archive.ArchiveManager) {
-	r.handler.archiveManager = am
 }
 
 // Handler returns the http.Handler
