@@ -352,7 +352,12 @@ func generateExampleFromSchema(schema *openapi3.Schema) string {
 		return fmt.Sprintf("%v", schema.Example)
 	}
 
-	switch schema.Type.Slice()[0] {
+	types := schema.Type.Slice()
+	if len(types) == 0 {
+		// Schema has no explicit type (e.g. oneOf/allOf/anyOf); skip example generation
+		return ""
+	}
+	switch types[0] {
 	case "object":
 		return "{}"
 	case "array":

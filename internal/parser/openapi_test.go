@@ -714,6 +714,11 @@ func TestGenerateExampleFromSchema(t *testing.T) {
 			schema:   &openapi3.Schema{Type: &openapi3.Types{"boolean"}},
 			expected: `false`,
 		},
+		{
+			name:     "no type (oneOf/allOf/anyOf)",
+			schema:   &openapi3.Schema{},
+			expected: ``,
+		},
 	}
 
 	for _, tt := range tests {
