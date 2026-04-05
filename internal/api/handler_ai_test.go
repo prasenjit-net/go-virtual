@@ -219,3 +219,24 @@ paths:
 		t.Errorf("expected 1 query param, got %d", len(result.QueryParams))
 	}
 }
+
+// ── GetAIStatus ───────────────────────────────────────────────────────────────
+
+func TestGetAIStatus_NotConfigured(t *testing.T) {
+handler, _ := setupAITest(t)
+r := gin.New()
+r.GET("/ai/status", handler.GetAIStatus)
+
+req := httptest.NewRequest("GET", "/ai/status", nil)
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusOK {
+t.Fatalf("expected 200, got %d", w.Code)
+}
+var resp map[string]any
+json.Unmarshal(w.Body.Bytes(), &resp)
+if resp["configured"] != false {
+t.Errorf("expected configured=false when aiGenerator is nil, got %v", resp["configured"])
+}
+}

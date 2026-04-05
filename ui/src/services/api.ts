@@ -584,12 +584,9 @@ export const aiApi = {
     },
 
     isConfigured: async (): Promise<boolean> => {
-        const response = await fetch(`${API_BASE}/operations/__probe__/ai-response`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({}),
-        });
-        // 503 = not configured, 404 = configured (operation not found is expected)
-        return response.status !== 503;
+        const response = await fetch(`${API_BASE}/ai/status`);
+        if (!response.ok) return false;
+        const data = await response.json();
+        return data.configured === true;
     },
 };

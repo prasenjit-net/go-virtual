@@ -7,7 +7,7 @@ import {
     Clock, ToggleLeft, ToggleRight, Loader2, Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
-import { scriptsApi } from '../../services/api'
+import { scriptsApi, aiApi } from '../../services/api'
 import type { Script } from '../../types'
 import AIScriptModal from './AIScriptModal'
 
@@ -55,6 +55,12 @@ export default function ScriptEditor() {
     const [testBody, setTestBody] = useState('null')
     const [testResult, setTestResult] = useState<{ output: any; durationMs: number; error: string | null; logs?: string[] } | null>(null)
     const [isTesting, setIsTesting] = useState(false)
+
+    const { data: aiConfigured = true } = useQuery<boolean>({
+        queryKey: ['ai-configured'],
+        queryFn: () => aiApi.isConfigured(),
+        staleTime: 60_000,
+    })
 
     // Load existing script for edit mode
     const { isLoading: isLoadingScript } = useQuery<Script>({
@@ -271,13 +277,27 @@ export default function ScriptEditor() {
                                     }
                                 </span>
                             )}
-                            <button
-                                onClick={() => setShowAIModal(true)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
-                            >
-                                <Sparkles className="w-4 h-4" />
-                                Generate with AI
-                            </button>
+                            <div className="relative group">
+                                <button
+                                    onClick={() => aiConfigured && setShowAIModal(true)}
+                                    disabled={!aiConfigured}
+                                    className={clsx(
+                                        "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors",
+                                        aiConfigured
+                                            ? "border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/30"
+                                            : "border border-purple-200 dark:border-purple-900/40 text-purple-300 dark:text-purple-700 cursor-not-allowed"
+                                    )}
+                                >
+                                    <Sparkles className="w-4 h-4" />
+                                    Generate with AI
+                                </button>
+                                {!aiConfigured && (
+                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 dark:bg-slate-700 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                                        OpenAI API key is not configured
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-slate-700" />
+                                    </div>
+                                )}
+                            </div>
                             <button
                                 onClick={handleValidate}
                                 disabled={isValidating}
