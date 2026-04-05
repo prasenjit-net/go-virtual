@@ -18,7 +18,7 @@ import {
     Radio
 } from 'lucide-react'
 import clsx from 'clsx'
-import { operationsApi, responsesApi, specsApi } from '../services/api'
+import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
 import type { Operation, ResponseConfig, Spec, SignatureConfig } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
@@ -81,6 +81,12 @@ export default function OperationDetail() {
         queryKey: ['signature', operationId],
         queryFn: () => operationsApi.getSignatureConfig(operationId!),
         enabled: !!operationId,
+    })
+
+    const { data: aiConfigured = true } = useQuery<boolean>({
+        queryKey: ['ai-configured'],
+        queryFn: () => aiApi.isConfigured(),
+        staleTime: 60_000,
     })
 
     const updateSignatureMutation = useMutation({
@@ -165,13 +171,27 @@ export default function OperationDetail() {
                         </p>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => setShowAIModal(true)}
-                            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
-                        >
-                            <Sparkles className="w-4 h-4 mr-2" />
-                            Generate with AI
-                        </button>
+                        <div className="relative group">
+                            <button
+                                onClick={() => aiConfigured && setShowAIModal(true)}
+                                disabled={!aiConfigured}
+                                className={clsx(
+                                    "flex items-center px-4 py-2 rounded-lg transition-colors",
+                                    aiConfigured
+                                        ? "bg-purple-600 text-white hover:bg-purple-700"
+                                        : "bg-purple-200 dark:bg-purple-900/30 text-purple-400 dark:text-purple-600 cursor-not-allowed"
+                                )}
+                            >
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Generate with AI
+                            </button>
+                            {!aiConfigured && (
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 dark:bg-slate-700 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                                    OpenAI API key is not configured
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-slate-700" />
+                                </div>
+                            )}
+                        </div>
                         <Link
                             to={`/operations/${operationId}/responses/new`}
                             className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
