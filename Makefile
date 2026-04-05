@@ -1,163 +1,168 @@
-.PHONY: all build build-go build-ui dev dev-server dev-ui clean test help install-deps
+# ──────────────────────────────────────────────────────────────────────────────
+# Go-Virtual — Makefile
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Variables
-BINARY_NAME=go-virtual
-GO_CMD=go
-UI_DIR=ui
-BUILD_DIR=build
-CMD_DIR=cmd/server
+BINARY     := go-virtual
+BUILD_DIR  := build
+CMD_DIR    := cmd/server
+UI_DIR     := ui
+GO         := go
 
-# Default target
+# Optional overrides (e.g.  make run PORT=9090)
+PORT       ?=
+CONFIG     ?=
+
+# Version info baked into the binary
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LD_FLAGS   := -s -w \
+	-X github.com/prasenjit/go-virtual/internal/version.Version=$(VERSION) \
+	-X github.com/prasenjit/go-virtual/internal/version.Commit=$(COMMIT) \
+	-X github.com/prasenjit/go-virtual/internal/version.BuildDate=$(BUILD_DATE)
+
+.PHONY: all build build-go build-ui \
+        run run-init \
+        dev dev-ui dev-all \
+        test test-coverage \
+        lint lint-ui fmt \
+        install-deps clean clean-build \
+        docker-build docker-run \
+        help
+
+# ── Default ───────────────────────────────────────────────────────────────────
+
 all: build
 
-# Install dependencies
-install-deps:
-	@echo "Installing Go dependencies..."
-	$(GO_CMD) mod download
-	$(GO_CMD) mod tidy
-	@echo "Installing UI dependencies..."
-	cd $(UI_DIR) && npm install
+# ── Build ─────────────────────────────────────────────────────────────────────
 
-# Build everything
+## build: Build UI then Go binary (full production build)
 build: build-ui build-go
-	@echo "Build complete!"
 
-# Build UI
+## build-ui: Build the React frontend only
 build-ui:
-	@echo "Building UI..."
+	@echo "› Building UI…"
 	cd $(UI_DIR) && npm run build
-	@echo "UI build complete!"
+	@echo "✓ UI build complete"
 
-# Build Go binary with embedded UI
+## build-go: Compile the Go binary with embedded UI (requires ui/dist)
 build-go:
-	@echo "Building Go binary..."
+	@echo "› Building Go binary ($(VERSION))…"
 	@mkdir -p $(BUILD_DIR)
-	$(GO_CMD) build -o $(BUILD_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
-	@echo "Go build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+	$(GO) build -ldflags "$(LD_FLAGS)" -o $(BUILD_DIR)/$(BINARY) ./$(CMD_DIR)
+	@echo "✓ Binary: $(BUILD_DIR)/$(BINARY)"
 
-# Build Go binary without embedded UI (for development)
-build-go-dev:
-	@echo "Building Go binary (dev mode)..."
-	@mkdir -p $(BUILD_DIR)
-	$(GO_CMD) build -o $(BUILD_DIR)/$(BINARY_NAME) ./$(CMD_DIR)
-	@echo "Go build complete: $(BUILD_DIR)/$(BINARY_NAME)"
+# ── Run ───────────────────────────────────────────────────────────────────────
 
-# Run in development mode (separate terminals recommended)
-dev: dev-server
+## run: Build everything then start the server  (PORT=… to override port)
+run: build
+	@echo "› Starting $(BINARY) serve…"
+	$(BUILD_DIR)/$(BINARY) serve \
+		$(if $(PORT),--port $(PORT),) \
+		$(if $(CONFIG),--config $(CONFIG),)
 
-# Run Go server in development mode
-dev-server:
-	@echo "Starting Go server in development mode..."
-	$(GO_CMD) run ./$(CMD_DIR) -dev
+## run-init: Build everything then run 'init' to create default config + data dirs
+run-init: build
+	@echo "› Running $(BINARY) init…"
+	$(BUILD_DIR)/$(BINARY) init \
+		$(if $(CONFIG),--config $(CONFIG),)
 
-# Run UI development server
+# ── Development ───────────────────────────────────────────────────────────────
+
+## dev: Run Go server in dev mode (hot-reload UI from ui/dist via filesystem)
+dev:
+	@echo "› Starting dev server (--dev flag)…"
+	$(GO) run ./$(CMD_DIR) serve --dev \
+		$(if $(PORT),--port $(PORT),) \
+		$(if $(CONFIG),--config $(CONFIG),)
+
+## dev-ui: Start the Vite dev server for the React frontend
 dev-ui:
-	@echo "Starting UI development server..."
+	@echo "› Starting Vite dev server…"
 	cd $(UI_DIR) && npm run dev
 
-# Run both servers (requires concurrently or similar)
+## dev-all: Run Go server + Vite side-by-side (requires 'concurrently')
 dev-all:
-	@echo "Starting both servers..."
-	@echo "Note: For best results, run 'make dev-server' and 'make dev-ui' in separate terminals"
-	@command -v concurrently >/dev/null 2>&1 || (echo "Installing concurrently..." && npm install -g concurrently)
-	concurrently "make dev-server" "make dev-ui"
+	@command -v concurrently >/dev/null 2>&1 \
+		|| (echo "Installing concurrently…" && npm install -g concurrently)
+	concurrently --names "server,ui" --prefix-colors "cyan,magenta" \
+		"$(MAKE) dev" \
+		"$(MAKE) dev-ui"
 
-# Run the production build
-run:
-	@echo "Running production build..."
-	./$(BUILD_DIR)/$(BINARY_NAME)
+# ── Test & Quality ────────────────────────────────────────────────────────────
 
-# Run with custom port
-run-port:
-	@echo "Running on port $(PORT)..."
-	./$(BUILD_DIR)/$(BINARY_NAME) -port $(PORT)
-
-# Clean build artifacts
-clean:
-	@echo "Cleaning..."
-	rm -rf $(BUILD_DIR)
-	rm -rf $(UI_DIR)/dist
-	rm -rf $(UI_DIR)/node_modules
-	@echo "Clean complete!"
-
-# Clean only build artifacts (keep node_modules)
-clean-build:
-	@echo "Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR)
-	rm -rf $(UI_DIR)/dist
-	@echo "Clean complete!"
-
-# Run tests
+## test: Run all Go tests
 test:
-	@echo "Running Go tests..."
-	$(GO_CMD) test -v ./...
+	@echo "› Running tests…"
+	$(GO) test -v -race ./...
 
-# Run tests with coverage
+## test-coverage: Run tests and produce coverage.html report
 test-coverage:
-	@echo "Running Go tests with coverage..."
-	$(GO_CMD) test -v -coverprofile=coverage.out ./...
-	$(GO_CMD) tool cover -html=coverage.out -o coverage.html
-	@echo "Coverage report: coverage.html"
+	@echo "› Running tests with coverage…"
+	$(GO) test -coverprofile=coverage.out ./...
+	$(GO) tool cover -html=coverage.out -o coverage.html
+	@echo "✓ Coverage report: coverage.html"
 
-# Lint Go code
+## lint: Lint Go code (installs golangci-lint if missing)
 lint:
-	@echo "Linting Go code..."
-	@command -v golangci-lint >/dev/null 2>&1 || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@command -v golangci-lint >/dev/null 2>&1 \
+		|| (echo "Installing golangci-lint…" && $(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
 	golangci-lint run
 
-# Lint UI code
+## lint-ui: Lint the React frontend
 lint-ui:
-	@echo "Linting UI code..."
 	cd $(UI_DIR) && npm run lint
 
-# Format Go code
+## fmt: Format Go source files
 fmt:
-	@echo "Formatting Go code..."
-	$(GO_CMD) fmt ./...
+	$(GO) fmt ./...
 
-# Generate (if needed)
-generate:
-	@echo "Running go generate..."
-	$(GO_CMD) generate ./...
+# ── Dependencies ──────────────────────────────────────────────────────────────
 
-# Docker build
+## install-deps: Install Go module deps and npm packages
+install-deps:
+	@echo "› Installing Go dependencies…"
+	$(GO) mod download && $(GO) mod tidy
+	@echo "› Installing UI dependencies…"
+	cd $(UI_DIR) && npm install
+	@echo "✓ Dependencies installed"
+
+# ── Clean ─────────────────────────────────────────────────────────────────────
+
+## clean: Remove build artifacts and node_modules
+clean:
+	rm -rf $(BUILD_DIR) $(UI_DIR)/dist $(UI_DIR)/node_modules
+	@echo "✓ Cleaned"
+
+## clean-build: Remove build artifacts only (keep node_modules)
+clean-build:
+	rm -rf $(BUILD_DIR) $(UI_DIR)/dist
+	@echo "✓ Build artifacts cleaned"
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+
+## docker-build: Build Docker image
 docker-build:
-	@echo "Building Docker image..."
-	docker build -t $(BINARY_NAME):latest .
+	docker build -t $(BINARY):$(VERSION) -t $(BINARY):latest .
 
-# Docker run
+## docker-run: Run the Docker image
 docker-run:
-	@echo "Running Docker container..."
-	docker run -p 8080:8080 $(BINARY_NAME):latest
+	docker run --rm -p 8080:8080 $(BINARY):latest
 
-# Show help
+# ── Help ──────────────────────────────────────────────────────────────────────
+
+## help: Print this help message
 help:
-	@echo "Go-Virtual Makefile Commands:"
 	@echo ""
-	@echo "  make              - Build everything (UI + Go binary)"
-	@echo "  make build        - Build everything (UI + Go binary)"
-	@echo "  make build-ui     - Build UI only"
-	@echo "  make build-go     - Build Go binary only"
-	@echo "  make install-deps - Install all dependencies"
+	@echo "Usage: make <target> [VARIABLE=value …]"
 	@echo ""
-	@echo "  make dev          - Run Go server in dev mode (serves UI from ./ui/dist)"
-	@echo "  make dev-server   - Run Go server in dev mode"
-	@echo "  make dev-ui       - Run Vite dev server for UI"
-	@echo "  make dev-all      - Run both servers (needs concurrently)"
+	@echo "Variables:"
+	@echo "  PORT=8080      Override server port"
+	@echo "  CONFIG=./c.yaml  Override config file path"
 	@echo ""
-	@echo "  make run          - Run the production binary"
-	@echo "  make run-port PORT=3000 - Run on custom port"
+	@echo "Targets:"
+	@grep -E '^## ' $(MAKEFILE_LIST) \
+		| sed 's/## //' \
+		| awk -F': ' '{ printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }'
 	@echo ""
-	@echo "  make test         - Run Go tests"
-	@echo "  make test-coverage - Run tests with coverage"
-	@echo "  make lint         - Lint Go code"
-	@echo "  make lint-ui      - Lint UI code"
-	@echo "  make fmt          - Format Go code"
-	@echo ""
-	@echo "  make clean        - Remove all build artifacts and node_modules"
-	@echo "  make clean-build  - Remove build artifacts only"
-	@echo ""
-	@echo "  make docker-build - Build Docker image"
-	@echo "  make docker-run   - Run Docker container"
-	@echo ""
-	@echo "  make help         - Show this help message"
+
