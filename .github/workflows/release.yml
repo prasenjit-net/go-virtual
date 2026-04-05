@@ -1,16 +1,69 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
 
 jobs:
+  version:
+    name: Compute Version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: bump
+        run: |
+          # Find the latest semver tag (vMAJOR.MINOR.PATCH)
+          LATEST=$(git tag --list 'v*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$LATEST" ]; then
+            LATEST="v0.0.0"
+          fi
+          echo "Latest tag: $LATEST"
+
+          # Strip leading 'v' and split
+          VERSION="${LATEST#v}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
+
+          case "${{ github.event.inputs.bump }}" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "New tag: $NEW_TAG"
+          echo "tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.bump.outputs.tag }}"
+          git push origin "${{ steps.bump.outputs.tag }}"
+
   build-ui:
     name: Build UI
+    needs: version
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -40,7 +93,7 @@ jobs:
 
   test-go:
     name: Test Go Backend
-    needs: build-ui
+    needs: [version, build-ui]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -76,7 +129,7 @@ jobs:
 
   build-binaries:
     name: Build Binaries
-    needs: [build-ui, test-go]
+    needs: [version, build-ui, test-go]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -117,7 +170,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          VERSION=${{ github.ref_name }}
+          VERSION=${{ needs.version.outputs.tag }}
           COMMIT=$(git rev-parse --short HEAD)
           BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           go build -ldflags="-s -w \
@@ -135,7 +188,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build-binaries
+    needs: [version, build-binaries]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -153,39 +206,42 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          # Get the previous tag
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 ${{ github.ref_name }}^ 2>/dev/null || echo "")
-          
+          NEW_TAG="${{ needs.version.outputs.tag }}"
+          # Get the tag that existed before the new one
+          PREVIOUS_TAG=$(git tag --list 'v*' --sort=-version:refname \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | grep -v "^${NEW_TAG}$" \
+            | head -1)
+
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "First release - showing all commits"
             COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges | head -50)
           else
-            echo "Generating changelog from $PREVIOUS_TAG to ${{ github.ref_name }}"
-            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges $PREVIOUS_TAG..${{ github.ref_name }})
+            echo "Generating changelog from $PREVIOUS_TAG to $NEW_TAG"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges "${PREVIOUS_TAG}..${NEW_TAG}")
           fi
-          
-          # Write changelog to file
+
           echo "$COMMITS" > changelog.txt
-          
-          # Output for GitHub Actions (handle multiline)
           {
             echo 'commits<<EOF'
             cat changelog.txt
             echo EOF
+            echo "previous_tag=$PREVIOUS_TAG"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          name: Go-Virtual ${{ github.ref_name }}
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: Go-Virtual ${{ needs.version.outputs.tag }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          prerelease: ${{ contains(needs.version.outputs.tag, '-rc') || contains(needs.version.outputs.tag, '-beta') || contains(needs.version.outputs.tag, '-alpha') }}
           generate_release_notes: false
           body: |
-            ## Go-Virtual ${{ github.ref_name }}
-            
+            ## Go-Virtual ${{ needs.version.outputs.tag }}
+
             API proxy/mock service for OpenAPI 3 specifications with configurable responses, templating, and real-time tracing.
-            
+
             ### 🚀 Features
             - **OpenAPI 3 Support**: Parse and virtualize any OpenAPI 3 specification
             - **Condition-Based Responses**: Match responses based on path, query, header, or body conditions
@@ -195,9 +251,9 @@ jobs:
             - **Real-Time Tracing**: WebSocket-based live request/response tracing
             - **Statistics Dashboard**: Monitor performance and request metrics
             - **Embedded Admin UI**: Single binary with built-in React admin interface
-            
+
             ### 📦 Downloads
-            
+
             | Platform | Architecture | Download |
             |----------|--------------|----------|
             | Linux | amd64 | `go-virtual-linux-amd64` |
@@ -205,26 +261,26 @@ jobs:
             | macOS | amd64 (Intel) | `go-virtual-darwin-amd64` |
             | macOS | arm64 (Apple Silicon) | `go-virtual-darwin-arm64` |
             | Windows | amd64 | `go-virtual-windows-amd64.exe` |
-            
+
             ### 🏃 Quick Start
-            
+
             ```bash
             # Download and make executable (Linux/macOS)
             chmod +x go-virtual-*
-            
+
             # Run the server
             ./go-virtual-linux-amd64 -port 8080
-            
+
             # Access the admin UI
             open http://localhost:8080/_ui/
             ```
-            
+
             ### 📝 What's Changed
-            
+
             ${{ steps.changelog.outputs.commits }}
-            
+
             ---
-            
-            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.previous_tag || 'initial' }}...${{ github.ref_name }}
+
+            **Full Changelog**: https://github.com/${{ github.repository }}/compare/${{ steps.changelog.outputs.previous_tag || 'initial' }}...${{ needs.version.outputs.tag }}
           files: |
             artifacts/*
