@@ -566,6 +566,23 @@ export const aiApi = {
         return handleResponse<import('../types').ResponseConfig>(response);
     },
 
+    generateScript: async (
+        userPrompt: string,
+        options?: { operationId?: string; currentSource?: string; history?: Array<{ role: 'user' | 'assistant'; content: string }> }
+    ): Promise<{ source: string }> => {
+        const response = await fetch(`${API_BASE}/scripts/ai-generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userPrompt,
+                operationId: options?.operationId ?? '',
+                currentSource: options?.currentSource ?? '',
+                history: options?.history ?? [],
+            }),
+        });
+        return handleResponse<{ source: string }>(response);
+    },
+
     isConfigured: async (): Promise<boolean> => {
         const response = await fetch(`${API_BASE}/operations/__probe__/ai-response`, {
             method: 'POST',

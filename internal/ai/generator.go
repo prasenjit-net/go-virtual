@@ -178,6 +178,317 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 	return &input, nil
 }
 
+// ChatMessage represents a single turn in a conversation with the model.
+type ChatMessage struct {
+	Role    string `json:"role"`    // "user" or "assistant"
+	Content string `json:"content"` // message text
+}
+
+// ScriptContext provides context for Starlark script generation.
+type ScriptContext struct {
+	// Optional: describe what the script should do in the context of an operation.
+	OperationMethod  string
+	OperationPath    string
+	OperationSummary string
+	// Inputs from the operation spec (path/query params, body fields).
+	Inputs *OperationInputs
+}
+
+// GenerateScript calls the OpenAI API and returns Starlark source code for a
+// script. priorMessages is the conversation history from previous turns (may be
+// nil for the first call). currentSource is the script that is currently in the
+// editor (empty on the first call); the model uses it as a starting point for
+// modifications. userPrompt describes what the script should do.
+func (g *Generator) GenerateScript(ctx context.Context, sctx ScriptContext, priorMessages []ChatMessage, currentSource, userPrompt string) (string, error) {
+	if !g.IsConfigured() {
+		return "", fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
+	}
+
+	systemPrompt := buildScriptSystemPrompt(sctx)
+	userMsg := buildScriptUserMessage(sctx, currentSource, userPrompt)
+
+	// Build the messages array: system + conversation history + new user turn.
+	messages := []map[string]string{
+		{"role": "system", "content": systemPrompt},
+	}
+	for _, m := range priorMessages {
+		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
+	}
+	messages = append(messages, map[string]string{"role": "user", "content": userMsg})
+
+	reqBody := map[string]any{
+		"model":           g.cfg.Model,
+		"messages":        messages,
+		"temperature":     0.5,
+		"response_format": map[string]string{"type": "json_object"},
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIEndpoint, bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("OpenAI request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return "", fmt.Errorf("failed to decode OpenAI response: %w", err)
+	}
+	if apiResp.Error != nil {
+		return "", fmt.Errorf("OpenAI error: %s", apiResp.Error.Message)
+	}
+	if len(apiResp.Choices) == 0 {
+		return "", fmt.Errorf("OpenAI returned no choices")
+	}
+
+	content := apiResp.Choices[0].Message.Content
+
+	// The model wraps the script in {"source": "..."} per the system prompt.
+	var wrapper struct {
+		Source string `json:"source"`
+	}
+	if err := json.Unmarshal([]byte(content), &wrapper); err != nil {
+		return "", fmt.Errorf("model returned invalid JSON: %w — raw: %s", err, content)
+	}
+	if strings.TrimSpace(wrapper.Source) == "" {
+		return "", fmt.Errorf("model returned an empty script")
+	}
+	return wrapper.Source, nil
+}
+
+// buildScriptSystemPrompt builds the system prompt for script generation.
+func buildScriptSystemPrompt(sctx ScriptContext) string {
+	var sb strings.Builder
+	sb.WriteString(`You are an expert Starlark script writer for go-virtual, an API virtualization service.
+
+go-virtual executes Starlark scripts during request handling. Each script must define a top-level
+function "run(req)" that is called once per matching request.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STARLARK LANGUAGE CONSTRAINTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Starlark is a Python-like deterministic scripting language.
+- NO import statements — there is no standard library.
+- NO classes (no "class" keyword).
+- NO global mutable state (use "store" builtin for persistence).
+- Supported types: bool, int, float, string, list, dict, None.
+- String methods: .upper(), .lower(), .strip(), .split(), .startswith(), .endswith(), .replace(), .format()
+- Math: standard +, -, *, /, //, %, ** operators; abs(), min(), max(), len()
+- Dict methods: .get(key, default), .keys(), .values(), .items(), .update(), .pop()
+- List methods: .append(), .extend(), .insert(), .remove(), .pop(), .index(), .count(), .sort(), .reverse()
+- Type conversion: str(), int(), float(), bool()
+- The "in" operator works for strings, lists, and dicts.
+- Conditionals and loops are standard Python syntax.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENTRY POINT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Every script MUST define:
+
+    def run(req):
+        # ... your logic here ...
+        return result
+
+The return value is stored under the binding's outputKey and is accessible in response
+templates as {{.script.<outputKey>.<field>}} or {{.script.<outputKey>}} for scalar values.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUEST OBJECT — req
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+req is a dict with these keys:
+
+  req["path"]    → dict of path parameters    e.g. req["path"]["id"]
+  req["query"]   → dict of query parameters   e.g. req["query"]["status"]
+  req["header"]  → dict of request headers (all keys lowercased)
+                   e.g. req["header"]["authorization"]
+  req["body"]    → parsed JSON body as a Starlark dict/list, or None if no body
+
+Examples:
+  pet_id  = req["path"].get("petId", "")
+  status  = req["query"].get("status", "available")
+  token   = req["header"].get("authorization", "")
+  name    = req["body"].get("name", "") if req["body"] != None else ""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STORE BUILTIN — store
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"store" is a session-scoped key-value store. Data written here persists across
+requests within the same session (identified by X-Virtual-Session-Id header).
+
+  store.get("key")            → value, or None
+  store.get("key", default)   → value, or default if not found
+  store.set("key", value)     → None  (value can be any Starlark type)
+  store.has("key")            → bool
+  store.delete("key")         → None
+  store.keys()                → list of all keys in this session
+
+Example — simple counter:
+  count = store.get("visit_count", 0)
+  store.set("visit_count", count + 1)
+  return {"visits": count + 1}
+
+Example — accumulate list:
+  items = store.get("cart", [])
+  body = req["body"]
+  if body != None:
+      items.append(body.get("item"))
+      store.set("cart", items)
+  return {"cart": items}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LOG BUILTIN — log(...)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+log() appends a message to the request trace log. Accepts any number of arguments.
+
+  log("processing request for", req["path"].get("id"))
+  log("cart size:", len(items))
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COMPLETE EXAMPLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Example 1 — return data based on path param:
+  def run(req):
+      pet_id = req["path"].get("petId", "unknown")
+      log("fetching pet", pet_id)
+      return {
+          "id": pet_id,
+          "name": "Fluffy",
+          "status": "available",
+      }
+
+Example 2 — use store to track request count:
+  def run(req):
+      count = store.get("count", 0)
+      store.set("count", count + 1)
+      return {"requestNumber": count + 1}
+
+Example 3 — conditional logic based on query param:
+  def run(req):
+      status = req["query"].get("status", "available")
+      if status == "sold":
+          return {"found": False, "message": "No sold pets available"}
+      return {"found": True, "status": status}
+
+Example 4 — read and validate request body:
+  def run(req):
+      body = req["body"]
+      if body == None:
+          return {"error": "missing body"}
+      name = body.get("name", "")
+      if name == "":
+          return {"error": "name is required"}
+      id = store.get("next_id", 1)
+      store.set("next_id", id + 1)
+      store.set("pet_" + str(id), {"id": id, "name": name})
+      return {"id": id, "name": name, "status": "available"}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return ONLY a JSON object with a single "source" key containing the complete Starlark script as a string.
+Do NOT include any explanation, markdown fences, or extra fields.
+
+COMMENT BLOCK RULES (mandatory):
+Every script MUST start with a comment block that explains the CURRENT version's logic.
+On every generation or refinement, REWRITE this comment block from scratch to accurately
+describe what the script does right now — do NOT keep stale comments from a previous version.
+The comment block must cover:
+  1. One-line summary (what the script does)
+  2. Inputs used: which req fields are read and why
+  3. Store usage: any keys read or written (or "No store usage" if none)
+  4. Return value: what the dict/value represents
+
+Format:
+  # <one-line summary>
+  #
+  # Inputs:  <e.g. req["path"]["petId"] — the pet to look up>
+  # Store:   <e.g. reads "pet_{id}", writes "next_id">  or  # Store:   none
+  # Returns: <e.g. {"id", "name", "status"} — the matched pet>
+
+Example output format:
+{"source": "# Return a pet by ID from the session store.\n#\n# Inputs:  req[\"path\"][\"petId\"] — ID of the pet\n# Store:   reads \"pet_{id}\"\n# Returns: {\"id\", \"name\", \"status\"} or {\"error\"} if not found\n\ndef run(req):\n    pet_id = req[\"path\"].get(\"petId\", \"\")\n    pet = store.get(\"pet_\" + pet_id)\n    if pet == None:\n        return {\"error\": \"not found\"}\n    return pet\n"}`)
+
+	// Include operation inputs if available.
+	if sctx.Inputs != nil {
+		hasInputs := len(sctx.Inputs.PathParams) > 0 || len(sctx.Inputs.QueryParams) > 0 || len(sctx.Inputs.BodyFields) > 0
+		if hasInputs {
+			sb.WriteString("\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+			sb.WriteString("AVAILABLE REQUEST INPUTS FOR THIS OPERATION\n")
+			sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+			for _, p := range sctx.Inputs.PathParams {
+				fmt.Fprintf(&sb, "\n  req[\"path\"][\"%s\"]    type=%s", p.Name, p.Type)
+				if p.Description != "" {
+					fmt.Fprintf(&sb, "  // %s", p.Description)
+				}
+			}
+			for _, p := range sctx.Inputs.QueryParams {
+				req := ""
+				if p.Required {
+					req = " (required)"
+				}
+				fmt.Fprintf(&sb, "\n  req[\"query\"][\"%s\"]   type=%s%s", p.Name, p.Type, req)
+				if p.Description != "" {
+					fmt.Fprintf(&sb, "  // %s", p.Description)
+				}
+			}
+			if len(sctx.Inputs.BodyFields) > 0 {
+				sb.WriteString("\n  Request body fields (access via req[\"body\"].get(...)):")
+				for _, f := range sctx.Inputs.BodyFields {
+					fmt.Fprintf(&sb, "\n    %-30s type=%s", f.GjsonPath, f.Type)
+					if f.Description != "" {
+						fmt.Fprintf(&sb, "  // %s", f.Description)
+					}
+				}
+			}
+		}
+	}
+
+	return sb.String()
+}
+
+// buildScriptUserMessage builds the user message for script generation.
+// On the first turn currentSource is empty. On subsequent turns it contains
+// the script currently in the editor so the model refines it rather than
+// starting from scratch.
+func buildScriptUserMessage(sctx ScriptContext, currentSource, userPrompt string) string {
+	var sb strings.Builder
+	if sctx.OperationMethod != "" {
+		fmt.Fprintf(&sb, "API operation: %s %s", sctx.OperationMethod, sctx.OperationPath)
+		if sctx.OperationSummary != "" {
+			fmt.Fprintf(&sb, " — %s", sctx.OperationSummary)
+		}
+		sb.WriteString("\n\n")
+	}
+	if strings.TrimSpace(currentSource) != "" {
+		sb.WriteString("Current script (modify/extend this unless the task requires a complete rewrite):\n```\n")
+		sb.WriteString(strings.TrimSpace(currentSource))
+		sb.WriteString("\n```\n\n")
+	}
+	sb.WriteString("Task: ")
+	sb.WriteString(userPrompt)
+	return sb.String()
+}
+
 // buildSystemPrompt creates the fixed system prompt for the model.
 func buildSystemPrompt(op OperationContext) string {
 	var sb strings.Builder

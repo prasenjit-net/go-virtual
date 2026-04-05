@@ -120,6 +120,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)
 		api.POST("/operations/:id/responses", r.handler.CreateResponseConfig)
 		api.POST("/operations/:id/ai-response", r.handler.GenerateAIResponse)
+		api.POST("/scripts/ai-generate", r.handler.GenerateAIScript)
 		api.GET("/responses/:id", r.handler.GetResponseConfig)
 		api.PUT("/responses/:id", r.handler.UpdateResponseConfig)
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)

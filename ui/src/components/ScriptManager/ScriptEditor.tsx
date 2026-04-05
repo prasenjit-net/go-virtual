@@ -4,11 +4,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Play, ChevronDown, ChevronUp,
-    Clock, ToggleLeft, ToggleRight, Loader2
+    Clock, ToggleLeft, ToggleRight, Loader2, Sparkles
 } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi } from '../../services/api'
 import type { Script } from '../../types'
+import AIScriptModal from './AIScriptModal'
 
 const DEFAULT_SOURCE = `# Starlark script — define a run(req) function that returns a dict.
 # req.path   → dict of path parameters
@@ -41,6 +42,10 @@ export default function ScriptEditor() {
     // Validate state
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
     const [isValidating, setIsValidating] = useState(false)
+
+    // AI modal state — conversation persists until the script is saved
+    const [showAIModal, setShowAIModal] = useState(false)
+    const [aiHistory, setAiHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
 
     // Test panel state
     const [testOpen, setTestOpen] = useState(false)
@@ -82,6 +87,8 @@ export default function ScriptEditor() {
             if (!isNew) {
                 queryClient.invalidateQueries({ queryKey: ['script', scriptId] })
             }
+            // Discard the AI conversation context on save.
+            setAiHistory([])
             navigate(`/scripts`)
         },
     })
@@ -143,6 +150,7 @@ export default function ScriptEditor() {
     }
 
     return (
+        <>
         <div className="p-8 max-w-5xl">
             {/* Header */}
             <div className="flex items-center gap-4 mb-8">
@@ -263,6 +271,13 @@ export default function ScriptEditor() {
                                     }
                                 </span>
                             )}
+                            <button
+                                onClick={() => setShowAIModal(true)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors"
+                            >
+                                <Sparkles className="w-4 h-4" />
+                                Generate with AI
+                            </button>
                             <button
                                 onClick={handleValidate}
                                 disabled={isValidating}
@@ -455,5 +470,19 @@ export default function ScriptEditor() {
                 </div>
             </div>
         </div>
+
+        {showAIModal && (
+            <AIScriptModal
+                currentSource={source}
+                history={aiHistory}
+                onHistoryChange={setAiHistory}
+                onGenerated={(generatedSource) => {
+                    setSource(generatedSource)
+                    setValidateResult(null)
+                }}
+                onClose={() => setShowAIModal(false)}
+            />
+        )}
+        </>
     )
 }

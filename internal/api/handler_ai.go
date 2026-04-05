@@ -95,7 +95,49 @@ func (h *Handler) GenerateAIResponse(c *gin.Context) {
 	c.JSON(http.StatusCreated, cfg)
 }
 
-// extractSpecResponses retrieves all response definitions from the spec for the
+// GenerateAIScript calls the OpenAI API to generate a Starlark script and
+// returns the source code. The caller can optionally pass an operationId in
+// the request body to provide operation context for the AI.
+func (h *Handler) GenerateAIScript(c *gin.Context) {
+	if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "AI generation is not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable",
+		})
+		return
+	}
+
+	var req struct {
+		UserPrompt    string           `json:"userPrompt"`
+		OperationID   string           `json:"operationId"`
+		CurrentSource string           `json:"currentSource"`
+		History       []ai.ChatMessage `json:"history"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.UserPrompt == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "userPrompt is required"})
+		return
+	}
+
+	sctx := ai.ScriptContext{}
+
+	// Enrich context if an operation is specified.
+	if req.OperationID != "" {
+		if op, err := h.store.GetOperation(req.OperationID); err == nil {
+			sctx.OperationMethod = op.Method
+			sctx.OperationPath = op.Path
+			sctx.OperationSummary = op.Summary
+			sctx.Inputs = extractOperationInputs(h, op)
+		}
+	}
+
+	source, err := h.aiGenerator.GenerateScript(c.Request.Context(), sctx, req.History, req.CurrentSource, req.UserPrompt)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"source": source})
+}
+
 // operation's path+method. Returns nil (non-fatal) on any error.
 func extractSpecResponses(h *Handler, op *models.Operation) []ai.SpecResponseDef {
 	spec, err := h.store.GetSpec(op.SpecID)
