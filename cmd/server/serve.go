@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/viper"
 
 	govirtual "github.com/prasenjit/go-virtual"
+	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/api"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
@@ -200,6 +201,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Branding:       branding,
 		Headless:       headless,
 		ScriptTimeout:  scriptTimeoutMs,
+		AIGenerator: ai.NewGenerator(ai.Config{
+			APIKey: viper.GetString("ai.openaiApiKey"),
+			Model:  viper.GetString("ai.openaiModel"),
+		}),
 	})
 
 	// Setup UI and docs serving (skipped in headless mode)

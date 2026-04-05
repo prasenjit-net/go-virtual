@@ -18,6 +18,16 @@ type Config struct {
 	Scripting ScriptingConfig `yaml:"scripting"`
 	Session   SessionConfig   `yaml:"session"`
 	Proxy     ProxyConfig     `yaml:"proxy"`
+	AI        AIConfig        `yaml:"ai"`
+}
+
+// AIConfig holds configuration for AI-powered response generation.
+type AIConfig struct {
+	// OpenAIAPIKey is the API key used to call the OpenAI API.
+	// Can also be set via the GOVIRTUAL_AI_OPENAIAPIKEY environment variable.
+	OpenAIAPIKey string `yaml:"openaiApiKey"`
+	// OpenAIModel is the model used for response generation. Defaults to "gpt-4o-mini".
+	OpenAIModel string `yaml:"openaiModel"`
 }
 
 // BrandingConfig holds UI branding configuration

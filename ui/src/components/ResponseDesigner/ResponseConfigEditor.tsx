@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Plus, Trash2, AlertCircle } from 'lucide-react'
+import { X, Plus, Trash2, AlertCircle, Wand2 } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
@@ -235,6 +235,18 @@ export default function ResponseConfigEditor({
             void validateBodyTemplate(value)
         }, 300)
     }, [validateBodyTemplate])
+
+    const prettifyBody = useCallback(() => {
+        const trimmed = body.trim()
+        if (!trimmed) return
+        try {
+            const pretty = JSON.stringify(JSON.parse(trimmed), null, 2)
+            setBody(pretty)
+            scheduleTemplateValidation(pretty)
+        } catch {
+            // Not valid JSON (e.g. contains template tags) — leave as-is
+        }
+    }, [body, scheduleTemplateValidation])
 
     useEffect(() => {
         if (body.trim()) {
@@ -594,9 +606,20 @@ export default function ResponseConfigEditor({
 
                     {/* Body */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-                            Response Body
-                        </label>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
+                                Response Body
+                            </label>
+                            <button
+                                type="button"
+                                onClick={prettifyBody}
+                                title="Prettify JSON"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-md transition-colors"
+                            >
+                                <Wand2 className="w-3.5 h-3.5" />
+                                Prettify
+                            </button>
+                        </div>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
                             Body templates use Go text/template. Try {'{{.Path.id}}'},
                             {'{{index .Query "status"}}'}, {'{{index .Header "authorization"}}'},
