@@ -21,6 +21,7 @@ import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi } from '../services/api'
 import type { Operation, ResponseConfig, Spec, SignatureConfig } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
+import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -33,6 +34,7 @@ const methodColors: Record<string, string> = {
 export default function OperationDetail() {
     const { operationId } = useParams<{ operationId: string }>()
     const [expandedConfig, setExpandedConfig] = useState<string | null>(null)
+    const [showAIModal, setShowAIModal] = useState(false)
     const queryClient = useQueryClient()
 
     const { data: operation, isLoading: opLoading } = useQuery<Operation>({
@@ -162,13 +164,22 @@ export default function OperationDetail() {
                             Configure mock responses with conditions and priorities
                         </p>
                     </div>
-                    <Link
-                        to={`/operations/${operationId}/responses/new`}
-                        className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-                    >
-                        <Plus className="w-5 h-5 mr-2" />
-                        Add Response
-                    </Link>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowAIModal(true)}
+                            className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                        >
+                            <Sparkles className="w-4 h-4 mr-2" />
+                            Generate with AI
+                        </button>
+                        <Link
+                            to={`/operations/${operationId}/responses/new`}
+                            className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                        >
+                            <Plus className="w-5 h-5 mr-2" />
+                            Add Response
+                        </Link>
+                    </div>
                 </div>
 
                 {responses && responses.length > 0 ? (
@@ -750,6 +761,16 @@ export default function OperationDetail() {
             </div>
 
             {/* Editor Modal */}
+
+            {/* AI Generate Modal */}
+            {showAIModal && operation && (
+                <AIGenerateModal
+                    operationId={operationId!}
+                    operationMethod={operation.method}
+                    operationPath={operation.path}
+                    onClose={() => setShowAIModal(false)}
+                />
+            )}
         </div>
     )
 }

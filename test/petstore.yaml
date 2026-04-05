@@ -52,12 +52,47 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Pet'
+              example:
+                - id: "pet-1"
+                  name: "Fluffy"
+                  category: "cat"
+                  status: "available"
+                  tags: ["cute", "furry"]
+                - id: "pet-2"
+                  name: "Rex"
+                  category: "dog"
+                  status: "pending"
+                  tags: ["friendly"]
+        '400':
+          description: Bad request — invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Invalid query parameter"
+                details: "Parameter 'limit' must be a positive integer no greater than 100"
+        '401':
+          description: Unauthorized — missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "A valid Authorization header is required"
         '500':
           description: Internal server error
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "An unexpected error occurred while fetching pets"
 
     post:
       tags:
@@ -77,12 +112,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
+              example:
+                id: "pet-999"
+                name: "Fluffy"
+                category: "cat"
+                status: "available"
+                tags: ["new"]
+                createdAt: "2026-04-05T10:00:00Z"
         '400':
-          description: Invalid input
+          description: Invalid input — missing required fields or bad values
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Validation error"
+                details: "Field 'name' is required"
+        '401':
+          description: Unauthorized — missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "A valid Authorization header is required to create a pet"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Failed to persist the new pet record"
 
   /pets/{petId}:
     get:
@@ -104,12 +170,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
+              example:
+                id: "pet-123"
+                name: "Fluffy"
+                category: "cat"
+                status: "available"
+                tags: ["cute", "furry"]
+                createdAt: "2026-01-15T08:30:00Z"
+        '400':
+          description: Bad request — petId format invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Invalid pet ID"
+                details: "Pet ID must be a non-empty alphanumeric string"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "Please provide a valid Authorization header"
         '404':
           description: Pet not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "Pet not found"
+                details: "No pet exists with ID 'pet-123'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Database query failed while retrieving pet"
 
     put:
       tags:
@@ -135,12 +242,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Pet'
+              example:
+                id: "pet-123"
+                name: "Fluffy Updated"
+                category: "cat"
+                status: "sold"
+                tags: ["cute", "furry", "updated"]
+                createdAt: "2026-01-15T08:30:00Z"
+        '400':
+          description: Bad request — invalid update payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Validation error"
+                details: "Field 'status' must be one of: available, pending, sold"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "Please provide a valid Authorization header"
         '404':
           description: Pet not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "Pet not found"
+                details: "No pet exists with ID 'pet-123'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Failed to update pet record in database"
 
     delete:
       tags:
@@ -156,12 +304,36 @@ paths:
       responses:
         '204':
           description: Pet deleted
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "Please provide a valid Authorization header"
         '404':
           description: Pet not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "Pet not found"
+                details: "No pet exists with ID 'pet-123'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Failed to delete pet record from database"
 
   /store/orders:
     get:
@@ -185,6 +357,39 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Order'
+              example:
+                - id: "order-1"
+                  petId: "pet-123"
+                  quantity: 2
+                  status: "placed"
+                  shipDate: "2026-04-10T00:00:00Z"
+                  complete: false
+                - id: "order-2"
+                  petId: "pet-456"
+                  quantity: 1
+                  status: "delivered"
+                  shipDate: "2026-04-01T00:00:00Z"
+                  complete: true
+        '401':
+          description: Unauthorized — missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "A valid X-Customer-Id header or Authorization token is required"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Failed to retrieve orders from database"
 
     post:
       tags:
@@ -204,12 +409,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+              example:
+                id: "order-789"
+                petId: "pet-123"
+                quantity: 1
+                status: "placed"
+                shipDate: "2026-04-12T00:00:00Z"
+                complete: false
         '400':
-          description: Invalid order
+          description: Invalid order — missing required fields or unknown petId
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Validation error"
+                details: "Field 'petId' is required and must reference an existing pet"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "Please provide a valid Authorization header to place orders"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Order could not be persisted due to a database error"
 
   /store/orders/{orderId}:
     get:
@@ -230,12 +466,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+              example:
+                id: "order-456"
+                petId: "pet-123"
+                quantity: 1
+                status: "approved"
+                shipDate: "2026-04-08T00:00:00Z"
+                complete: false
+        '400':
+          description: Bad request — orderId format invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Invalid order ID"
+                details: "Order ID must be a non-empty alphanumeric string"
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "Please provide a valid Authorization header"
         '404':
           description: Order not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "Order not found"
+                details: "No order exists with ID 'order-456'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Database query failed while retrieving order"
 
   /users/login:
     post:
@@ -275,12 +552,39 @@ paths:
                   expiresAt:
                     type: string
                     format: date-time
+              example:
+                token: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.example"
+                expiresAt: "2026-04-06T20:00:00Z"
+        '400':
+          description: Bad request — missing username or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Validation error"
+                details: "Both 'username' and 'password' fields are required"
         '401':
           description: Invalid credentials
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Invalid credentials"
+                details: "The username or password you provided is incorrect"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Authentication service is temporarily unavailable"
 
   /users/{userId}:
     get:
@@ -306,18 +610,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
+              example:
+                id: "user-789"
+                username: "johndoe"
+                email: "john@example.com"
+                firstName: "John"
+                lastName: "Doe"
+                status: "active"
+        '400':
+          description: Bad request — userId format invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Invalid user ID"
+                details: "User ID must be a non-empty alphanumeric string"
         '401':
           description: Unauthorized
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 401
+                message: "Unauthorized"
+                details: "A valid Authorization header is required to access user data"
         '404':
           description: User not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "User not found"
+                details: "No user exists with ID 'user-789'"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+                details: "Database query failed while retrieving user"
 
 components:
   schemas:
@@ -443,9 +782,10 @@ components:
       properties:
         code:
           type: integer
-          example: 404
+          example: 400
         message:
           type: string
-          example: "Resource not found"
+          example: "Bad request"
         details:
           type: string
+          example: "A required field is missing or has an invalid value"

@@ -29,6 +29,7 @@ go.work.sum
 .env.local
 .env.*.local
 *.local
+config.yaml
 
 # Logs
 *.log

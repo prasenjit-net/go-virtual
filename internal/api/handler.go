@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/parser"
@@ -26,7 +27,8 @@ type HandlerConfig struct {
 	SessionManager *store.SessionManager   // optional; nil = Phase 1 mode
 	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
-	ScriptTimeout  int // ms; 0 = use default (100)
+	ScriptTimeout  int           // ms; 0 = use default (100)
+	AIGenerator    *ai.Generator // optional; nil = AI generation disabled
 }
 
 // Handler handles API requests
@@ -42,6 +44,7 @@ type Handler struct {
 	sessionManager *store.SessionManager
 	archiveManager *archive.ArchiveManager
 	branding       config.BrandingConfig
+	aiGenerator    *ai.Generator
 }
 
 // NewHandler creates a fully-initialised Handler from a HandlerConfig.
@@ -66,6 +69,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		sessionManager: cfg.SessionManager,
 		archiveManager: cfg.ArchiveManager,
 		branding:       b,
+		aiGenerator:    cfg.AIGenerator,
 		parser:         parser.NewParser(),
 		templateEngine: template.NewEngine(),
 		scriptEngine:   scripting.NewScriptEngine(cfg.Store, timeout),

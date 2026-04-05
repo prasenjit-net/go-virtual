@@ -99,4 +99,8 @@ func setDefaults() {
 	// Logging defaults
 	viper.SetDefault("logging.level", "info")
 	viper.SetDefault("logging.format", "json")
+
+	// AI defaults
+	viper.SetDefault("ai.openaiApiKey", "")
+	viper.SetDefault("ai.openaiModel", "gpt-4o-mini")
 }

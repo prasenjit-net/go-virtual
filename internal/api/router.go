@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/proxy"
@@ -29,7 +30,8 @@ type RouterConfig struct {
 	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	Headless       bool
-	ScriptTimeout  int // ms; 0 = use default (100)
+	ScriptTimeout  int           // ms; 0 = use default (100)
+	AIGenerator    *ai.Generator // optional; nil = AI generation disabled
 }
 
 // Router handles HTTP routing
@@ -63,6 +65,7 @@ func NewRouter(cfg RouterConfig) *Router {
 		ArchiveManager: cfg.ArchiveManager,
 		Branding:       cfg.Branding,
 		ScriptTimeout:  cfg.ScriptTimeout,
+		AIGenerator:    cfg.AIGenerator,
 	})
 
 	// Setup middleware
@@ -116,6 +119,7 @@ func (r *Router) setupRoutes() {
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)
 		api.POST("/operations/:id/responses", r.handler.CreateResponseConfig)
+		api.POST("/operations/:id/ai-response", r.handler.GenerateAIResponse)
 		api.GET("/responses/:id", r.handler.GetResponseConfig)
 		api.PUT("/responses/:id", r.handler.UpdateResponseConfig)
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)

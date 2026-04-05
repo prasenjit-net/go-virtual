@@ -1,0 +1,9 @@
+POST http://localhost:8080/pets
+Content-Type: application/json
+
+{
+  "name": "brat",
+  "age": 3,
+  "type": "dog",
+  "breed": "labrador"
+}

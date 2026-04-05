@@ -335,9 +335,295 @@ func (p *Parser) ExtractExampleResponse(content string, method, pathPattern stri
 	return headers, body, nil
 }
 
+// SpecResponseDef holds spec-defined response information for a single status code.
+type SpecResponseDef struct {
+	StatusCode  int    `json:"statusCode"`
+	Description string `json:"description"`
+	BodyExample string `json:"bodyExample,omitempty"` // JSON string or schema-derived example
+	SchemaHint  string `json:"schemaHint,omitempty"`  // Human-readable schema summary
+}
+
+// ParamDef describes a single path or query parameter.
+type ParamDef struct {
+	Name        string
+	In          string // "path" or "query"
+	Required    bool
+	Type        string // "string", "integer", "boolean", etc.
+	Description string
+}
+
+// BodyFieldDef describes one (potentially nested) field in the request body JSON.
+type BodyFieldDef struct {
+	GjsonPath   string // dot-notation gjson path, e.g. "user.id", "items.0.name"
+	Type        string // "string", "integer", "array", "object", etc.
+	Description string
+}
+
+// OperationInputs aggregates all input metadata for an operation.
+type OperationInputs struct {
+	PathParams  []ParamDef
+	QueryParams []ParamDef
+	BodyFields  []BodyFieldDef // nil when no request body
+}
+
+// ExtractOperationInputs extracts path params, query params, and request body
+// field definitions for the given operation.
+func (p *Parser) ExtractOperationInputs(content string, method, pathPattern string) (*OperationInputs, error) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse spec: %w", err)
+	}
+
+	pathItem := doc.Paths.Find(pathPattern)
+	if pathItem == nil {
+		return nil, fmt.Errorf("path not found: %s", pathPattern)
+	}
+
+	op := operationByMethod(pathItem, method)
+	if op == nil {
+		return nil, nil
+	}
+
+	inputs := &OperationInputs{}
+
+	// Path and query parameters (merge path-level + operation-level)
+	allParams := make(openapi3.Parameters, 0)
+	allParams = append(allParams, pathItem.Parameters...)
+	allParams = append(allParams, op.Parameters...)
+
+	for _, pRef := range allParams {
+		if pRef == nil || pRef.Value == nil {
+			continue
+		}
+		pv := pRef.Value
+		pd := ParamDef{
+			Name:        pv.Name,
+			In:          pv.In,
+			Required:    pv.Required,
+			Description: pv.Description,
+		}
+		if pv.Schema != nil && pv.Schema.Value != nil {
+			ts := pv.Schema.Value.Type.Slice()
+			if len(ts) > 0 {
+				pd.Type = ts[0]
+			}
+		}
+		switch pv.In {
+		case "path":
+			inputs.PathParams = append(inputs.PathParams, pd)
+		case "query":
+			inputs.QueryParams = append(inputs.QueryParams, pd)
+		}
+	}
+
+	// Request body
+	if op.RequestBody != nil && op.RequestBody.Value != nil {
+		for mediaType, mt := range op.RequestBody.Value.Content {
+			if !strings.Contains(mediaType, "json") || mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
+				continue
+			}
+			inputs.BodyFields = flattenSchema(mt.Schema.Value, "", 0)
+			break
+		}
+	}
+
+	return inputs, nil
+}
+
+// flattenSchema recursively walks a JSON schema and returns gjson-path field defs.
+// maxDepth prevents runaway recursion on self-referential or deeply nested schemas.
+func flattenSchema(s *openapi3.Schema, prefix string, depth int) []BodyFieldDef {
+	if s == nil || depth > 4 {
+		return nil
+	}
+
+	var fields []BodyFieldDef
+	types := s.Type.Slice()
+	typeName := ""
+	if len(types) > 0 {
+		typeName = types[0]
+	}
+
+	switch typeName {
+	case "object", "":
+		for name, propRef := range s.Properties {
+			if propRef == nil || propRef.Value == nil {
+				continue
+			}
+			pv := propRef.Value
+			path := name
+			if prefix != "" {
+				path = prefix + "." + name
+			}
+			pts := pv.Type.Slice()
+			pt := ""
+			if len(pts) > 0 {
+				pt = pts[0]
+			}
+			fields = append(fields, BodyFieldDef{
+				GjsonPath:   path,
+				Type:        pt,
+				Description: pv.Description,
+			})
+			// Recurse into nested objects
+			if pt == "object" || (pt == "" && len(pv.Properties) > 0) {
+				fields = append(fields, flattenSchema(pv, path, depth+1)...)
+			}
+		}
+		// allOf / oneOf / anyOf — include from first sub-schema for hints
+		for _, sub := range append(append(s.AllOf, s.OneOf...), s.AnyOf...) {
+			if sub != nil && sub.Value != nil {
+				fields = append(fields, flattenSchema(sub.Value, prefix, depth+1)...)
+			}
+		}
+	case "array":
+		if s.Items != nil && s.Items.Value != nil {
+			// Represent array items with .0 gjson index hint
+			itemPrefix := "0"
+			if prefix != "" {
+				itemPrefix = prefix + ".0"
+			}
+			its := s.Items.Value.Type.Slice()
+			it := ""
+			if len(its) > 0 {
+				it = its[0]
+			}
+			fields = append(fields, BodyFieldDef{GjsonPath: itemPrefix, Type: it})
+			fields = append(fields, flattenSchema(s.Items.Value, itemPrefix, depth+1)...)
+		}
+	}
+
+	return fields
+}
+
+// ExtractAllResponses extracts every response definition from the spec for the given operation.
+// It returns one SpecResponseDef per status code (plus "default" mapped to 0).
+func (p *Parser) ExtractAllResponses(content string, method, pathPattern string) ([]SpecResponseDef, error) {
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromData([]byte(content))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse spec: %w", err)
+	}
+
+	pathItem := doc.Paths.Find(pathPattern)
+	if pathItem == nil {
+		return nil, fmt.Errorf("path not found: %s", pathPattern)
+	}
+
+	op := operationByMethod(pathItem, method)
+	if op == nil || op.Responses == nil {
+		return nil, nil
+	}
+
+	var defs []SpecResponseDef
+	for statusStr, respRef := range op.Responses.Map() {
+		if respRef == nil || respRef.Value == nil {
+			continue
+		}
+		rv := respRef.Value
+		def := SpecResponseDef{}
+
+		// Status code
+		if statusStr == "default" {
+			def.StatusCode = 0
+		} else {
+			fmt.Sscanf(statusStr, "%d", &def.StatusCode)
+		}
+
+		if rv.Description != nil {
+			def.Description = *rv.Description
+		}
+
+		// Extract body example from the first JSON media type
+		for mediaType, mt := range rv.Content {
+			if !strings.Contains(mediaType, "json") {
+				continue
+			}
+			if mt == nil {
+				continue
+			}
+			if mt.Example != nil {
+				def.BodyExample = formatExample(mt.Example)
+			} else if len(mt.Examples) > 0 {
+				for _, ex := range mt.Examples {
+					if ex.Value != nil && ex.Value.Value != nil {
+						def.BodyExample = formatExample(ex.Value.Value)
+						break
+					}
+				}
+			}
+			if def.BodyExample == "" && mt.Schema != nil && mt.Schema.Value != nil {
+				def.BodyExample = generateExampleFromSchema(mt.Schema.Value)
+				def.SchemaHint = schemaTypeHint(mt.Schema.Value)
+			}
+			break
+		}
+
+		defs = append(defs, def)
+	}
+
+	return defs, nil
+}
+
+// operationByMethod returns the openapi3.Operation for the given HTTP method.
+func operationByMethod(item *openapi3.PathItem, method string) *openapi3.Operation {
+	switch strings.ToUpper(method) {
+	case "GET":
+		return item.Get
+	case "POST":
+		return item.Post
+	case "PUT":
+		return item.Put
+	case "DELETE":
+		return item.Delete
+	case "PATCH":
+		return item.Patch
+	case "HEAD":
+		return item.Head
+	case "OPTIONS":
+		return item.Options
+	}
+	return nil
+}
+
+// schemaTypeHint returns a brief human-readable description of a schema's type/structure.
+func schemaTypeHint(s *openapi3.Schema) string {
+	if s == nil {
+		return ""
+	}
+	types := s.Type.Slice()
+	if len(types) == 0 {
+		if len(s.Properties) > 0 {
+			keys := make([]string, 0, len(s.Properties))
+			for k := range s.Properties {
+				keys = append(keys, k)
+			}
+			return "object with fields: " + strings.Join(keys, ", ")
+		}
+		return ""
+	}
+	switch types[0] {
+	case "object":
+		if len(s.Properties) > 0 {
+			keys := make([]string, 0, len(s.Properties))
+			for k := range s.Properties {
+				keys = append(keys, k)
+			}
+			return "object with fields: " + strings.Join(keys, ", ")
+		}
+		return "object"
+	case "array":
+		if s.Items != nil && s.Items.Value != nil {
+			return "array of " + schemaTypeHint(s.Items.Value)
+		}
+		return "array"
+	default:
+		return types[0]
+	}
+}
+
 // generateOperationID generates a deterministic operation ID based on spec, method, and path
-// This allows operations to be regenerated from spec while maintaining stable IDs
-// that response configs can reference
 func generateOperationID(specID, method, path string) string {
 	// Create a deterministic hash from spec ID + method + path
 	data := fmt.Sprintf("%s:%s:%s", specID, method, path)
