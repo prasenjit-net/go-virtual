@@ -10,6 +10,12 @@ import (
 	"github.com/prasenjit/go-virtual/internal/parser"
 )
 
+// GetAIStatus returns whether the AI generator is configured.
+func (h *Handler) GetAIStatus(c *gin.Context) {
+	configured := h.aiGenerator != nil && h.aiGenerator.IsConfigured()
+	c.JSON(http.StatusOK, gin.H{"configured": configured})
+}
+
 // GenerateAIResponse calls the OpenAI API to generate a response config for an
 // operation and stores it, returning the created ResponseConfig.
 func (h *Handler) GenerateAIResponse(c *gin.Context) {
