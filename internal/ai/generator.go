@@ -17,14 +17,18 @@ const openAIEndpoint = "https://api.openai.com/v1/chat/completions"
 
 // Config holds the AI generator configuration.
 type Config struct {
-	APIKey string
-	Model  string
+	APIKey   string
+	Model    string
+	// Endpoint overrides the OpenAI API URL. Used in tests to point at a
+	// local mock server. Defaults to openAIEndpoint when empty.
+	Endpoint string
 }
 
 // Generator uses OpenAI to generate mock response configurations.
 type Generator struct {
-	cfg    Config
-	client *http.Client
+	cfg      Config
+	client   *http.Client
+	endpoint string
 }
 
 // NewGenerator creates a new Generator with the given config.
@@ -32,9 +36,14 @@ func NewGenerator(cfg Config) *Generator {
 	if cfg.Model == "" {
 		cfg.Model = defaultModel
 	}
+	ep := cfg.Endpoint
+	if ep == "" {
+		ep = openAIEndpoint
+	}
 	return &Generator{
-		cfg:    cfg,
-		client: &http.Client{Timeout: 30 * time.Second},
+		cfg:      cfg,
+		client:   &http.Client{Timeout: 30 * time.Second},
+		endpoint: ep,
 	}
 }
 
@@ -114,7 +123,7 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIEndpoint, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -228,7 +237,7 @@ func (g *Generator) GenerateScript(ctx context.Context, sctx ScriptContext, prio
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIEndpoint, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
