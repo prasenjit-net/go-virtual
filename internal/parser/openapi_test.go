@@ -776,3 +776,347 @@ paths:
 		t.Fatalf("expected error for unsupported method")
 	}
 }
+
+// ── Shared fixture spec used by the new function tests ────────────────────────
+
+const fixtureSpec = `
+openapi: 3.0.0
+info:
+  title: Fixture API
+  version: 1.0.0
+paths:
+  /pets/{petId}:
+    get:
+      operationId: getPetById
+      summary: Get a pet
+      parameters:
+        - name: petId
+          in: path
+          required: true
+          description: The pet ID
+          schema:
+            type: string
+        - name: format
+          in: query
+          required: false
+          description: Response format
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Pet found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+              example:
+                id: "pet-1"
+                name: "Fluffy"
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 404
+                message: "Pet not found"
+        '500':
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 500
+                message: "Internal server error"
+  /pets:
+    post:
+      operationId: createPet
+      summary: Create a pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Pet name
+                category:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                owner:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    email:
+                      type: string
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: 400
+                message: "Validation error"
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+`
+
+// ── ExtractAllResponses ───────────────────────────────────────────────────────
+
+func TestExtractAllResponses_ReturnsAllStatusCodes(t *testing.T) {
+p := NewParser()
+defs, err := p.ExtractAllResponses(fixtureSpec, "GET", "/pets/{petId}")
+if err != nil {
+t.Fatalf("ExtractAllResponses error: %v", err)
+}
+if len(defs) != 3 {
+t.Fatalf("expected 3 response defs (200, 404, 500), got %d", len(defs))
+}
+
+codes := make(map[int]SpecResponseDef)
+for _, d := range defs {
+codes[d.StatusCode] = d
+}
+
+if _, ok := codes[200]; !ok {
+t.Error("missing 200 response")
+}
+if _, ok := codes[404]; !ok {
+t.Error("missing 404 response")
+}
+if _, ok := codes[500]; !ok {
+t.Error("missing 500 response")
+}
+}
+
+func TestExtractAllResponses_PopulatesDescription(t *testing.T) {
+p := NewParser()
+defs, err := p.ExtractAllResponses(fixtureSpec, "GET", "/pets/{petId}")
+if err != nil {
+t.Fatalf("ExtractAllResponses error: %v", err)
+}
+for _, d := range defs {
+if d.Description == "" {
+t.Errorf("response %d has empty description", d.StatusCode)
+}
+}
+}
+
+func TestExtractAllResponses_PopulatesBodyExample(t *testing.T) {
+p := NewParser()
+defs, err := p.ExtractAllResponses(fixtureSpec, "GET", "/pets/{petId}")
+if err != nil {
+t.Fatalf("ExtractAllResponses error: %v", err)
+}
+
+found := false
+for _, d := range defs {
+if d.StatusCode == 200 && d.BodyExample != "" {
+found = true
+}
+}
+if !found {
+t.Error("expected 200 response to have a body example")
+}
+}
+
+func TestExtractAllResponses_PostOperation(t *testing.T) {
+p := NewParser()
+defs, err := p.ExtractAllResponses(fixtureSpec, "POST", "/pets")
+if err != nil {
+t.Fatalf("ExtractAllResponses error: %v", err)
+}
+if len(defs) != 2 {
+t.Fatalf("expected 2 responses (201, 400) for POST /pets, got %d", len(defs))
+}
+}
+
+func TestExtractAllResponses_UnknownPath(t *testing.T) {
+p := NewParser()
+_, err := p.ExtractAllResponses(fixtureSpec, "GET", "/nonexistent")
+if err == nil {
+t.Error("expected error for unknown path")
+}
+}
+
+func TestExtractAllResponses_UnknownMethod(t *testing.T) {
+	p := NewParser()
+	// DELETE is not defined on /pets/{petId} in fixtureSpec — operationByMethod
+	// returns nil, so ExtractAllResponses returns (nil, nil) — not an error.
+	defs, err := p.ExtractAllResponses(fixtureSpec, "DELETE", "/pets/{petId}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if defs != nil {
+		t.Errorf("expected nil defs for undefined method, got %v", defs)
+	}
+}
+
+func TestExtractAllResponses_InvalidSpec(t *testing.T) {
+p := NewParser()
+_, err := p.ExtractAllResponses("not: valid: yaml: [", "GET", "/pets")
+if err == nil {
+t.Error("expected error for invalid spec")
+}
+}
+
+// ── ExtractOperationInputs ────────────────────────────────────────────────────
+
+func TestExtractOperationInputs_PathAndQueryParams(t *testing.T) {
+p := NewParser()
+inputs, err := p.ExtractOperationInputs(fixtureSpec, "GET", "/pets/{petId}")
+if err != nil {
+t.Fatalf("ExtractOperationInputs error: %v", err)
+}
+if inputs == nil {
+t.Fatal("expected non-nil inputs")
+}
+
+if len(inputs.PathParams) != 1 {
+t.Errorf("expected 1 path param, got %d", len(inputs.PathParams))
+}
+if inputs.PathParams[0].Name != "petId" {
+t.Errorf("expected path param 'petId', got %q", inputs.PathParams[0].Name)
+}
+if !inputs.PathParams[0].Required {
+t.Error("petId should be required")
+}
+
+if len(inputs.QueryParams) != 1 {
+t.Errorf("expected 1 query param, got %d", len(inputs.QueryParams))
+}
+if inputs.QueryParams[0].Name != "format" {
+t.Errorf("expected query param 'format', got %q", inputs.QueryParams[0].Name)
+}
+}
+
+func TestExtractOperationInputs_BodyFields(t *testing.T) {
+p := NewParser()
+inputs, err := p.ExtractOperationInputs(fixtureSpec, "POST", "/pets")
+if err != nil {
+t.Fatalf("ExtractOperationInputs error: %v", err)
+}
+if inputs == nil {
+t.Fatal("expected non-nil inputs")
+}
+
+// Should have flattened body fields: name, category, tags, tags.0, owner.id, owner.email
+fieldPaths := make(map[string]bool)
+for _, f := range inputs.BodyFields {
+fieldPaths[f.GjsonPath] = true
+}
+
+for _, want := range []string{"name", "category"} {
+if !fieldPaths[want] {
+t.Errorf("expected body field %q to be present", want)
+}
+}
+// Nested field
+if !fieldPaths["owner.id"] && !fieldPaths["owner.email"] {
+t.Error("expected nested owner fields to be flattened")
+}
+}
+
+func TestExtractOperationInputs_NoBody(t *testing.T) {
+p := NewParser()
+inputs, err := p.ExtractOperationInputs(fixtureSpec, "GET", "/pets/{petId}")
+if err != nil {
+t.Fatalf("ExtractOperationInputs error: %v", err)
+}
+if len(inputs.BodyFields) != 0 {
+t.Errorf("GET operation should have no body fields, got %d", len(inputs.BodyFields))
+}
+}
+
+func TestExtractOperationInputs_UnknownPath(t *testing.T) {
+p := NewParser()
+_, err := p.ExtractOperationInputs(fixtureSpec, "GET", "/missing")
+if err == nil {
+t.Error("expected error for unknown path")
+}
+}
+
+func TestExtractOperationInputs_InvalidSpec(t *testing.T) {
+p := NewParser()
+_, err := p.ExtractOperationInputs("!!bad yaml!!", "GET", "/pets")
+if err == nil {
+t.Error("expected error for invalid spec")
+}
+}
+
+// ── schemaTypeHint ────────────────────────────────────────────────────────────
+
+func TestSchemaTypeHint_Primitive(t *testing.T) {
+cases := []struct {
+typ  string
+want string
+}{
+{"string", "string"},
+{"integer", "integer"},
+{"number", "number"},
+{"boolean", "boolean"},
+{"array", "array"},
+}
+for _, tc := range cases {
+schema := &openapi3.Schema{Type: &openapi3.Types{tc.typ}}
+got := schemaTypeHint(schema)
+if !strings.Contains(got, tc.want) {
+t.Errorf("schemaTypeHint(%q): expected %q in %q", tc.typ, tc.want, got)
+}
+}
+}
+
+func TestSchemaTypeHint_Object(t *testing.T) {
+schema := &openapi3.Schema{
+Type: &openapi3.Types{"object"},
+Properties: openapi3.Schemas{
+"id":   {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+"name": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+},
+}
+hint := schemaTypeHint(schema)
+if !strings.Contains(hint, "object") {
+t.Errorf("expected 'object' in hint, got %q", hint)
+}
+}
+
+func TestSchemaTypeHint_Nil(t *testing.T) {
+	// schemaTypeHint(nil) returns "" by design — no schema, no hint.
+	hint := schemaTypeHint(nil)
+	if hint != "" {
+		t.Errorf("schemaTypeHint(nil) should return empty string, got %q", hint)
+	}
+}
