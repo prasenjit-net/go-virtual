@@ -1,0 +1,379 @@
+<svg width="1200" height="760" viewBox="0 0 1200 760"
+     xmlns="http://www.w3.org/2000/svg"
+     font-family="'Segoe UI','Helvetica Neue',Arial,sans-serif">
+
+  <defs>
+    <!-- Shadows -->
+    <filter id="shadow-lg" x="-8%" y="-8%" width="116%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#0F2045" flood-opacity="0.13"/>
+    </filter>
+    <filter id="shadow-sm" x="-8%" y="-8%" width="116%" height="130%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#0F2045" flood-opacity="0.09"/>
+    </filter>
+
+    <!-- Gradients -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EBF1FB"/>
+      <stop offset="100%" stop-color="#DDE6F2"/>
+    </linearGradient>
+    <linearGradient id="navy-hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#172F5C"/>
+      <stop offset="100%" stop-color="#1E4DA1"/>
+    </linearGradient>
+    <linearGradient id="platform-hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F2045"/>
+      <stop offset="100%" stop-color="#1B3A8A"/>
+    </linearGradient>
+    <linearGradient id="gateway-bg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1B3068"/>
+      <stop offset="100%" stop-color="#2A5298"/>
+    </linearGradient>
+    <linearGradient id="mock-hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#046D52"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="proxy-hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#A05C08"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="record-hdr" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5B1AA0"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="title-band" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F2045"/>
+      <stop offset="50%" stop-color="#1A3A7A"/>
+      <stop offset="100%" stop-color="#0F2045"/>
+    </linearGradient>
+
+    <!-- Arrowhead markers -->
+    <marker id="arr-slate" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#94A3B8"/>
+    </marker>
+    <marker id="arr-amber" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#D97706"/>
+    </marker>
+    <marker id="arr-blue" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#3B82F6"/>
+    </marker>
+    <marker id="arr-rose" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#E11D48"/>
+    </marker>
+    <marker id="arr-green" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#16A34A"/>
+    </marker>
+    <marker id="arr-slate-rev" markerWidth="9" markerHeight="9" refX="2" refY="3.5" orient="auto">
+      <path d="M9,0 L9,7 L0,3.5 z" fill="#94A3B8"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════════════════════ PAGE BACKGROUND ═══════════════════════ -->
+  <rect width="1200" height="760" fill="url(#bg-grad)"/>
+
+  <!-- ═══════════════════════ TITLE BAND ═══════════════════════ -->
+  <rect x="0" y="0" width="1200" height="72" fill="url(#title-band)"/>
+  <!-- Subtle top accent line -->
+  <rect x="0" y="0" width="1200" height="3" fill="#3B82F6" opacity="0.8"/>
+
+  <!-- Logo mark – simple hexagon icon -->
+  <polygon points="38,18 54,10 70,18 70,38 54,46 38,38" fill="none" stroke="#3B82F6" stroke-width="2.5" opacity="0.9"/>
+  <text x="54" y="33" text-anchor="middle" font-size="16" font-weight="700" fill="#60A5FA">GV</text>
+
+  <text x="90" y="30" font-size="22" font-weight="700" fill="white" letter-spacing="-0.3">Go-Virtual</text>
+  <text x="90" y="52" font-size="13" fill="#93C5FD" letter-spacing="0.1">API Virtualization Platform</text>
+
+  <!-- Subtitle right side -->
+  <text x="1175" y="28" text-anchor="end" font-size="11" fill="#93C5FD">v1.0.0</text>
+  <text x="1175" y="46" text-anchor="end" font-size="11" fill="#64748B">OpenAPI 3 · Mock · Proxy · Record</text>
+  <text x="1175" y="62" text-anchor="end" font-size="11" fill="#64748B">Starlark Scripting · Prometheus Metrics</text>
+
+  <!-- ═══════════════════════ LAYOUT PANELS ═══════════════════════ -->
+  <!-- Left Panel: Clients -->
+  <rect x="20" y="88" width="192" height="592" rx="14" fill="white" filter="url(#shadow-sm)"/>
+  <!-- Panel header -->
+  <rect x="20" y="88" width="192" height="44" rx="14" fill="url(#navy-hdr)"/>
+  <rect x="20" y="114" width="192" height="18" fill="#1E4DA1"/>
+  <text x="116" y="116" text-anchor="middle" font-size="12" font-weight="700" fill="white" letter-spacing="1.5">CLIENTS</text>
+
+  <!-- Center Panel: Platform -->
+  <rect x="228" y="88" width="744" height="592" rx="14" fill="white" filter="url(#shadow-lg)"/>
+
+  <!-- Right Panel: External Systems -->
+  <rect x="988" y="88" width="192" height="592" rx="14" fill="white" filter="url(#shadow-sm)"/>
+  <rect x="988" y="88" width="192" height="44" rx="14" fill="url(#navy-hdr)"/>
+  <rect x="988" y="114" width="192" height="18" fill="#1E4DA1"/>
+  <text x="1084" y="116" text-anchor="middle" font-size="12" font-weight="700" fill="white" letter-spacing="1.5">INTEGRATIONS</text>
+
+  <!-- ═══════════════════════ CLIENT CARDS ═══════════════════════ -->
+  <!-- Card helper: rounded rect with left colour accent -->
+
+  <!-- Browser / Admin UI -->
+  <rect x="34" y="148" width="164" height="76" rx="10" fill="#F0F6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <rect x="34" y="148" width="5" height="76" rx="3" fill="#2563EB"/>
+  <text x="64" y="180" text-anchor="middle" font-size="24">🌐</text>
+  <text x="136" y="172" text-anchor="middle" font-size="12" font-weight="700" fill="#1E40AF">Browser</text>
+  <text x="136" y="189" text-anchor="middle" font-size="10" fill="#3B82F6">Admin Dashboard</text>
+  <text x="136" y="204" text-anchor="middle" font-size="10" fill="#94A3B8">HTTP / HTTPS</text>
+
+  <!-- API Consumer -->
+  <rect x="34" y="238" width="164" height="76" rx="10" fill="#F0F6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <rect x="34" y="238" width="5" height="76" rx="3" fill="#2563EB"/>
+  <text x="64" y="270" text-anchor="middle" font-size="24">⚡</text>
+  <text x="136" y="262" text-anchor="middle" font-size="12" font-weight="700" fill="#1E40AF">API Consumers</text>
+  <text x="136" y="279" text-anchor="middle" font-size="10" fill="#3B82F6">Services / curl / SDKs</text>
+  <text x="136" y="294" text-anchor="middle" font-size="10" fill="#94A3B8">HTTP / HTTPS</text>
+
+  <!-- Trace Viewer -->
+  <rect x="34" y="328" width="164" height="76" rx="10" fill="#F0F6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <rect x="34" y="328" width="5" height="76" rx="3" fill="#2563EB"/>
+  <text x="64" y="360" text-anchor="middle" font-size="24">🔌</text>
+  <text x="136" y="352" text-anchor="middle" font-size="12" font-weight="700" fill="#1E40AF">Trace Viewer</text>
+  <text x="136" y="369" text-anchor="middle" font-size="10" fill="#3B82F6">Live Request Traces</text>
+  <text x="136" y="384" text-anchor="middle" font-size="10" fill="#94A3B8">WebSocket Stream</text>
+
+  <!-- Prometheus Scraper -->
+  <rect x="34" y="418" width="164" height="76" rx="10" fill="#F0F6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <rect x="34" y="418" width="5" height="76" rx="3" fill="#2563EB"/>
+  <text x="64" y="450" text-anchor="middle" font-size="24">📊</text>
+  <text x="136" y="442" text-anchor="middle" font-size="12" font-weight="700" fill="#1E40AF">Monitoring</text>
+  <text x="136" y="459" text-anchor="middle" font-size="10" fill="#3B82F6">Prometheus Scraper</text>
+  <text x="136" y="474" text-anchor="middle" font-size="10" fill="#94A3B8">HTTP Pull /metrics</text>
+
+  <!-- CLI -->
+  <rect x="34" y="508" width="164" height="62" rx="10" fill="#F0F6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <rect x="34" y="508" width="5" height="62" rx="3" fill="#2563EB"/>
+  <text x="64" y="538" text-anchor="middle" font-size="22">💻</text>
+  <text x="136" y="530" text-anchor="middle" font-size="12" font-weight="700" fill="#1E40AF">CLI</text>
+  <text x="136" y="547" text-anchor="middle" font-size="10" fill="#3B82F6">serve / version</text>
+  <text x="136" y="561" text-anchor="middle" font-size="10" fill="#94A3B8">cobra / viper</text>
+
+  <!-- ═══════════════════════ CONNECTION ARROWS (Left → Center) ═══════════════════════ -->
+  <line x1="198" y1="186" x2="228" y2="186" stroke="#94A3B8" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+  <line x1="198" y1="276" x2="228" y2="276" stroke="#94A3B8" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+  <!-- Bidirectional for trace -->
+  <line x1="198" y1="366" x2="228" y2="366" stroke="#94A3B8" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arr-slate)" marker-start="url(#arr-slate-rev)"/>
+  <line x1="198" y1="456" x2="228" y2="456" stroke="#94A3B8" stroke-width="1.8" stroke-dasharray="5,3" marker-end="url(#arr-slate)"/>
+
+  <!-- ═══════════════════════ PLATFORM HEADER ═══════════════════════ -->
+  <rect x="228" y="88" width="744" height="50" rx="14" fill="url(#platform-hdr)"/>
+  <rect x="228" y="120" width="744" height="18" fill="#1B3A8A"/>
+  <!-- Decorative dots -->
+  <circle cx="250" cy="113" r="5" fill="#3B82F6" opacity="0.6"/>
+  <circle cx="266" cy="113" r="5" fill="#60A5FA" opacity="0.4"/>
+  <circle cx="282" cy="113" r="5" fill="#93C5FD" opacity="0.3"/>
+  <text x="600" y="119" text-anchor="middle" font-size="14" font-weight="700" fill="white" letter-spacing="2">GO-VIRTUAL PLATFORM</text>
+  <text x="950" y="119" text-anchor="end" font-size="10" fill="#60A5FA">Single Binary · Embedded UI</text>
+
+  <!-- ═══════════════════════ ADMIN UI ROW ═══════════════════════ -->
+  <rect x="240" y="148" width="720" height="56" rx="10" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1.5"/>
+  <!-- Label -->
+  <text x="274" y="174" font-size="11" font-weight="700" fill="#1E40AF">🖥  ADMIN WEB INTERFACE</text>
+  <text x="274" y="191" font-size="10" fill="#3B82F6">React 18 · TypeScript · Vite · TailwindCSS · Monaco Editor · Embedded in Go binary</text>
+  <!-- Admin UI pills -->
+  <rect x="630" y="153" width="90" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="675" y="168" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Spec Manager</text>
+  <rect x="726" y="153" width="100" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="776" y="168" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Response Designer</text>
+  <rect x="832" y="153" width="82" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="873" y="168" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Script Editor</text>
+  <rect x="630" y="177" width="82" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="671" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Trace Viewer</text>
+  <rect x="718" y="177" width="100" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="768" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Store Inspector</text>
+  <rect x="824" y="177" width="90" height="22" rx="5" fill="#DBEAFE"/>
+  <text x="869" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Session Viewer</text>
+
+  <!-- ═══════════════════════ API GATEWAY ROW ═══════════════════════ -->
+  <rect x="240" y="214" width="720" height="40" rx="10" fill="url(#gateway-bg)"/>
+  <text x="600" y="231" text-anchor="middle" font-size="11" font-weight="700" fill="white" letter-spacing="0.5">🔀  API GATEWAY</text>
+  <text x="600" y="247" text-anchor="middle" font-size="10" fill="#93C5FD">Gin Router · TLS Mux (HTTP + HTTPS on same port) · CORS Middleware · Route Dispatch</text>
+
+  <!-- ═══════════════════════ SECTION LABEL: MODES ═══════════════════════ -->
+  <text x="252" y="277" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">OPERATION MODES</text>
+  <!-- divider -->
+  <line x1="340" y1="272" x2="956" y2="272" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- ─── MOCK MODE ─── -->
+  <rect x="240" y="283" width="228" height="130" rx="11" fill="#F0FDF7" stroke="#6EE7B7" stroke-width="2" filter="url(#shadow-sm)"/>
+  <rect x="240" y="283" width="228" height="40" rx="11" fill="url(#mock-hdr)"/>
+  <rect x="240" y="306" width="228" height="17" fill="#059669"/>
+  <text x="354" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🎭  MOCK MODE</text>
+  <text x="354" y="340" text-anchor="middle" font-size="10" fill="#065F46">Return pre-configured responses</text>
+  <text x="354" y="356" text-anchor="middle" font-size="10" fill="#065F46">without calling any backend</text>
+  <!-- Chips -->
+  <rect x="254" y="368" width="94" height="18" rx="4" fill="#D1FAE5"/>
+  <text x="301" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Condition Rules</text>
+  <rect x="355" y="368" width="100" height="18" rx="4" fill="#D1FAE5"/>
+  <text x="405" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Script Bindings</text>
+  <rect x="254" y="391" width="200" height="18" rx="4" fill="#D1FAE5"/>
+  <text x="354" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Priority-ordered Matching</text>
+
+  <!-- ─── PROXY MODE ─── -->
+  <rect x="486" y="283" width="228" height="130" rx="11" fill="#FFFBEB" stroke="#FCD34D" stroke-width="2" filter="url(#shadow-sm)"/>
+  <rect x="486" y="283" width="228" height="40" rx="11" fill="url(#proxy-hdr)"/>
+  <rect x="486" y="306" width="228" height="17" fill="#D97706"/>
+  <text x="600" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🔁  PROXY MODE</text>
+  <text x="600" y="340" text-anchor="middle" font-size="10" fill="#78350F">Transparently forward requests</text>
+  <text x="600" y="356" text-anchor="middle" font-size="10" fill="#78350F">to real upstream API servers</text>
+  <!-- Chips -->
+  <rect x="500" y="368" width="90" height="18" rx="4" fill="#FEF3C7"/>
+  <text x="545" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">HTTP Client</text>
+  <rect x="597" y="368" width="104" height="18" rx="4" fill="#FEF3C7"/>
+  <text x="649" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">mTLS Support</text>
+  <rect x="500" y="391" width="200" height="18" rx="4" fill="#FEF3C7"/>
+  <text x="600" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">Header Passthrough</text>
+
+  <!-- ─── RECORD MODE ─── -->
+  <rect x="732" y="283" width="228" height="130" rx="11" fill="#F6F2FF" stroke="#C4B5FD" stroke-width="2" filter="url(#shadow-sm)"/>
+  <rect x="732" y="283" width="228" height="40" rx="11" fill="url(#record-hdr)"/>
+  <rect x="732" y="306" width="228" height="17" fill="#7C3AED"/>
+  <text x="846" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">⏺  RECORD MODE</text>
+  <text x="846" y="340" text-anchor="middle" font-size="10" fill="#3B0764">Proxy and capture real responses</text>
+  <text x="846" y="356" text-anchor="middle" font-size="10" fill="#3B0764">auto-saved as mock configs</text>
+  <!-- Chips -->
+  <rect x="746" y="368" width="90" height="18" rx="4" fill="#EDE9FE"/>
+  <text x="791" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Proxy + Save</text>
+  <rect x="843" y="368" width="104" height="18" rx="4" fill="#EDE9FE"/>
+  <text x="895" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">No Code Needed</text>
+  <rect x="746" y="391" width="200" height="18" rx="4" fill="#EDE9FE"/>
+  <text x="846" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Record-once, Mock-forever</text>
+
+  <!-- ═══════════════════════ SECTION LABEL: CORE ENGINE ═══════════════════════ -->
+  <text x="252" y="433" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">CORE ENGINE</text>
+  <line x1="336" y1="428" x2="956" y2="428" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- ─── Starlark Scripting ─── -->
+  <rect x="240" y="441" width="228" height="90" rx="10" fill="#FFF7ED" stroke="#FED7AA" stroke-width="1.5"/>
+  <text x="354" y="463" text-anchor="middle" font-size="12" font-weight="700" fill="#C2410C">📜  Starlark Scripting</text>
+  <text x="354" y="480" text-anchor="middle" font-size="10" fill="#9A3412">Sandboxed custom logic per request</text>
+  <text x="354" y="496" text-anchor="middle" font-size="10" fill="#9A3412">Session-scoped KV store access</text>
+  <text x="354" y="511" text-anchor="middle" font-size="10" fill="#9A3412">LRU compile cache · 100 ms timeout</text>
+  <text x="354" y="526" text-anchor="middle" font-size="9" fill="#F97316" font-style="italic">store.get / set / has / delete</text>
+
+  <!-- ─── Template Engine ─── -->
+  <rect x="486" y="441" width="228" height="90" rx="10" fill="#FFF7ED" stroke="#FED7AA" stroke-width="1.5"/>
+  <text x="600" y="463" text-anchor="middle" font-size="12" font-weight="700" fill="#C2410C">🔖  Template Engine</text>
+  <text x="600" y="480" text-anchor="middle" font-size="10" fill="#9A3412">Dynamic response body &amp; headers</text>
+  <text x="600" y="496" text-anchor="middle" font-size="10" fill="#9A3412">{{.path.*}}  {{.query.*}}  {{.body.*}}</text>
+  <text x="600" y="511" text-anchor="middle" font-size="10" fill="#9A3412">{{.random.uuid}}  {{.timestamp}}</text>
+  <text x="600" y="526" text-anchor="middle" font-size="9" fill="#F97316" font-style="italic">{{.script.outputKey.field}}</text>
+
+  <!-- ─── Condition Evaluator ─── -->
+  <rect x="732" y="441" width="228" height="90" rx="10" fill="#FFF7ED" stroke="#FED7AA" stroke-width="1.5"/>
+  <text x="846" y="463" text-anchor="middle" font-size="12" font-weight="700" fill="#C2410C">⚖  Condition Evaluator</text>
+  <text x="846" y="480" text-anchor="middle" font-size="10" fill="#9A3412">Rule-based response selection</text>
+  <text x="846" y="496" text-anchor="middle" font-size="10" fill="#9A3412">eq · ne · contains · regex · in</text>
+  <text x="846" y="511" text-anchor="middle" font-size="10" fill="#9A3412">gt · gte · lt · lte · exists</text>
+  <text x="846" y="526" text-anchor="middle" font-size="9" fill="#F97316" font-style="italic">Priority-ordered, first match wins</text>
+
+  <!-- ═══════════════════════ SECTION LABEL: DATA & OBSERVABILITY ═══════════════════════ -->
+  <text x="252" y="551" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">DATA &amp; OBSERVABILITY</text>
+  <line x1="394" y1="546" x2="956" y2="546" stroke="#E2E8F0" stroke-width="1"/>
+
+  <!-- ─── Storage ─── -->
+  <rect x="240" y="560" width="228" height="100" rx="10" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="354" y="581" text-anchor="middle" font-size="12" font-weight="700" fill="#3730A3">🗄  Storage</text>
+  <text x="354" y="598" text-anchor="middle" font-size="10" fill="#4338CA">Pluggable: Memory or File-based</text>
+  <text x="354" y="614" text-anchor="middle" font-size="10" fill="#4338CA">Specs · Operations · Responses</text>
+  <text x="354" y="630" text-anchor="middle" font-size="10" fill="#4338CA">Scripts · Archive (zip import/export)</text>
+  <text x="354" y="646" text-anchor="middle" font-size="9" fill="#818CF8" font-style="italic">./data/*.json  |  in-memory</text>
+
+  <!-- ─── Session Store ─── -->
+  <rect x="486" y="560" width="228" height="100" rx="10" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1.5"/>
+  <text x="600" y="581" text-anchor="middle" font-size="12" font-weight="700" fill="#0F766E">🔑  Session Store</text>
+  <text x="600" y="598" text-anchor="middle" font-size="10" fill="#0D9488">Per-request ephemeral KV sessions</text>
+  <text x="600" y="614" text-anchor="middle" font-size="10" fill="#0D9488">Global persistent store (store.json)</text>
+  <text x="600" y="630" text-anchor="middle" font-size="10" fill="#0D9488">X-Virtual-Session-Id header routing</text>
+  <text x="600" y="646" text-anchor="middle" font-size="9" fill="#2DD4BF" font-style="italic">30 min inactivity expiry</text>
+
+  <!-- ─── Observability ─── -->
+  <rect x="732" y="560" width="228" height="100" rx="10" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5"/>
+  <text x="846" y="581" text-anchor="middle" font-size="12" font-weight="700" fill="#BE123C">📡  Observability</text>
+  <text x="846" y="598" text-anchor="middle" font-size="10" fill="#9F1239">Prometheus metrics  /_prometheus</text>
+  <text x="846" y="614" text-anchor="middle" font-size="10" fill="#9F1239">Live request tracing (ring buffer)</text>
+  <text x="846" y="630" text-anchor="middle" font-size="10" fill="#9F1239">WebSocket real-time trace stream</text>
+  <text x="846" y="646" text-anchor="middle" font-size="9" fill="#FB7185" font-style="italic">Latency · Error rate · Per-spec stats</text>
+
+  <!-- ═══════════════════════ RIGHT PANEL CARDS ═══════════════════════ -->
+
+  <!-- Upstream API -->
+  <rect x="1002" y="148" width="164" height="80" rx="10" fill="#FFFBEB" stroke="#FDE68A" stroke-width="1.5"/>
+  <rect x="1161" y="148" width="5" height="80" rx="3" fill="#D97706"/>
+  <text x="1030" y="183" text-anchor="middle" font-size="24">🏢</text>
+  <text x="1100" y="176" text-anchor="middle" font-size="12" font-weight="700" fill="#92400E">Upstream API</text>
+  <text x="1100" y="193" text-anchor="middle" font-size="10" fill="#D97706">Real backend server</text>
+  <text x="1100" y="208" text-anchor="middle" font-size="10" fill="#94A3B8">HTTP/HTTPS · mTLS</text>
+  <text x="1100" y="222" text-anchor="middle" font-size="9" fill="#94A3B8">(Proxy &amp; Record modes)</text>
+
+  <!-- Prometheus / Grafana -->
+  <rect x="1002" y="244" width="164" height="80" rx="10" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5"/>
+  <rect x="1161" y="244" width="5" height="80" rx="3" fill="#E11D48"/>
+  <text x="1030" y="278" text-anchor="middle" font-size="24">📈</text>
+  <text x="1100" y="264" text-anchor="middle" font-size="12" font-weight="700" fill="#9F1239">Prometheus</text>
+  <text x="1100" y="281" text-anchor="middle" font-size="10" fill="#E11D48">Metrics &amp; Grafana</text>
+  <text x="1100" y="298" text-anchor="middle" font-size="10" fill="#94A3B8">Alerting / Dashboards</text>
+  <text x="1100" y="315" text-anchor="middle" font-size="9" fill="#94A3B8">(Scrapes /_prometheus)</text>
+
+  <!-- OpenAI -->
+  <rect x="1002" y="340" width="164" height="80" rx="10" fill="#F0FDF4" stroke="#BBF7D0" stroke-width="1.5"/>
+  <rect x="1161" y="340" width="5" height="80" rx="3" fill="#16A34A"/>
+  <text x="1030" y="374" text-anchor="middle" font-size="24">🤖</text>
+  <text x="1100" y="360" text-anchor="middle" font-size="12" font-weight="700" fill="#166534">OpenAI API</text>
+  <text x="1100" y="377" text-anchor="middle" font-size="10" fill="#16A34A">AI-generated responses</text>
+  <text x="1100" y="394" text-anchor="middle" font-size="10" fill="#94A3B8">and Starlark scripts</text>
+  <text x="1100" y="411" text-anchor="middle" font-size="9" fill="#94A3B8">(gpt-4o-mini)</text>
+
+  <!-- TLS / Config -->
+  <rect x="1002" y="436" width="164" height="70" rx="10" fill="#F8FAFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="1161" y="436" width="5" height="70" rx="3" fill="#4338CA"/>
+  <text x="1030" y="467" text-anchor="middle" font-size="22">🔒</text>
+  <text x="1100" y="456" text-anchor="middle" font-size="12" font-weight="700" fill="#3730A3">TLS / Config</text>
+  <text x="1100" y="473" text-anchor="middle" font-size="10" fill="#4338CA">Auto self-signed cert</text>
+  <text x="1100" y="490" text-anchor="middle" font-size="10" fill="#94A3B8">YAML config · viper</text>
+  <text x="1100" y="500" text-anchor="middle" font-size="9" fill="#94A3B8">(Optional external cert)</text>
+
+  <!-- ═══════════════════════ CONNECTION ARROWS (Center → Right) ═══════════════════════ -->
+  <!-- Proxy Mode → Upstream API: diagonal from proxy mode box right edge to upstream card -->
+  <path d="M 714 348 Q 860 348 972 188" stroke="#D97706" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-amber)"/>
+  <text x="828" y="338" font-size="9" fill="#D97706" font-weight="600">proxy / record</text>
+
+  <!-- Observability → Prometheus -->
+  <path d="M 972 610 Q 985 610 985 284 Q 985 284 1002 284" stroke="#E11D48" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-rose)"/>
+  <text x="978" y="548" font-size="9" fill="#E11D48" font-weight="600" transform="rotate(-90, 978, 548)">metrics</text>
+
+  <!-- Admin AI → OpenAI -->
+  <path d="M 972 186 Q 985 186 985 380 Q 985 380 1002 380" stroke="#16A34A" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-green)"/>
+  <text x="978" y="280" font-size="9" fill="#16A34A" font-weight="600" transform="rotate(90, 978, 280)">AI gen</text>
+
+  <!-- ═══════════════════════ FOOTER ═══════════════════════ -->
+  <rect x="0" y="700" width="1200" height="60" fill="#0F2045" opacity="0.95"/>
+  <rect x="0" y="700" width="1200" height="2" fill="#3B82F6" opacity="0.5"/>
+
+  <!-- Key capabilities chips in footer -->
+  <rect x="40" y="716" width="122" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="101" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Single Go Binary</text>
+
+  <rect x="172" y="716" width="128" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="236" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Embedded React UI</text>
+
+  <rect x="310" y="716" width="122" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="371" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">OpenAPI 3 Parser</text>
+
+  <rect x="442" y="716" width="130" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="507" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Starlark Scripting</text>
+
+  <rect x="582" y="716" width="140" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="652" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Prometheus Metrics</text>
+
+  <rect x="732" y="716" width="122" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="793" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">TLS / Auto-cert</text>
+
+  <rect x="864" y="716" width="140" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="934" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Session-aware Store</text>
+
+  <rect x="1014" y="716" width="150" height="22" rx="5" fill="#1E3A7A"/>
+  <text x="1089" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Zero External Dependencies</text>
+
+  <text x="600" y="752" text-anchor="middle" font-size="10" fill="#475569">Go-Virtual — API Virtualization Platform · Built with Go 1.21+ · github.com/prasenjit-net/go-virtual</text>
+
+</svg>
