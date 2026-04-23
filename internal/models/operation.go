@@ -7,17 +7,17 @@ type ConditionalModeConfig struct {
 	Conditions []Condition `json:"conditions,omitempty"`
 }
 
-// OperationModePolicy defines operation-scoped fallback mode behavior.
+// ModePolicy defines fallback mode behavior.
 // Standard fallback is implicit; AI and proxy are optional conditional modes.
-type OperationModePolicy struct {
+type ModePolicy struct {
 	Configured bool                  `json:"configured,omitempty"`
 	AI         ConditionalModeConfig `json:"ai"`
 	Proxy      ConditionalModeConfig `json:"proxy"`
 }
 
-// DefaultOperationModePolicy returns the default policy for new operations.
-func DefaultOperationModePolicy() OperationModePolicy {
-	return OperationModePolicy{
+// DefaultModePolicy returns the default fallback policy.
+func DefaultModePolicy() ModePolicy {
+	return ModePolicy{
 		Configured: false,
 		AI:         ConditionalModeConfig{Enabled: false, Conditions: []Condition{}},
 		Proxy:      ConditionalModeConfig{Enabled: false, Conditions: []Condition{}},
@@ -25,7 +25,7 @@ func DefaultOperationModePolicy() OperationModePolicy {
 }
 
 // Normalize ensures slices are non-nil so API responses remain stable.
-func (p *OperationModePolicy) Normalize() {
+func (p *ModePolicy) Normalize() {
 	if p == nil {
 		return
 	}
@@ -37,10 +37,10 @@ func (p *OperationModePolicy) Normalize() {
 	}
 }
 
-// LegacyOperationModePolicy maps the legacy spec-wide mode model to the new
-// operation-scoped policy for backward compatibility.
-func LegacyOperationModePolicy(spec *Spec) OperationModePolicy {
-	policy := DefaultOperationModePolicy()
+// LegacyModePolicy maps the legacy spec-wide mode model to the new
+// conditional fallback policy for backward compatibility.
+func LegacyModePolicy(spec *Spec) ModePolicy {
+	policy := DefaultModePolicy()
 	if spec == nil {
 		return policy
 	}
@@ -61,19 +61,18 @@ func LegacyOperationModePolicy(spec *Spec) OperationModePolicy {
 
 // Operation represents an API operation from an OpenAPI spec
 type Operation struct {
-	ID              string              `json:"id"`
-	SpecID          string              `json:"specId"`
-	Method          string              `json:"method"`      // GET, POST, PUT, DELETE, PATCH, etc.
-	Path            string              `json:"path"`        // Path pattern e.g., /users/{id}
-	FullPath        string              `json:"fullPath"`    // BasePath + Path
-	OperationID     string              `json:"operationId"` // From OpenAPI spec
-	Summary         string              `json:"summary"`
-	Description     string              `json:"description"`
-	Tags            []string            `json:"tags"`
-	Responses       []ResponseConfig    `json:"responses,omitempty"`
-	ExampleResponse *ExampleResponse    `json:"exampleResponse,omitempty"` // From OpenAPI spec
-	SignatureConfig *SignatureConfig    `json:"signatureConfig,omitempty"` // Controls request signature generation
-	ModePolicy      OperationModePolicy `json:"modePolicy"`
+	ID              string           `json:"id"`
+	SpecID          string           `json:"specId"`
+	Method          string           `json:"method"`      // GET, POST, PUT, DELETE, PATCH, etc.
+	Path            string           `json:"path"`        // Path pattern e.g., /users/{id}
+	FullPath        string           `json:"fullPath"`    // BasePath + Path
+	OperationID     string           `json:"operationId"` // From OpenAPI spec
+	Summary         string           `json:"summary"`
+	Description     string           `json:"description"`
+	Tags            []string         `json:"tags"`
+	Responses       []ResponseConfig `json:"responses,omitempty"`
+	ExampleResponse *ExampleResponse `json:"exampleResponse,omitempty"` // From OpenAPI spec
+	SignatureConfig *SignatureConfig `json:"signatureConfig,omitempty"` // Controls request signature generation
 }
 
 // ExampleResponse holds example response data from the OpenAPI spec
@@ -85,21 +84,13 @@ type ExampleResponse struct {
 
 // OperationSummary is a lightweight version for listings
 type OperationSummary struct {
-	ID                 string              `json:"id"`
-	SpecID             string              `json:"specId"`
-	Method             string              `json:"method"`
-	Path               string              `json:"path"`
-	FullPath           string              `json:"fullPath"`
-	OperationID        string              `json:"operationId"`
-	Summary            string              `json:"summary"`
-	ResponseCount      int                 `json:"responseCount"`
-	HasExampleResponse bool                `json:"hasExampleResponse"`
-	ModePolicy         OperationModePolicy `json:"modePolicy"`
-}
-
-func (o *Operation) NormalizeModePolicy() {
-	if o == nil {
-		return
-	}
-	o.ModePolicy.Normalize()
+	ID                 string `json:"id"`
+	SpecID             string `json:"specId"`
+	Method             string `json:"method"`
+	Path               string `json:"path"`
+	FullPath           string `json:"fullPath"`
+	OperationID        string `json:"operationId"`
+	Summary            string `json:"summary"`
+	ResponseCount      int    `json:"responseCount"`
+	HasExampleResponse bool   `json:"hasExampleResponse"`
 }

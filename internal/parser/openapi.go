@@ -69,7 +69,6 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 		UseExampleFallback: true, // Enable example fallback by default
 		Mode:               models.SpecModeStandard,
 		BackendURI:         defaultBackendURI,
-		ModePolicy:         models.DefaultOperationModePolicy(),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -141,7 +140,6 @@ func (p *Parser) extractOperations(doc *openapi3.T, specID, basePath string) []*
 				Summary:     op.Summary,
 				Description: op.Description,
 				Tags:        op.Tags,
-				ModePolicy:  models.DefaultOperationModePolicy(),
 			}
 
 			// Extract example response from spec (try 200, 201, then default)

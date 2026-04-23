@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +42,58 @@ func TestNewEngine(t *testing.T) {
 
 	if engine.routes == nil {
 		t.Error("Expected routes map to be initialized")
+	}
+}
+
+func TestSelectMode_LogsAIMisconfigurationOnce(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	spec := &models.Spec{
+		ID:   "spec-ai",
+		Name: "AI API",
+		ModePolicy: models.ModePolicy{
+			Configured: true,
+			AI:         models.ConditionalModeConfig{Enabled: true},
+			Proxy:      models.ConditionalModeConfig{Enabled: false},
+		},
+	}
+
+	var buf bytes.Buffer
+	origWriter := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(origWriter)
+
+	engine.selectMode(spec, nil)
+	engine.selectMode(spec, nil)
+
+	logs := buf.String()
+	if strings.Count(logs, "AI generator is not configured") != 1 {
+		t.Fatalf("expected a single AI misconfiguration warning, got %q", logs)
+	}
+}
+
+func TestSelectMode_LogsMissingBackendOnce(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	spec := &models.Spec{
+		ID:   "spec-proxy",
+		Name: "Proxy API",
+		ModePolicy: models.ModePolicy{
+			Configured: true,
+			AI:         models.ConditionalModeConfig{Enabled: false},
+			Proxy:      models.ConditionalModeConfig{Enabled: true},
+		},
+	}
+
+	var buf bytes.Buffer
+	origWriter := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(origWriter)
+
+	engine.selectMode(spec, nil)
+	engine.selectMode(spec, nil)
+
+	logs := buf.String()
+	if strings.Count(logs, "backend URI is not configured") != 1 {
+		t.Fatalf("expected a single proxy misconfiguration warning, got %q", logs)
 	}
 }
 

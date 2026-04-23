@@ -18,7 +18,7 @@ import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
 import type {
     Condition,
     ConditionOperator,
-    OperationModePolicy,
+    ModePolicy,
     OperationSummary,
     Spec,
 } from '../../types'
@@ -49,15 +49,15 @@ const operators: { value: ConditionOperator; label: string }[] = [
     { value: 'lte', label: 'Less or Equal' },
 ]
 
-const sources = ['path', 'query', 'header', 'body', 'signature'] as const
+const sources = ['path', 'query', 'header', 'body'] as const
 
-const createDefaultPolicy = (): OperationModePolicy => ({
+const createDefaultPolicy = (): ModePolicy => ({
     configured: true,
     ai: { enabled: false, conditions: [] },
     proxy: { enabled: false, conditions: [] },
 })
 
-const clonePolicy = (policy?: OperationModePolicy): OperationModePolicy => ({
+const clonePolicy = (policy?: ModePolicy): ModePolicy => ({
     configured: true,
     ai: {
         enabled: policy?.ai.enabled ?? false,
@@ -86,11 +86,7 @@ function ConditionsEditor({
 
     const updateCondition = (index: number, updates: Partial<Condition>) => {
         const next = [...conditions]
-        const updated = { ...next[index], ...updates }
-        if (updates.source === 'signature') {
-            updated.key = ''
-        }
-        next[index] = updated
+        next[index] = { ...next[index], ...updates }
         onChange(next)
     }
 
@@ -137,9 +133,8 @@ function ConditionsEditor({
                             type="text"
                             value={cond.key}
                             onChange={(e) => updateCondition(index, { key: e.target.value })}
-                            disabled={cond.source === 'signature'}
-                            placeholder={cond.source === 'signature' ? 'signature has no key' : 'key / path'}
-                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+                            placeholder="key / path"
+                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
                         />
                         <select
                             value={cond.operator}
@@ -177,7 +172,7 @@ export default function SpecDetail() {
     const { specId } = useParams<{ specId: string }>()
     const queryClient = useQueryClient()
     const [backendURIInput, setBackendURIInput] = useState<string | null>(null)
-    const [draftPolicy, setDraftPolicy] = useState<OperationModePolicy | null>(null)
+    const [draftPolicy, setDraftPolicy] = useState<ModePolicy | null>(null)
     const [policyError, setPolicyError] = useState('')
 
     const { data: spec, isLoading: specLoading } = useQuery<Spec>({
@@ -219,7 +214,7 @@ export default function SpecDetail() {
     })
 
     const updateModePolicyMutation = useMutation({
-        mutationFn: (modePolicy: OperationModePolicy) => specsApi.updateModePolicy(specId!, modePolicy),
+        mutationFn: (modePolicy: ModePolicy) => specsApi.updateModePolicy(specId!, modePolicy),
         onSuccess: () => {
             setPolicyError('')
             setDraftPolicy(null)
@@ -272,7 +267,7 @@ export default function SpecDetail() {
         return acc
     }, {} as Record<string, OperationSummary[]>)
 
-    const updatePolicy = (updater: (policy: OperationModePolicy) => OperationModePolicy) => {
+    const updatePolicy = (updater: (policy: ModePolicy) => ModePolicy) => {
         setDraftPolicy((prev) => updater(clonePolicy(prev ?? spec.modePolicy ?? createDefaultPolicy())))
     }
 

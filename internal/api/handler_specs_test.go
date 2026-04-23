@@ -299,6 +299,40 @@ func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
 	}
 }
 
+func TestUpdateSpecModePolicy_RejectsSignatureConditions(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	body := map[string]any{
+		"modePolicy": map[string]any{
+			"ai": map[string]any{
+				"enabled": false,
+				"conditions": []map[string]any{
+					{"source": "signature", "operator": "eq", "value": "abc123"},
+				},
+			},
+			"proxy": map[string]any{
+				"enabled":    true,
+				"conditions": []map[string]any{},
+			},
+		},
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("signature conditions are only supported on operation responses")) {
+		t.Fatalf("expected signature-condition error, got %s", w.Body.String())
+	}
+}
+
 // ── DeleteSpec ───────────────────────────────────────────────────────────────
 
 func TestDeleteSpec(t *testing.T) {

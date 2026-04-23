@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -69,6 +71,7 @@ var skipRecordedResponseHeaders = map[string]bool{
 type Recorder struct {
 	store      storage.Storage
 	httpClient *http.Client
+	saveLocks  [64]sync.Mutex
 }
 
 // NewRecorder creates a new Recorder with a permissive TLS transport suitable
@@ -187,12 +190,15 @@ func (r *Recorder) SaveResponse(
 	body string,
 	origin string,
 ) {
+	origin = models.NormalizeResponseOrigin(origin, true)
+	lock := r.saveLock(op.ID, origin, signature)
+	lock.Lock()
+	defer lock.Unlock()
+
 	configs, err := r.store.GetResponseConfigsByOperation(op.ID)
 	if err != nil {
 		return
 	}
-
-	origin = models.NormalizeResponseOrigin(origin, true)
 
 	// Check whether a generated response for this signature and origin already exists.
 	var existing *models.ResponseConfig
@@ -257,6 +263,16 @@ func (r *Recorder) SaveResponse(
 	}
 
 	_ = r.store.CreateResponseConfig(cfg)
+}
+
+func (r *Recorder) saveLock(opID, origin, signature string) *sync.Mutex {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(opID))
+	_, _ = hasher.Write([]byte{0})
+	_, _ = hasher.Write([]byte(origin))
+	_, _ = hasher.Write([]byte{0})
+	_, _ = hasher.Write([]byte(signature))
+	return &r.saveLocks[hasher.Sum32()%uint32(len(r.saveLocks))]
 }
 
 // generateRecordedID creates a unique ID for a recorded ResponseConfig.

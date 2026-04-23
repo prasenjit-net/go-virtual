@@ -17,7 +17,7 @@ export interface Spec {
     mode: SpecMode;
     backendUri: string;
     proxyMode: boolean;
-    modePolicy: OperationModePolicy;
+    modePolicy: ModePolicy;
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -44,7 +44,6 @@ export interface Operation {
     responses?: ResponseConfig[];
     exampleResponse?: ExampleResponse;
     signatureConfig?: SignatureConfig | null;
-    modePolicy: OperationModePolicy;
 }
 
 export interface ConditionalModeConfig {
@@ -52,7 +51,7 @@ export interface ConditionalModeConfig {
     conditions: Condition[];
 }
 
-export interface OperationModePolicy {
+export interface ModePolicy {
     configured?: boolean;
     ai: ConditionalModeConfig;
     proxy: ConditionalModeConfig;
@@ -88,7 +87,6 @@ export interface OperationSummary {
     summary: string;
     responseCount: number;
     hasExampleResponse: boolean;
-    modePolicy: OperationModePolicy;
 }
 
 // Response config types

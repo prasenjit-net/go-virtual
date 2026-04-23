@@ -4,6 +4,7 @@ import (
 	"hash"
 	"hash/fnv"
 	"io"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -39,6 +40,8 @@ type Engine struct {
 	recorder          *Recorder
 	aiGenerator       *ai.Generator
 	mu                sync.RWMutex
+	warningMu         sync.Mutex
+	runtimeWarnings   map[string]struct{}
 	routes            map[string][]*route // method -> routes
 }
 
@@ -59,14 +62,15 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	}
 
 	e := &Engine{
-		store:          store,
-		statsCollector: statsCollector,
-		tracingService: tracingService,
-		condEvaluator:  condition.NewEvaluator(),
-		templateEngine: template.NewEngine(),
-		scriptEngine:   scripting.NewScriptEngine(store, timeoutMs),
-		recorder:       NewRecorder(store),
-		routes:         make(map[string][]*route),
+		store:           store,
+		statsCollector:  statsCollector,
+		tracingService:  tracingService,
+		condEvaluator:   condition.NewEvaluator(),
+		templateEngine:  template.NewEngine(),
+		scriptEngine:    scripting.NewScriptEngine(store, timeoutMs),
+		recorder:        NewRecorder(store),
+		runtimeWarnings: make(map[string]struct{}),
+		routes:          make(map[string][]*route),
 	}
 
 	// Load initial routes
@@ -92,6 +96,7 @@ func (e *Engine) SetProxyHTTPClient(client *http.Client) {
 // SetAIGenerator attaches the runtime AI generator used for AI fallback mode.
 func (e *Engine) SetAIGenerator(generator *ai.Generator) {
 	e.aiGenerator = generator
+	e.resetRuntimeWarnings()
 }
 
 // ReloadRoutes reloads all routes from enabled specs
@@ -101,6 +106,7 @@ func (e *Engine) ReloadRoutes() error {
 
 	// Clear existing routes
 	e.routes = make(map[string][]*route)
+	e.resetRuntimeWarnings()
 
 	// Get all enabled specs
 	specs, err := e.store.GetEnabledSpecs()
@@ -719,6 +725,7 @@ func (e *Engine) selectMode(spec *models.Spec, reqData *condition.RequestData) m
 		selection.AISkippedReason = "disabled"
 	} else if e.aiGenerator == nil || !e.aiGenerator.IsConfigured() {
 		selection.AISkippedReason = "not-configured"
+		e.warnModeUnavailable(spec, "AI", "AI generator is not configured")
 	} else if e.condEvaluator.EvaluateAll(policy.AI.Conditions, reqData) {
 		selection.Mode = models.SpecModeAI
 		return selection
@@ -732,6 +739,7 @@ func (e *Engine) selectMode(spec *models.Spec, reqData *condition.RequestData) m
 	}
 	if spec == nil || spec.BackendURI == "" {
 		selection.ProxySkippedReason = "no-backend"
+		e.warnModeUnavailable(spec, "proxy", "backend URI is not configured")
 		return selection
 	}
 	if e.condEvaluator.EvaluateAll(policy.Proxy.Conditions, reqData) {
@@ -740,6 +748,29 @@ func (e *Engine) selectMode(spec *models.Spec, reqData *condition.RequestData) m
 	}
 	selection.ProxySkippedReason = "conditions-not-matched"
 	return selection
+}
+
+func (e *Engine) warnModeUnavailable(spec *models.Spec, mode, reason string) {
+	if spec == nil {
+		return
+	}
+
+	key := spec.ID + "|" + mode + "|" + reason
+	e.warningMu.Lock()
+	if _, exists := e.runtimeWarnings[key]; exists {
+		e.warningMu.Unlock()
+		return
+	}
+	e.runtimeWarnings[key] = struct{}{}
+	e.warningMu.Unlock()
+
+	log.Printf("proxy: %s fallback enabled for spec %q (%s) but skipped: %s", mode, spec.Name, spec.ID, reason)
+}
+
+func (e *Engine) resetRuntimeWarnings() {
+	e.warningMu.Lock()
+	defer e.warningMu.Unlock()
+	e.runtimeWarnings = make(map[string]struct{})
 }
 
 func (e *Engine) buildAIOperationContext(op *models.Operation) ai.OperationContext {

@@ -118,8 +118,6 @@ func (r *Router) setupRoutes() {
 		api.GET("/operations/:id", r.handler.GetOperation)
 		api.GET("/operations/:id/signature", r.handler.GetSignatureConfig)
 		api.PUT("/operations/:id/signature", r.handler.UpdateSignatureConfig)
-		api.GET("/operations/:id/mode-policy", r.handler.GetModePolicy)
-		api.PUT("/operations/:id/mode-policy", r.handler.UpdateModePolicy)
 
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)

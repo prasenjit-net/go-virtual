@@ -153,12 +153,12 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	if update.BackendURI != nil {
 		spec.BackendURI = *update.BackendURI
 		if spec.BackendURI == "" {
-			if spec.EffectiveMode() == models.SpecModeProxy {
-				spec.SetMode(models.SpecModeStandard)
+			policy := spec.EffectiveModePolicy()
+			policy.Proxy.Enabled = false
+			if err := h.setSpecModePolicy(spec, policy); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
 			}
-			spec.ModePolicy = spec.EffectiveModePolicy()
-			spec.ModePolicy.Proxy.Enabled = false
-			spec.ModePolicy.Configured = true
 		}
 	}
 	if update.Mode != nil {
@@ -180,13 +180,10 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 		}
 	}
 	if update.ModePolicy != nil {
-		update.ModePolicy.Normalize()
-		if err := h.validateModePolicy(spec, *update.ModePolicy); err != nil {
+		if err := h.setSpecModePolicy(spec, *update.ModePolicy); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		spec.ModePolicy = *update.ModePolicy
-		spec.ModePolicy.Configured = true
 	}
 
 	spec.UpdatedAt = time.Now()
@@ -361,12 +358,12 @@ func (h *Handler) SetBackendURI(c *gin.Context) {
 
 	spec.BackendURI = input.BackendURI
 	if spec.BackendURI == "" {
-		if spec.EffectiveMode() == models.SpecModeProxy {
-			spec.SetMode(models.SpecModeStandard)
+		policy := spec.EffectiveModePolicy()
+		policy.Proxy.Enabled = false
+		if err := h.setSpecModePolicy(spec, policy); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
-		spec.ModePolicy = spec.EffectiveModePolicy()
-		spec.ModePolicy.Proxy.Enabled = false
-		spec.ModePolicy.Configured = true
 	}
 	spec.UpdatedAt = time.Now()
 
@@ -477,8 +474,17 @@ func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
 		policy.AI.Enabled = false
 		policy.Proxy.Enabled = false
 	}
+	return h.setSpecModePolicy(spec, policy)
+}
+
+func (h *Handler) setSpecModePolicy(spec *models.Spec, policy models.ModePolicy) error {
+	policy.Normalize()
+	if err := h.validateModePolicy(spec, policy); err != nil {
+		return err
+	}
+	policy.Configured = true
 	spec.ModePolicy = policy
-	spec.SetMode(mode)
+	spec.NormalizeMode()
 	return nil
 }
 
@@ -506,21 +512,17 @@ func (h *Handler) UpdateSpecModePolicy(c *gin.Context) {
 	}
 
 	var input struct {
-		ModePolicy models.OperationModePolicy `json:"modePolicy"`
+		ModePolicy models.ModePolicy `json:"modePolicy"`
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	input.ModePolicy.Normalize()
-	if err := h.validateModePolicy(spec, input.ModePolicy); err != nil {
+	if err := h.setSpecModePolicy(spec, input.ModePolicy); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	spec.ModePolicy = input.ModePolicy
-	spec.ModePolicy.Configured = true
 	spec.UpdatedAt = time.Now()
 
 	if err := h.store.UpdateSpec(spec); err != nil {
