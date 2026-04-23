@@ -3,202 +3,289 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml">
-    <img src="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml/badge.svg?branch=main" alt="Build Status" />
-  </a>
-  <a href="https://github.com/prasenjit-net/go-virtual/actions/workflows/ci.yml">
-    <img src="https://img.shields.io/badge/coverage-80%25%2B-brightgreen" alt="Test Coverage 80%+" />
-  </a>
-  <a href="https://github.com/prasenjit-net/go-virtual/releases/latest">
-    <img src="https://img.shields.io/github/v/release/prasenjit-net/go-virtual" alt="Latest Release" />
-  </a>
-  <img src="https://img.shields.io/badge/go-1.21%2B-00ADD8?logo=go" alt="Go 1.21+" />
-  <img src="https://img.shields.io/github/license/prasenjit-net/go-virtual" alt="License" />
-</p>
-
-<p align="center">
-  <strong>API Mock &amp; Virtualization for OpenAPI 3</strong><br/>
-  Configure dynamic mock responses, trace live traffic, and run chaos experiments — all from a single binary.
+  <strong>API Mock, AI, and Proxy Virtualization for OpenAPI 3</strong><br/>
+  Run manual mocks, AI-generated fallbacks, upstream proxy recording, tracing, scripting, sessions, and admin tooling from one Go service.
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> ·
+  <a href="#execution-modes">Execution Modes</a> ·
   <a href="#features">Features</a> ·
-  <a href="#configuration">Configuration</a> ·
-  <a href="#api-reference">API Reference</a>
+  <a href="#build-and-development">Build & Development</a> ·
+  <a href="#api-surface">API Surface</a>
 </p>
 
 ---
 
-A powerful API proxy service for OpenAPI 3 specifications with configurable mock responses.
+## What it does
+
+Go-Virtual virtualizes OpenAPI 3 specifications and serves them under configurable base paths. For each operation, it can:
+
+- serve manually configured responses
+- replay previously generated responses
+- fall back to OpenAPI examples
+- generate a structured response with AI
+- proxy to a real backend and record the result
+
+The admin UI lives under `/_ui/`, the admin API under `/_api/`, docs under `/_docs/`, and Prometheus metrics under `/_prometheus`.
+
+## Execution Modes
+
+Each spec runs in one of three modes:
+
+| Mode | Behavior after saved responses miss |
+| --- | --- |
+| `standard` | Uses OpenAPI example/default fallback when enabled |
+| `ai` | Generates a structured response from request + schema, then records it |
+| `proxy` | Forwards to the configured upstream backend, then records it |
+
+In **all modes**, existing response configs are checked first. Recorded/generated responses are stored as normal replayable responses with an origin of:
+
+- `manual`
+- `ai`
+- `proxy`
 
 ## Features
 
-- **OpenAPI 3 Support**: Upload and manage multiple OpenAPI 3 specifications
-- **Configurable Responses**: Design mock responses with conditions and priorities
-- **Template Engine**: Dynamic response bodies and headers with variable substitution
-- **Real-time Tracing**: Live request/response monitoring with WebSocket streaming
-- **Statistics Dashboard**: Performance metrics and error tracking
-- **Modern UI**: React-based admin interface with syntax highlighting
+- **OpenAPI 3 virtualization** with dynamic route mounting
+- **Manual response design** with conditions, priorities, delays, headers, and body templates
+- **Generated response management** with operation-scoped pages for recorded AI/proxy responses
+- **AI fallback mode** for runtime structured generation from the request and response schema
+- **Proxy fallback mode** with upstream forwarding and response capture
+- **Tracing** with response source and mode awareness
+- **Starlark scripting** with per-operation ordered bindings
+- **Session-aware store** with a global store and per-request session snapshots
+- **Prometheus metrics** and statistics dashboards
+- **Archive import/export** for instance state backup and restore
+- **Embedded React admin UI** served from `/_ui/`
 
 ## Quick Start
 
 ### Prerequisites
 
-- Go 1.21 or later
-- Node.js 18 or later
-- npm or yarn
+- Go 1.21+
+- Node.js 18+
+- npm
 
-### Installation
+### Build and run
 
-1. Clone the repository:
-```bash
-git clone https://github.com/prasenjit/go-virtual.git
-cd go-virtual
-```
-
-2. Install dependencies:
 ```bash
 make install-deps
-```
-
-3. Build the project:
-```bash
 make build
-```
-
-4. Run the server:
-```bash
 make run
 ```
 
-5. Open the admin UI at `http://localhost:8080/_ui/`
+Open:
 
-## Development
+- Admin UI: `http://localhost:8080/_ui/`
+- Admin API: `http://localhost:8080/_api/`
+- Docs: `http://localhost:8080/_docs/`
+- Metrics: `http://localhost:8080/_prometheus`
 
-### Running in Development Mode
+### Try the sample spec
 
-Start the Go server in dev mode:
-```bash
-make dev-server
-```
+Upload `test/petstore.yaml` from the admin UI, or post it through the admin API with any JSON-capable client.
 
-In a separate terminal, start the Vite dev server:
-```bash
-make dev-ui
-```
-
-The Go server runs on port 8080 and the Vite dev server on port 5173 with proxy to the Go server.
-
-### Available Commands
+Then call the virtualized endpoint:
 
 ```bash
-make build        # Build everything (UI + Go binary)
-make dev          # Run Go server in dev mode
-make dev-ui       # Run Vite dev server
-make test         # Run tests
-make clean        # Clean build artifacts
-make help         # Show all commands
+curl http://localhost:8080/pets
 ```
+
+## Request Matching Model
+
+For a matched operation, Go-Virtual evaluates responses in this order:
+
+1. enabled response configs by priority
+2. mode-specific fallback (`standard`, `ai`, or `proxy`)
+
+Conditions are ANDed. Supported condition sources include:
+
+- `path`
+- `query`
+- `header`
+- `body`
+- `signature` for replayable recorded/generated responses
+
+Supported operators include:
+
+- `eq`, `ne`
+- `contains`, `notContains`
+- `startsWith`, `endsWith`
+- `regex`
+- `exists`, `notExists`
+- `gt`, `gte`, `lt`, `lte`
+
+## Template and Scripting
+
+Response bodies use Go `text/template` helpers. Current template style supports helpers like:
+
+- `{{path "id"}}`
+- `{{query "status"}}`
+- `{{header "authorization"}}`
+- `{{body "user.name"}}`
+- `{{random "uuid"}}`
+- `{{faker "email"}}`
+- `{{timestamp "iso"}}`
+- `{{script "binding.output"}}`
+
+The editor also supports legacy token forms and rewrites them internally.
+
+Scripts are written in **Starlark** and attached to operations through ordered script bindings. A script:
+
+- must expose `def run(req):`
+- receives `path`, `query`, `header`, and `body`
+- can use `store` for session-scoped state
+- can use `log(...)` for trace-visible diagnostics
+
+## Session and Store Model
+
+- **Global store**: persistent application-wide key/value store
+- **Session store**: private per-session copy seeded from the global store
+- **Session header**: configurable, default `X-Virtual-Session-Id`
+- **Script testing**: runs against an ephemeral session snapshot and does not persist mutations
+
+## Tracing and Recording
+
+Tracing is enabled per spec. Trace records include:
+
+- request/response payloads
+- matched response config
+- spec mode
+- final response source (`config`, `example`, `ai`, `proxy`)
+- matched config origin (`manual`, `ai`, `proxy`)
+- proxy/backend details when applicable
+- script traces and session activity when present
+
+AI-generated and proxy-recorded responses are shown together on the operation’s generated responses page and remain editable like manual responses.
+
+## Build and Development
+
+### Common commands
+
+```bash
+make build          # build UI + Go binary
+make build-ui       # build UI only
+make build-go       # rebuild UI, then build Go binary
+make dev            # run Go server in dev mode
+make dev-ui         # run Vite dev server
+make dev-all        # run Go server + Vite together
+make test           # run Go tests
+make clean          # remove build artifacts and node_modules
+```
+
+### Notes
+
+- `make build-go` rebuilds the UI first so embedded assets stay current.
+- In dev mode (`make dev`), the UI is served from `./ui/dist`.
+- In headless mode, the admin API and admin UI are disabled; only proxy routing and metrics remain available.
 
 ## Configuration
 
-Create a `config.yaml` file:
+The default config file is `config.yaml`. Important sections include:
 
 ```yaml
 server:
+  host: "127.0.0.1"
   port: 8080
-  host: "0.0.0.0"
 
 storage:
-  type: "file"       # "memory" or "file"
+  type: "file"
   path: "./data"
 
-tracing:
-  maxTraces: 1000
-  retention: "24h"
+session:
+  headerName: "X-Virtual-Session-Id"
+  inactivityTimeout: "30m"
+  maxSessions: 10000
 
-logging:
-  level: "info"
-  format: "json"
+proxy:
+  timeoutSeconds: 30
+  insecureSkipVerify: false
+
+scripting:
+  defaultTimeoutMs: 100
+
+ai:
+  openaiApiKey: ""
+  openaiModel: ""
+  openaiBaseUrl: ""
 ```
 
-## API Reference
+Use environment variables or local config overrides for secrets and provider-specific AI settings.
 
-### Admin API
+## API Surface
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/_api/specs` | List all specifications |
-| POST | `/_api/specs` | Upload new specification |
-| GET | `/_api/specs/:id` | Get specification details |
-| PUT | `/_api/specs/:id` | Update specification |
-| DELETE | `/_api/specs/:id` | Delete specification |
-| PUT | `/_api/specs/:id/enable` | Enable specification |
-| PUT | `/_api/specs/:id/disable` | Disable specification |
-| PUT | `/_api/specs/:id/tracing` | Toggle tracing |
-| GET | `/_api/specs/:id/operations` | List operations |
-| GET | `/_api/operations/:id` | Get operation details |
-| GET | `/_api/operations/:id/responses` | List response configs |
-| POST | `/_api/operations/:id/responses` | Create response config |
-| PUT | `/_api/responses/:id` | Update response config |
-| DELETE | `/_api/responses/:id` | Delete response config |
-| GET | `/_api/stats` | Get global statistics |
-| GET | `/_api/traces` | List traces |
-| WS | `/_api/traces/stream` | WebSocket for live traces |
+### Specs
 
-## Template Variables
+- `GET /_api/specs`
+- `POST /_api/specs`
+- `GET /_api/specs/:id`
+- `PUT /_api/specs/:id`
+- `DELETE /_api/specs/:id`
+- `PUT /_api/specs/:id/enable`
+- `PUT /_api/specs/:id/disable`
+- `PUT /_api/specs/:id/tracing`
+- `PUT /_api/specs/:id/example-fallback`
+- `PUT /_api/specs/:id/backend`
+- `PUT /_api/specs/:id/mode`
+- `PUT /_api/specs/:id/proxy-mode` (legacy compatibility)
+- `GET /_api/specs/:id/tags`
+- `PUT /_api/specs/:id/tags`
 
-Use these variables in response bodies and headers:
+### Operations and responses
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `{{path.paramName}}` | URL path parameter | `{{path.userId}}` |
-| `{{query.paramName}}` | Query string parameter | `{{query.page}}` |
-| `{{header.headerName}}` | Request header | `{{header.Authorization}}` |
-| `{{body.jsonPath}}` | JSONPath into request body | `{{body.user.name}}` |
-| `{{random.uuid}}` | Random UUID | - |
-| `{{random.int(min,max)}}` | Random integer | `{{random.int(1,100)}}` |
-| `{{random.string(len)}}` | Random string | `{{random.string(10)}}` |
-| `{{faker.name.first}}` | Faker first name | `{{faker.name.first}}` |
-| `{{faker.name.last}}` | Faker last name | `{{faker.name.last}}` |
-| `{{faker.name}}` | Faker full name | `{{faker.name}}` |
-| `{{faker.email}}` | Faker email | `{{faker.email}}` |
-| `{{faker.phone}}` | Faker phone | `{{faker.phone}}` |
-| `{{faker.company.name}}` | Faker company name | `{{faker.company.name}}` |
-| `{{faker.address.street}}` | Faker street address | `{{faker.address.street}}` |
-| `{{faker.address.city}}` | Faker city | `{{faker.address.city}}` |
-| `{{faker.address.state}}` | Faker state | `{{faker.address.state}}` |
-| `{{faker.address.zip}}` | Faker postal code | `{{faker.address.zip}}` |
-| `{{faker.internet.username}}` | Faker username | `{{faker.internet.username}}` |
-| `{{faker.internet.domain}}` | Faker domain | `{{faker.internet.domain}}` |
-| `{{faker.internet.url}}` | Faker URL | `{{faker.internet.url}}` |
-| `{{faker.lorem.word}}` | Faker word | `{{faker.lorem.word}}` |
-| `{{faker.lorem.sentence}}` | Faker sentence | `{{faker.lorem.sentence}}` |
-| `{{faker.lorem.paragraph}}` | Faker paragraph | `{{faker.lorem.paragraph}}` |
-| `{{timestamp}}` | Current Unix timestamp | - |
-| `{{timestamp.iso}}` | Current ISO timestamp | - |
+- `GET /_api/specs/:id/operations`
+- `GET /_api/operations/:id`
+- `GET /_api/operations/:id/signature`
+- `PUT /_api/operations/:id/signature`
+- `GET /_api/operations/:id/responses`
+- `POST /_api/operations/:id/responses`
+- `POST /_api/operations/:id/ai-response`
+- `GET /_api/responses/:id`
+- `PUT /_api/responses/:id`
+- `DELETE /_api/responses/:id`
+- `PUT /_api/responses/:id/priority`
 
-Faker outputs are deterministically seeded per request using the request path and query parameters.
+### AI, scripts, store, sessions, and archives
 
-## Condition Operators
+- `GET /_api/ai/status`
+- `POST /_api/scripts/ai-generate`
+- `GET/POST/PUT/DELETE /_api/scripts...`
+- `GET/PUT /_api/operations/:id/scripts...`
+- `GET/PUT/DELETE /_api/store...`
+- `GET/DELETE /_api/sessions...`
+- `GET/POST/DELETE /_api/archives...`
 
-| Operator | Description |
-|----------|-------------|
-| `eq` | Equals |
-| `ne` | Not equals |
-| `contains` | Contains substring |
-| `notContains` | Does not contain |
-| `regex` | Matches regex |
-| `exists` | Value exists |
-| `notExists` | Value does not exist |
-| `gt` | Greater than |
-| `lt` | Less than |
-| `gte` | Greater than or equal |
-| `lte` | Less than or equal |
-| `startsWith` | Starts with |
-| `endsWith` | Ends with |
+### Observability
+
+- `GET /_api/stats`
+- `GET /_api/stats/specs/:id`
+- `GET /_api/stats/operations/:id`
+- `POST /_api/stats/reset`
+- `GET /_api/traces`
+- `GET /_api/traces/:id`
+- `DELETE /_api/traces`
+- `WS /_api/traces/stream`
+- `GET /_prometheus`
+
+## Project Structure
+
+```text
+go-virtual/
+├── cmd/server/          # CLI entry point
+├── internal/api/        # Admin API handlers and router
+├── internal/proxy/      # Runtime request engine, recorder, signature logic
+├── internal/scripting/  # Starlark engine and script bindings
+├── internal/store/      # Global store and session management
+├── internal/template/   # Response template engine
+├── internal/tracing/    # Trace capture and WebSocket streaming
+├── internal/storage/    # Memory/file persistence
+├── ui/                  # React/Vite admin UI
+├── test/                # Sample specs and test data
+├── config.yaml          # Default configuration
+└── Makefile
+```
 
 ## License
 
-MIT License
+MIT

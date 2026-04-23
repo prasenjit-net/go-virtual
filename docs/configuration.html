@@ -56,7 +56,7 @@
     <div class="page-header">
       <div class="breadcrumb"><a href="index.html">go-virtual</a> / Configuration</div>
       <h1>Configuration</h1>
-      <p class="lead">Complete reference for <code>config.yaml</code> — all server settings, TLS options, storage backends, tracing, scripting, sessions, proxy, logging, and branding.</p>
+      <p class="lead">Complete reference for <code>config.yaml</code> — server settings, TLS, storage, tracing, scripting, sessions, proxy, AI generation, logging, and branding.</p>
     </div>
 
     <div class="toc">
@@ -71,6 +71,7 @@
         <li><a href="#scripting-config">scripting</a></li>
         <li><a href="#session-config">session</a></li>
         <li><a href="#proxy">proxy</a></li>
+        <li><a href="#ai">ai</a></li>
         <li><a href="#branding">branding</a></li>
         <li><a href="#full-example">Full Example</a></li>
         <li><a href="#env-vars">Environment Variables</a></li>
@@ -101,6 +102,7 @@
       <pre><code><span class="key">server</span><span class="op">:</span>
   <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>          <span class="cm"># TCP port to listen on</span>
   <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>    <span class="cm"># Bind address ("0.0.0.0" = all interfaces)</span>
+  <span class="key">headless</span><span class="op">:</span> <span class="kw">false</span>   <span class="cm"># Disable admin UI/API and serve runtime traffic only</span>
 </code></pre>
 
       <div class="table-wrap">
@@ -109,6 +111,7 @@
           <tbody>
             <tr><td>server.port</td><td>integer</td><td>8080</td><td>TCP port number. Can be overridden with <code>--port</code> flag.</td></tr>
             <tr><td>server.host</td><td>string</td><td>"0.0.0.0"</td><td>Bind address. Use "127.0.0.1" to listen only on loopback.</td></tr>
+            <tr><td>server.headless</td><td>bool</td><td>false</td><td>Disable the admin UI and admin API. Proxy/runtime routing and metrics remain available.</td></tr>
           </tbody>
         </table>
       </div>
@@ -309,6 +312,34 @@
     </div>
 
     <!-- Branding -->
+    <div class="section" id="ai">
+      <h2>ai</h2>
+      <p>Settings for runtime AI mode and admin-side AI generation features.</p>
+      <pre><code><span class="key">ai</span><span class="op">:</span>
+  <span class="key">openaiApiKey</span><span class="op">:</span> <span class="str">""</span>      <span class="cm"># API key for AI-backed generation</span>
+  <span class="key">openaiModel</span><span class="op">:</span> <span class="str">""</span>       <span class="cm"># Model name; defaults internally when empty</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>ai.openaiApiKey</td><td>string</td><td>""</td><td>Credential used for runtime AI generation and admin AI helpers.</td></tr>
+            <tr><td>ai.openaiModel</td><td>string</td><td>provider default</td><td>Model used for AI response and script generation.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Used by AI mode</strong>
+          In <code>ai</code> mode, saved responses are checked first. If none match, go-virtual asks the configured AI provider for a structured response and records it for replay.
+        </div>
+      </div>
+    </div>
+
+    <!-- Branding -->
     <div class="section" id="branding">
       <h2>branding</h2>
       <p>Customize the Admin UI title and subtitle for multi-tenant or white-label deployments.</p>
@@ -337,6 +368,7 @@
 <span class="key">server</span><span class="op">:</span>
   <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>
   <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>
+  <span class="key">headless</span><span class="op">:</span> <span class="kw">false</span>
   <span class="key">tls</span><span class="op">:</span>
     <span class="key">enabled</span><span class="op">:</span> <span class="kw">false</span>
     <span class="key">certFile</span><span class="op">:</span> <span class="str">""</span>
@@ -372,6 +404,10 @@
     <span class="key">keyFile</span><span class="op">:</span> <span class="str">""</span>
     <span class="key">caCertFile</span><span class="op">:</span> <span class="str">""</span>
 
+<span class="key">ai</span><span class="op">:</span>
+  <span class="key">openaiApiKey</span><span class="op">:</span> <span class="str">""</span>
+  <span class="key">openaiModel</span><span class="op">:</span> <span class="str">""</span>
+
 <span class="key">branding</span><span class="op">:</span>
   <span class="key">appTitle</span><span class="op">:</span> <span class="str">""</span>
   <span class="key">appSubtitle</span><span class="op">:</span> <span class="str">""</span>
@@ -381,30 +417,32 @@
     <!-- Env vars -->
     <div class="section" id="env-vars">
       <h2>Environment Variables</h2>
-      <p>All config values can be overridden with environment variables. The naming convention is: uppercase the key path and replace dots with underscores, prefixed with <code>GV_</code>:</p>
+      <p>All config values can be overridden with environment variables. The naming convention is: uppercase the key path and replace dots with underscores, prefixed with <code>GOVIRTUAL_</code>:</p>
 
       <div class="table-wrap">
         <table>
           <thead><tr><th>Environment Variable</th><th>Config key</th></tr></thead>
           <tbody>
-            <tr><td>GV_SERVER_PORT</td><td>server.port</td></tr>
-            <tr><td>GV_SERVER_HOST</td><td>server.host</td></tr>
-            <tr><td>GV_SERVER_TLS_ENABLED</td><td>server.tls.enabled</td></tr>
-            <tr><td>GV_SERVER_TLS_CERTFILE</td><td>server.tls.certFile</td></tr>
-            <tr><td>GV_SERVER_TLS_KEYFILE</td><td>server.tls.keyFile</td></tr>
-            <tr><td>GV_STORAGE_TYPE</td><td>storage.type</td></tr>
-            <tr><td>GV_STORAGE_PATH</td><td>storage.path</td></tr>
-            <tr><td>GV_LOGGING_LEVEL</td><td>logging.level</td></tr>
-            <tr><td>GV_LOGGING_FORMAT</td><td>logging.format</td></tr>
-            <tr><td>GV_SESSION_HEADERNAME</td><td>session.headerName</td></tr>
-            <tr><td>GV_SESSION_INACTIVITYTIMEOUT</td><td>session.inactivityTimeout</td></tr>
-            <tr><td>GV_PROXY_TIMEOUTSECONDS</td><td>proxy.timeoutSeconds</td></tr>
+            <tr><td>GOVIRTUAL_SERVER_PORT</td><td>server.port</td></tr>
+            <tr><td>GOVIRTUAL_SERVER_HOST</td><td>server.host</td></tr>
+            <tr><td>GOVIRTUAL_SERVER_TLS_ENABLED</td><td>server.tls.enabled</td></tr>
+            <tr><td>GOVIRTUAL_SERVER_TLS_CERTFILE</td><td>server.tls.certFile</td></tr>
+            <tr><td>GOVIRTUAL_SERVER_TLS_KEYFILE</td><td>server.tls.keyFile</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_TYPE</td><td>storage.type</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_PATH</td><td>storage.path</td></tr>
+            <tr><td>GOVIRTUAL_LOGGING_LEVEL</td><td>logging.level</td></tr>
+            <tr><td>GOVIRTUAL_LOGGING_FORMAT</td><td>logging.format</td></tr>
+            <tr><td>GOVIRTUAL_SESSION_HEADERNAME</td><td>session.headerName</td></tr>
+            <tr><td>GOVIRTUAL_SESSION_INACTIVITYTIMEOUT</td><td>session.inactivityTimeout</td></tr>
+            <tr><td>GOVIRTUAL_PROXY_TIMEOUTSECONDS</td><td>proxy.timeoutSeconds</td></tr>
+            <tr><td>GOVIRTUAL_AI_OPENAIAPIKEY</td><td>ai.openaiApiKey</td></tr>
+            <tr><td>GOVIRTUAL_AI_OPENAIMODEL</td><td>ai.openaiModel</td></tr>
           </tbody>
         </table>
       </div>
 
       <pre><code><span class="cm"># Run with custom port and in-memory storage</span>
-GV_SERVER_PORT=3000 GV_STORAGE_TYPE=memory go-virtual serve
+GOVIRTUAL_SERVER_PORT=3000 GOVIRTUAL_STORAGE_TYPE=memory go-virtual serve
 </code></pre>
     </div>
 
@@ -414,7 +452,7 @@ GV_SERVER_PORT=3000 GV_STORAGE_TYPE=memory go-virtual serve
       <p>Configuration values are resolved in this order (highest priority first):</p>
       <ol>
         <li><strong>CLI flags</strong> — <code>--port 3000</code>, <code>--tls</code>, etc.</li>
-        <li><strong>Environment variables</strong> — <code>GV_SERVER_PORT=3000</code></li>
+        <li><strong>Environment variables</strong> — <code>GOVIRTUAL_SERVER_PORT=3000</code></li>
         <li><strong>config.yaml</strong> — Values in the configuration file</li>
         <li><strong>Built-in defaults</strong> — Hardcoded defaults as shown in this reference</li>
       </ol>

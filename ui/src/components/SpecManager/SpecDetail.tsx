@@ -62,7 +62,7 @@ export default function SpecDetail() {
         },
     })
 
-    const { data: aiConfigured = true } = useQuery<boolean>({
+    const { data: aiConfigured = false, isLoading: aiConfigLoading } = useQuery<boolean>({
         queryKey: ['ai-configured'],
         queryFn: () => aiApi.isConfigured(),
         staleTime: 60_000,
@@ -250,7 +250,7 @@ export default function SpecDetail() {
                         </button>
                         <button
                             onClick={() => setModeMutation.mutate('ai')}
-                            disabled={setModeMutation.isPending || !aiConfigured}
+                            disabled={setModeMutation.isPending || aiConfigLoading || !aiConfigured}
                             className={clsx(
                                 'rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
                                 spec.mode === 'ai'

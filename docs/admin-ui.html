@@ -194,8 +194,8 @@
       <div class="callout info">
         <span class="callout-icon">💡</span>
         <div class="callout-body">
-          <strong>Headless mode disables the UI</strong>
-          Running with <code>--headless</code> disables both the Admin UI and the Admin API. Use this flag for production proxy deployments where you only need the mocking/proxy engine.
+          <strong>Headless mode disables the UI and admin API</strong>
+          Running with <code>--headless</code> disables both the Admin UI and the Admin API. Use this flag when you only want the request-serving runtime.
         </div>
       </div>
     </div>
@@ -296,7 +296,7 @@
         <span class="callout-icon">💡</span>
         <div class="callout-body">
           <strong>Prometheus link</strong>
-          The Dashboard header includes a "Prometheus Metrics" link that opens <code>/_api/metrics</code> directly — handy for quickly checking the raw Prometheus output.
+          The Dashboard header includes a "Prometheus Metrics" link that opens <code>/_prometheus</code> directly — handy for quickly checking the raw Prometheus output.
         </div>
       </div>
     </div>
@@ -365,7 +365,7 @@
     <!-- Spec Detail -->
     <div class="section" id="spec-detail">
       <h2>Spec Detail &amp; Operations</h2>
-      <p>The Spec Detail page shows all operations in the spec, grouped by tag. It also lets you configure a real backend for proxy mode and control which tags are enabled.</p>
+      <p>The Spec Detail page shows all operations in the spec, grouped by tag. It also lets you select the spec mode, configure a backend for proxy fallback, and control which tags are enabled.</p>
 
       <h3>Operations list</h3>
       <p>Operations are grouped under expandable tag sections. Each row shows:</p>
@@ -380,18 +380,26 @@
         <li>The <strong>response count badge</strong> shows how many mock response configs are attached.</li>
       </ul>
 
-      <h3>Backend Configuration</h3>
-      <p>Paste a backend URL to enable <strong>Proxy Mode</strong> for this spec. When active, requests that don't match any mock response config are forwarded to the real backend.</p>
+      <h3>Mode &amp; Backend Configuration</h3>
+      <p>Use the mode selector to choose <strong>Standard</strong>, <strong>AI</strong>, or <strong>Proxy</strong>. Saved responses are always evaluated first; the selected mode controls what happens when none match.</p>
       <div class="form-mock">
+        <div class="form-mock-field">
+          <div class="form-mock-label">Spec Mode</div>
+          <div class="pill-row">
+            <div class="pill">Standard</div>
+            <div class="pill">AI</div>
+            <div class="pill active">Proxy</div>
+          </div>
+        </div>
         <div class="form-mock-field">
           <div class="form-mock-label">Backend URI</div>
           <div class="form-mock-input mono">https://api.example.com</div>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;">
-          <div class="pill green">● Proxy Mode Active</div>
+          <div class="pill green">● Proxy fallback configured</div>
         </div>
       </div>
-      <p>Click <strong>Save</strong> to apply. An animated <strong>Recording</strong> badge (violet, with a Radio icon) appears on operations when proxy mode is active and recording is enabled.</p>
+      <p>On the operation page, manually configured responses stay on the main view. AI-generated and proxy-recorded responses live on a separate generated responses subpage where each entry is labeled by origin.</p>
 
       <h3>Enabled Tags</h3>
       <p>Tags control which response configs are considered for matching. The <strong>default</strong> tag is always active and cannot be disabled. Custom tags appear as toggleable buttons — click a tag button to enable or disable it for this spec.</p>

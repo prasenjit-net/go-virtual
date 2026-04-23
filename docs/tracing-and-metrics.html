@@ -305,9 +305,9 @@ curl "http://localhost:8080/_api/traces?q=error"
     <!-- Prometheus -->
     <div class="section" id="prometheus">
       <h2>Prometheus Metrics</h2>
-      <p>go-virtual exposes Prometheus-compatible metrics at <code>/_api/metrics</code>.</p>
+      <p>go-virtual exposes Prometheus-compatible metrics at <code>/_prometheus</code>.</p>
 
-      <pre><code>curl http://localhost:8080/_api/metrics
+      <pre><code>curl http://localhost:8080/_prometheus
 
 <span class="cm"># HELP go_virtual_requests_total Total number of requests handled</span>
 <span class="cm"># TYPE go_virtual_requests_total counter</span>
@@ -330,7 +330,7 @@ go_virtual_active_specs 3
   <span class="op">-</span> <span class="key">job_name</span><span class="op">:</span> <span class="str">"go-virtual"</span>
     <span class="key">static_configs</span><span class="op">:</span>
       <span class="op">-</span> <span class="key">targets</span><span class="op">:</span> [<span class="str">"localhost:8080"</span>]
-    <span class="key">metrics_path</span><span class="op">:</span> <span class="str">"/_api/metrics"</span>
+    <span class="key">metrics_path</span><span class="op">:</span> <span class="str">"/_prometheus"</span>
     <span class="key">scrape_interval</span><span class="op">:</span> <span class="str">15s</span>
 </code></pre>
 

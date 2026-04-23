@@ -443,7 +443,7 @@ func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
 		}
 	case models.SpecModeAI:
 		if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
-			return fmt.Errorf("AI generation must be configured before enabling AI mode")
+			return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
 		}
 	}
 	spec.SetMode(mode)

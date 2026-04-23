@@ -278,6 +278,27 @@ func TestUpdateSpec_ProxyModeWithoutBackendURI(t *testing.T) {
 	}
 }
 
+func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id", handler.UpdateSpec)
+
+	update := map[string]interface{}{"mode": "ai"}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when enabling ai mode without OpenAI key, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("OpenAI API key")) {
+		t.Fatalf("expected OpenAI API key error, got %s", w.Body.String())
+	}
+}
+
 // ── DeleteSpec ───────────────────────────────────────────────────────────────
 
 func TestDeleteSpec(t *testing.T) {

@@ -115,7 +115,7 @@
   <span class="key">"name"</span>: <span class="str">"string"</span>,          <span class="cm">// Required. Display name</span>
   <span class="key">"content"</span>: <span class="str">"string"</span>,       <span class="cm">// Required. YAML or JSON OpenAPI 3 content</span>
   <span class="key">"basePath"</span>: <span class="str">"string"</span>,     <span class="cm">// Optional. Mount path prefix</span>
-  <span class="key">"proxyTarget"</span>: <span class="str">"string"</span>   <span class="cm">// Optional. Backend URL for proxy mode</span>
+  <span class="key">"backendUri"</span>: <span class="str">"string"</span>    <span class="cm">// Optional. Upstream backend URL</span>
 }
 </code></pre>
 
@@ -168,6 +168,30 @@
       </div>
       <pre><code>{ <span class="key">"enabled"</span>: <span class="kw">true</span> }
 </code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/example-fallback</div>
+          <div class="desc">Enable or disable OpenAPI example/default fallback for standard mode.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/backend</div>
+          <div class="desc">Set or clear the upstream backend URI for proxy mode.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:id/mode</div>
+          <div class="desc">Select the spec mode: <code>standard</code>, <code>ai</code>, or <code>proxy</code>.</div>
+        </div>
+      </div>
     </div>
 
     <!-- Operations API -->
@@ -187,6 +211,22 @@
         <div>
           <div class="path">/_api/operations/:id</div>
           <div class="desc">Get a single operation by ID.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/operations/:id/signature</div>
+          <div class="desc">Get the request signature configuration for an operation.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/operations/:id/signature</div>
+          <div class="desc">Update the request signature configuration for an operation.</div>
         </div>
       </div>
 
@@ -232,8 +272,8 @@
   <span class="key">"headers"</span>: {},              <span class="cm">// Optional. Key-value pairs (values are templates)</span>
   <span class="key">"body"</span>: <span class="str">"string"</span>,          <span class="cm">// Optional. Response body (template)</span>
   <span class="key">"conditions"</span>: [],          <span class="cm">// Optional. Array of condition objects</span>
-  <span class="key">"delayMs"</span>: <span class="num">0</span>,              <span class="cm">// Optional. Artificial delay</span>
-  <span class="key">"tags"</span>: []                  <span class="cm">// Optional. Tags for organization</span>
+  <span class="key">"delay"</span>: <span class="num">0</span>,                <span class="cm">// Optional. Artificial delay in ms</span>
+  <span class="key">"tag"</span>: <span class="str">"default"</span>         <span class="cm">// Optional. Tag for organization</span>
 }
 </code></pre>
 
@@ -273,7 +313,7 @@
 
       <h3>Condition object schema</h3>
       <pre><code>{
-  <span class="key">"source"</span>: <span class="str">"path"</span> <span class="op">|</span> <span class="str">"query"</span> <span class="op">|</span> <span class="str">"header"</span> <span class="op">|</span> <span class="str">"body"</span>,
+  <span class="key">"source"</span>: <span class="str">"path"</span> <span class="op">|</span> <span class="str">"query"</span> <span class="op">|</span> <span class="str">"header"</span> <span class="op">|</span> <span class="str">"body"</span> <span class="op">|</span> <span class="str">"signature"</span>,
   <span class="key">"key"</span>: <span class="str">"string"</span>,
   <span class="key">"operator"</span>: <span class="str">"eq"</span> <span class="op">|</span> <span class="str">"ne"</span> <span class="op">|</span> <span class="str">"gt"</span> <span class="op">|</span> <span class="str">"lt"</span> <span class="op">|</span> <span class="str">"gte"</span> <span class="op">|</span> <span class="str">"lte"</span>
     <span class="op">|</span> <span class="str">"contains"</span> <span class="op">|</span> <span class="str">"notContains"</span> <span class="op">|</span> <span class="str">"startsWith"</span> <span class="op">|</span> <span class="str">"endsWith"</span>
@@ -281,6 +321,24 @@
   <span class="key">"value"</span>: <span class="str">"string"</span>   <span class="cm">// Not required for "exists"/"notExists"</span>
 }
 </code></pre>
+    </div>
+
+    <div class="section" id="ai-api">
+      <h2>AI</h2>
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/ai/status</div>
+          <div class="desc">Return whether AI-backed generation is configured and available.</div>
+        </div>
+      </div>
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/scripts/ai-generate</div>
+          <div class="desc">Generate a script draft with AI.</div>
+        </div>
+      </div>
     </div>
 
     <!-- Scripts API -->
@@ -617,7 +675,7 @@ ws://localhost:8080/_api/traces/stream?specId=spec_xyz
       <div class="endpoint">
         <div class="method"><span class="badge badge-get">GET</span></div>
         <div>
-          <div class="path">/_api/metrics</div>
+          <div class="path">/_prometheus</div>
           <div class="desc">Prometheus text format metrics endpoint. Suitable for scraping by Prometheus or any compatible monitoring tool.</div>
         </div>
       </div>
@@ -660,3 +718,10 @@ ws://localhost:8080/_api/traces/stream?specId=spec_xyz
 <script src="nav.js"></script>
 </body>
 </html>
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-post">POST</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/ai-response</div>
+          <div class="desc">Generate a response draft from the operation schema using the configured AI provider.</div>
+        </div>
+      </div>

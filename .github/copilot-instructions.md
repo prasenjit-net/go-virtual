@@ -2,193 +2,204 @@
 
 ## Project Overview
 
-Go-Virtual is an API proxy/mock service that virtualizes OpenAPI 3 specifications. It allows configuring custom responses based on request conditions, with support for Starlark scripting, session-aware store, templating, tracing, metrics, and TLS. Current version: **v1.0.0**.
+Go-Virtual virtualizes OpenAPI 3 specifications and can serve traffic in three spec modes:
+
+- **standard**: saved/manual responses first, then example/default fallback
+- **ai**: saved/manual responses first, then runtime AI generation, with the generated response recorded for replay
+- **proxy**: saved/manual responses first, then upstream forwarding, with the backend response recorded for replay
+
+Recorded/generated responses are stored as normal `ResponseConfig` entries with an origin of `manual`, `ai`, or `proxy`. The admin UI is mounted under `/_ui/`, the admin API under `/_api/`, docs under `/_docs/`, and metrics under `/_prometheus`.
 
 ## Tech Stack
 
-### Backend (Go 1.21+)
-- **HTTP Framework**: Gin (`github.com/gin-gonic/gin`)
-- **OpenAPI Parser**: kin-openapi (`github.com/getkin/kin-openapi/openapi3`)
-- **WebSocket**: Gorilla WebSocket (`github.com/gorilla/websocket`)
-- **Starlark Engine**: `go.starlark.net/starlark`
-- **JSON Path**: gjson (`github.com/tidwall/gjson`)
-- **UUID**: Google UUID (`github.com/google/uuid`)
-- **YAML**: `gopkg.in/yaml.v3`
-- **Metrics**: Prometheus (`github.com/prometheus/client_golang`)
+### Backend
 
-### Frontend (React 18 + TypeScript)
-- **Build Tool**: Vite
-- **Styling**: TailwindCSS
-- **State Management**: Zustand
-- **Data Fetching**: @tanstack/react-query
-- **Charts**: Recharts
-- **Code Editor**: Monaco Editor (@monaco-editor/react)
-- **Icons**: Lucide React
-- **Drag & Drop**: @dnd-kit
+- Go 1.21+
+- Gin
+- kin-openapi
+- Gorilla WebSocket
+- Starlark (`go.starlark.net/starlark`)
+- gjson
+- Prometheus client
+
+### Frontend
+
+- React 18 + TypeScript
+- Vite
+- TailwindCSS
+- React Query
+- Zustand
+- Monaco Editor
+- Lucide React
+- dnd-kit
 
 ## Project Structure
 
-```
+```text
 go-virtual/
-├── cmd/server/          # CLI entry point (cobra commands: serve, version)
-├── internal/
-│   ├── api/             # HTTP handlers and routing
-│   ├── condition/       # Request condition evaluation
-│   ├── config/          # Configuration loading
-│   ├── metrics/         # Prometheus metrics
-│   ├── models/          # Data models
-│   ├── parser/          # OpenAPI 3 spec parser
-│   ├── proxy/           # Dynamic proxy/mock engine
-│   ├── scripting/       # Starlark scripting engine + bindings
-│   ├── stats/           # Statistics collector
-│   ├── storage/         # Data persistence (memory/file)
-│   ├── store/           # GlobalStore + SessionManager + StoreBuiltin
-│   ├── template/        # Response templating engine
-│   ├── tlsutil/         # TLS certificate management
-│   ├── tracing/         # Request/response tracing + WebSocket stream
-│   └── version/         # Version info
-├── ui/                  # React frontend
-│   └── src/
-│       ├── components/
-│       │   ├── ScriptManager/    # Script CRUD, bindings, editor, test panel
-│       │   ├── SessionManager/   # Session inspector UI
-│       │   ├── SpecManager/      # Spec upload/list/detail
-│       │   ├── StoreManager/     # Global store CRUD UI
-│       │   ├── ResponseDesigner/ # Response config editor
-│       │   ├── Dashboard.tsx
-│       │   ├── Layout.tsx
-│       │   ├── TagManager.tsx
-│       │   └── TraceViewer.tsx
-│       ├── services/    # API client (api.ts)
-│       └── types/       # TypeScript interfaces (index.ts)
-├── assets/              # Logo SVGs (logo.svg, logo-banner.svg)
-├── test/                # Test specs and data
-├── ui.go                # Embedded UI filesystem (//go:embed)
-├── Makefile             # Build automation
-└── config.yaml          # Default configuration
+├── cmd/server/          # Cobra CLI entry point
+├── internal/api/        # Admin handlers and router
+├── internal/condition/  # Condition evaluation
+├── internal/models/     # Spec, response, trace, archive, script, store models
+├── internal/parser/     # OpenAPI parsing
+├── internal/proxy/      # Runtime engine, recorder, signature calculation
+├── internal/scripting/  # Starlark execution + bindings
+├── internal/storage/    # Memory/file persistence
+├── internal/store/      # Global store and session manager
+├── internal/template/   # Go text/template rendering helpers
+├── internal/tracing/    # Trace service and live stream
+├── ui/src/components/   # Admin UI pages
+├── ui/src/services/     # API client
+├── ui/src/types/        # Shared TS types
+├── assets/              # Branding assets
+├── test/                # Sample specs and fixtures
+├── config.yaml          # Default config
+└── Makefile
 ```
 
-## Coding Conventions
+## Runtime Model
 
-### Go
-- Use standard Go project layout with `cmd/` and `internal/`
-- Keep packages focused and minimal
-- Use interfaces for dependencies (storage, services)
-- Error handling: return errors, don't panic
-- Use `context.Context` for cancellation where appropriate
-- Mutex naming: `mu` for single mutex, descriptive names for multiple
-- Comments: GoDoc style for exported functions
-- Test coverage target: ≥ 80%
+### Matching order
 
-### TypeScript/React
-- Functional components with hooks only
-- TypeScript strict mode enabled
-- Use React Query for all server state
-- Use Zustand for client-only state if needed
-- TailwindCSS for all styling (no CSS modules)
-- Lucide icons exclusively (no other icon libraries)
+For a matched operation, the runtime flow is:
 
-## Key Patterns
+1. compute request signature
+2. evaluate saved response configs by priority
+3. if no match, apply the spec-mode fallback
 
-### Template Variables
-Response bodies and headers support these template variables:
-- `{{.path.<param>}}` — Path parameters
-- `{{.query.<param>}}` — Query parameters
-- `{{.header.<name>}}` — Request headers
-- `{{.body}}` — Full request body (raw)
-- `{{.body.<jsonpath>}}` — JSON path extraction via gjson
-- `{{.random.uuid}}`, `{{.random.int}}`, `{{.random.string}}`
-- `{{.timestamp}}`, `{{.timestamp.unix}}`
-- `{{.script.<outputKey>.<field>}}` — Script binding output
+Mode-specific fallback:
 
-### Condition Operators
-- `eq`, `ne` — Equality
-- `contains`, `not_contains` — String contains
-- `regex` — Regular expression match
-- `exists`, `not_exists` — Field existence
-- `gt`, `gte`, `lt`, `lte` — Numeric comparison
-- `in`, `not_in` — Value in list
+- `standard` -> OpenAPI example/default response fallback when enabled
+- `ai` -> runtime AI generation
+- `proxy` -> upstream proxy request
 
-### Starlark Scripting
-Scripts are attached to operations via **ScriptBindings** (ordered). Each script:
-- Must define `def run(req):` as the top-level entry point
-- Receives a `req` dict with `path`, `query`, `header`, `body` keys
-- Has access to `store` builtin (session-scoped key-value store)
-- Has access to `log(...)` builtin (messages collected into trace logs)
-- Returns any value; stored under `binding.OutputKey` in template context
-- Compiled once, cached by `(scriptID, updatedAt)`; thread-safe
-- Timeout configurable per-script (default 100 ms)
+### Response origins
 
-#### Store Builtin (`store`)
-- `store.get("key")` / `store.get("key", default)` — read value
-- `store.set("key", value)` — write value (session-local)
-- `store.has("key")` — existence check
-- `store.delete("key")` — remove key
-- `store.keys()` — list all keys
+`ResponseConfig.Origin` can be:
 
-#### Session Store Architecture
-- **GlobalStore** — application-wide persistent KV store (JSON file on disk)
-- **Session** — per-request private copy seeded from GlobalStore snapshot at session creation; mutations never propagate back to GlobalStore
-- Sessions identified by `X-Virtual-Session-Id` header (configurable)
-- Unknown/missing IDs → new session created, UUID echoed back in response header
-- Sessions expire after configurable inactivity timeout (default 30 min)
-- **TestScript endpoint** — creates an ephemeral `Session` seeded from the live GlobalStore snapshot; discarded after execution so test mutations never persist
+- `manual`
+- `ai`
+- `proxy`
 
-### API Endpoints
-- Admin API: `/_api/*` (specs, operations, responses, stats, traces, scripts, store, sessions)
-- Metrics: `/_prometheus` (Prometheus exposition format)
-- Admin UI: `/_ui/*` (embedded React SPA)
-- Proxy: All other paths (matched against registered specs)
+Recorded/generated responses usually use a `signature` condition so they can replay exact request shapes.
 
-### Proxy Mode vs Mock Mode
-- **Mock mode** (default): engine matches request → evaluates conditions → runs script bindings → renders template response
-- **Proxy mode** (`spec.ProxyMode = true`): engine forwards request to upstream; script bindings and session resolution are **skipped entirely**
-- **Recording mode**: proxy records real backend responses as saved response configs
+### Tracing
 
-## Build Commands
+Traces are mode-aware and source-aware. Important fields:
+
+- `mode`
+- `responseSource` (`config`, `example`, `ai`, `proxy`)
+- `matchedConfigOrigin`
+- `signature`
+- `backendUri` when proxy fallback is used
+- `scripts`
+- `session`
+
+## Important UI Behavior
+
+- The main operation page focuses on manually configured responses.
+- Generated/recorded responses are shown on an operation-scoped subpage.
+- AI-generated and proxy-recorded responses share that page and are distinguished by origin badges.
+- Editing a recorded response must preserve support for `signature` conditions.
+
+## Scripting and Store
+
+Scripts are attached by ordered `ScriptBindings` and must expose `run(req)`.
+
+Available request data:
+
+- `path`
+- `query`
+- `header`
+- `body`
+
+Builtins:
+
+- `store.get/set/has/delete/keys`
+- `log(...)`
+
+Session model:
+
+- `GlobalStore` is persistent and shared
+- sessions are per-request snapshots keyed by the configured session header
+- script test execution uses an ephemeral seeded session and must not persist mutations
+
+## Templates
+
+Response bodies are rendered with Go `text/template` helpers. Prefer the current helper style:
+
+- `{{path "id"}}`
+- `{{query "status"}}`
+- `{{header "authorization"}}`
+- `{{body "user.name"}}`
+- `{{random "uuid"}}`
+- `{{faker "email"}}`
+- `{{timestamp "iso"}}`
+- `{{script "binding.output"}}`
+
+Legacy token syntax is still accepted and normalized internally.
+
+## Conditions
+
+Valid sources:
+
+- `path`
+- `query`
+- `header`
+- `body`
+- `signature`
+
+Valid operators:
+
+- `eq`, `ne`
+- `contains`, `notContains`
+- `startsWith`, `endsWith`
+- `regex`
+- `exists`, `notExists`
+- `gt`, `gte`, `lt`, `lte`
+
+## API Surface Highlights
+
+Common admin routes:
+
+- `/_api/specs/*`
+- `/_api/operations/:id`
+- `/_api/operations/:id/signature`
+- `/_api/operations/:id/responses`
+- `/_api/operations/:id/ai-response`
+- `/_api/operations/:id/scripts`
+- `/_api/scripts/*`
+- `/_api/store/*`
+- `/_api/sessions/*`
+- `/_api/archives/*`
+- `/_api/traces/*`
+- `/_api/stats/*`
+- `/_api/ai/status`
+
+## Build and Dev Commands
+
+Use these commands:
 
 ```bash
-make build          # Full production build (UI + Go binary)
-make build-ui       # Build UI only
-make build-go       # Build Go binary only
-make dev-server     # Run Go server in dev mode
-make dev-ui         # Run Vite dev server
-make install-deps   # Install all dependencies
-make clean          # Clean build artifacts
+make build
+make build-ui
+make build-go
+make dev
+make dev-ui
+make dev-all
+make test
 ```
 
-## Important Notes
+Important:
 
-1. **UI Embedding**: The UI is embedded in the Go binary via `//go:embed` in `ui.go`. Always run `make build-ui` before `make build-go` for a production build.
+- `make build-go` already rebuilds the UI first.
+- In dev mode, UI assets are served from `./ui/dist`.
+- In headless mode, the admin UI and admin API are disabled; proxy routing still works and metrics stay available.
 
-2. **Dev Mode**: Pass `-dev` flag to serve UI from `./ui/dist` on the filesystem instead of the embedded copy.
+## Implementation Notes
 
-3. **Route Reloading**: Call `proxyEngine.ReloadRoutes()` after any spec or operation change.
-
-4. **Response Priority**: Lower priority number = higher precedence. Conditions are evaluated in priority order; first match wins.
-
-5. **Tracing**: Enable per-spec via the API. Live traces streamed via WebSocket at `/_api/traces/stream`. `ScriptTrace` records include `logs`, `output`, `durationMs`, and `error`. `SessionTrace` records capture the session ID, whether it was newly created, and store access events.
-
-6. **Metrics**: Prometheus metrics exposed at `/_prometheus`. Covers request counts, latency histograms, error rates, and spec-level breakdowns.
-
-7. **TLS**: Self-signed certificate auto-generated via `tlsutil` if no cert/key files are provided. Certs are stored under the data directory.
-
-8. **Headless Mode**: Pass `--headless` flag (or `server.headless: true` in config) to disable the admin UI and serve only the proxy + API.
-
-9. **Script Test Isolation**: `ScriptEngine.TestScript` always creates an ephemeral `Session` seeded from the current `GlobalStore` snapshot so `store.*` calls work correctly. The session is discarded after the call — no side effects.
-
-10. **`ScriptEngine.SetGlobalStore`**: Must be called after wiring Phase 2 (done automatically in `handler.SetStoreManager`). Without it, `TestScript` falls back to an empty store snapshot.
-
-
-## Testing
-
-Test the proxy with the sample petstore spec:
-```bash
-# Upload spec
-curl -X POST http://localhost:8080/_api/specs \
-  -H "Content-Type: application/json" \
-  -d '{"content": "$(cat test/petstore.yaml)", "name": "Pet Store"}'
-
-# Test endpoint
-curl http://localhost:8080/pets
-```
+- Keep changes compatible with existing stored specs that may still use legacy `proxyMode` or `recorded` fields.
+- Prefer updating normalization or compatibility logic at storage/API boundaries rather than scattering special cases.
+- Do not treat proxy mode as an early exit before matching saved responses.
+- When changing recorded response behavior, keep deduplication keyed by request signature and origin.
+- After changing specs or operations in ways that affect routing, ensure routes are reloaded.
