@@ -299,6 +299,173 @@ func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
 	}
 }
 
+func TestSetSpecMode(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	update := map[string]interface{}{"mode": "proxy"}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	updated, _ := store.GetSpec("spec-1")
+	if updated.Mode != models.SpecModeProxy || !updated.ProxyMode || !updated.ModePolicy.Proxy.Enabled {
+		t.Fatalf("expected proxy mode enabled, got mode=%q proxyMode=%v policy=%+v", updated.Mode, updated.ProxyMode, updated.ModePolicy)
+	}
+}
+
+func TestSetSpecMode_InvalidJSON(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode", bytes.NewReader([]byte("not-json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSetSpecMode_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	req := httptest.NewRequest("PUT", "/specs/missing/mode", bytes.NewReader([]byte(`{"mode":"standard"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetSpecModePolicy(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{
+		ID:   "spec-1",
+		Name: "API",
+		ModePolicy: models.ModePolicy{
+			Configured: true,
+			AI:         models.ConditionalModeConfig{Enabled: true},
+			Proxy:      models.ConditionalModeConfig{Enabled: false},
+		},
+	})
+	r.GET("/specs/:id/mode-policy", handler.GetSpecModePolicy)
+
+	req := httptest.NewRequest("GET", "/specs/spec-1/mode-policy", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result map[string]models.ModePolicy
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !result["modePolicy"].AI.Enabled || result["modePolicy"].Proxy.Enabled {
+		t.Fatalf("unexpected mode policy: %+v", result["modePolicy"])
+	}
+}
+
+func TestGetSpecModePolicy_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.GET("/specs/:id/mode-policy", handler.GetSpecModePolicy)
+
+	req := httptest.NewRequest("GET", "/specs/missing/mode-policy", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpecModePolicy(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	body := map[string]any{
+		"modePolicy": map[string]any{
+			"ai": map[string]any{
+				"enabled": false,
+				"conditions": []map[string]any{
+					{"source": "header", "key": "x-env", "operator": "eq", "value": "test"},
+				},
+			},
+			"proxy": map[string]any{
+				"enabled": true,
+				"conditions": []map[string]any{
+					{"source": "query", "key": "source", "operator": "eq", "value": "upstream"},
+				},
+			},
+		},
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updatedSpec, _ := store.GetSpec("spec-1")
+	if !updatedSpec.ModePolicy.Configured || !updatedSpec.ModePolicy.Proxy.Enabled {
+		t.Fatalf("expected updated spec mode policy, got %+v", updatedSpec.ModePolicy)
+	}
+	if len(updatedSpec.ModePolicy.Proxy.Conditions) != 1 || len(updatedSpec.ModePolicy.AI.Conditions) != 1 {
+		t.Fatalf("expected saved conditions, got %+v", updatedSpec.ModePolicy)
+	}
+}
+
+func TestUpdateSpecModePolicy_InvalidJSON(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader([]byte("not-json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpecModePolicy_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	req := httptest.NewRequest("PUT", "/specs/missing/mode-policy", bytes.NewReader([]byte(`{"modePolicy":{"ai":{"enabled":false,"conditions":[]},"proxy":{"enabled":false,"conditions":[]}}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
 func TestUpdateSpecModePolicy_RejectsSignatureConditions(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
 

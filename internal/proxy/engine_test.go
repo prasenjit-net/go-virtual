@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -10,9 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prasenjit/go-virtual/internal/ai"
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
@@ -42,6 +46,26 @@ func TestNewEngine(t *testing.T) {
 
 	if engine.routes == nil {
 		t.Error("Expected routes map to be initialized")
+	}
+}
+
+func TestEngineSetters(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+
+	sessionManager := store.NewSessionManager(context.Background(), nil, config.SessionConfig{})
+	engine.SetSessionManager(sessionManager, "X-Test-Session")
+	if engine.sessionManager != sessionManager || engine.sessionHeaderName != "X-Test-Session" {
+		t.Fatal("SetSessionManager did not update engine state")
+	}
+
+	generator := ai.NewGenerator(ai.Config{APIKey: "sk-test"})
+	engine.runtimeWarnings["test"] = struct{}{}
+	engine.SetAIGenerator(generator)
+	if engine.aiGenerator != generator {
+		t.Fatal("SetAIGenerator did not update generator")
+	}
+	if len(engine.runtimeWarnings) != 0 {
+		t.Fatal("SetAIGenerator should clear runtime warnings")
 	}
 }
 

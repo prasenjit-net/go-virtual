@@ -44,3 +44,29 @@ func TestSpecEffectiveModeConfiguredStandardOverridesLegacyMode(t *testing.T) {
 		t.Fatalf("expected primary mode %q, got %q", SpecModeStandard, got)
 	}
 }
+
+func TestNormalizeSpecModeAndSetMode(t *testing.T) {
+	if got := NormalizeSpecMode("unexpected"); got != SpecModeStandard {
+		t.Fatalf("NormalizeSpecMode returned %q", got)
+	}
+
+	spec := &Spec{}
+	spec.SetMode(SpecModeProxy)
+	if spec.Mode != SpecModeProxy || !spec.ProxyMode {
+		t.Fatalf("SetMode did not set proxy mode correctly: %+v", spec)
+	}
+}
+
+func TestSpecNormalizeModeAndEffectiveModePolicy(t *testing.T) {
+	spec := &Spec{Mode: SpecModeAI}
+	spec.NormalizeMode()
+
+	if !spec.ModePolicy.AI.Enabled || spec.ModePolicy.Proxy.Enabled {
+		t.Fatalf("NormalizeMode should derive AI policy, got %+v", spec.ModePolicy)
+	}
+
+	legacyProxy := (&Spec{ProxyMode: true}).EffectiveModePolicy()
+	if !legacyProxy.Proxy.Enabled || legacyProxy.AI.Enabled {
+		t.Fatalf("EffectiveModePolicy should derive legacy proxy mode, got %+v", legacyProxy)
+	}
+}

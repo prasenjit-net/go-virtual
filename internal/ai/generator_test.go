@@ -259,6 +259,132 @@ func TestBuildUserMessage_NoPrompt(t *testing.T) {
 	}
 }
 
+func TestBuildRuntimeSystemPrompt(t *testing.T) {
+	op := OperationContext{
+		Method: "GET",
+		Path:   "/pets",
+		SpecResponses: []SpecResponseDef{
+			{StatusCode: 200, Description: "Success", BodyExample: `{"id":"1"}`},
+			{StatusCode: 500, Description: "Error", SchemaHint: "object with fields: error"},
+		},
+	}
+
+	prompt := buildRuntimeSystemPrompt(op)
+	if !strings.Contains(prompt, "Spec-defined responses") {
+		t.Fatal("expected spec-defined responses section")
+	}
+	if !strings.Contains(prompt, `{"id":"1"}`) || !strings.Contains(prompt, "Schema: object with fields: error") {
+		t.Fatalf("unexpected runtime system prompt: %s", prompt)
+	}
+}
+
+func TestBuildRuntimeUserMessage(t *testing.T) {
+	op := OperationContext{
+		Method:      "POST",
+		Path:        "/pets/{id}",
+		Summary:     "Create pet",
+		Description: "Creates a pet resource",
+		Inputs: &OperationInputs{
+			PathParams:  []ParamDef{{Name: "id", Type: "string"}},
+			QueryParams: []ParamDef{{Name: "status", Type: "string"}},
+			BodyFields:  []BodyFieldDef{{GjsonPath: "pet.name", Type: "string"}},
+		},
+	}
+	reqCtx := RuntimeRequestContext{
+		PathParams:  map[string]string{"id": "123"},
+		QueryParams: map[string][]string{"status": {"active"}},
+		Headers:     map[string][]string{"X-Test": {"1"}},
+		Body:        `{"pet":{"name":"Fido"}}`,
+		Signature:   "sig-123",
+	}
+
+	msg := buildRuntimeUserMessage(op, reqCtx)
+	for _, want := range []string{"Request signature: sig-123", "Path params:", "pet.name", "Create pet", `{"pet":{"name":"Fido"}}`} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("runtime user message missing %q: %s", want, msg)
+		}
+	}
+}
+
+func TestStringifyRuntimeBody(t *testing.T) {
+	tests := []struct {
+		name string
+		body any
+		want string
+	}{
+		{name: "nil", body: nil, want: ""},
+		{name: "string", body: "hello", want: "hello"},
+		{name: "object", body: map[string]any{"id": 1}, want: `{"id":1}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := stringifyRuntimeBody(tt.body)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("stringifyRuntimeBody(%v) = %q, want %q", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultRuntimeStatusCode(t *testing.T) {
+	if got := defaultRuntimeStatusCode(OperationContext{
+		SpecResponses: []SpecResponseDef{{StatusCode: 201}, {StatusCode: 200}},
+	}); got != 201 {
+		t.Fatalf("expected first spec response status, got %d", got)
+	}
+
+	if got := defaultRuntimeStatusCode(OperationContext{
+		ExampleResponse: &models.ExampleResponse{StatusCode: 202},
+	}); got != 202 {
+		t.Fatalf("expected example response status, got %d", got)
+	}
+
+	if got := defaultRuntimeStatusCode(OperationContext{}); got != 200 {
+		t.Fatalf("expected default status 200, got %d", got)
+	}
+}
+
+func TestGenerateRuntimeResponse(t *testing.T) {
+	srv, endpoint := mockOpenAI(t, 200, openAISuccessResponse(`{"statusCode":0,"headers":{},"body":{"id":"pet-1"}}`))
+	_ = srv
+
+	g := NewGenerator(Config{APIKey: "sk-test", Endpoint: endpoint})
+	resp, err := g.GenerateRuntimeResponse(context.Background(), OperationContext{
+		Method:        "GET",
+		Path:          "/pets/{id}",
+		SpecResponses: []SpecResponseDef{{StatusCode: 201}},
+	}, RuntimeRequestContext{
+		PathParams: map[string]string{"id": "pet-1"},
+	})
+	if err != nil {
+		t.Fatalf("GenerateRuntimeResponse returned error: %v", err)
+	}
+	if resp.StatusCode != 201 {
+		t.Fatalf("expected defaulted status 201, got %d", resp.StatusCode)
+	}
+	if resp.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("expected default json content type, got %q", resp.Headers["Content-Type"])
+	}
+	if resp.Body != `{"id":"pet-1"}` {
+		t.Fatalf("unexpected body %q", resp.Body)
+	}
+}
+
+func TestGenerateRuntimeResponse_InvalidJSON(t *testing.T) {
+	srv, endpoint := mockOpenAI(t, 200, openAISuccessResponse(`not-json`))
+	_ = srv
+
+	g := NewGenerator(Config{APIKey: "sk-test", Endpoint: endpoint})
+	_, err := g.GenerateRuntimeResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, RuntimeRequestContext{})
+	if err == nil || !strings.Contains(err.Error(), "model returned invalid JSON") {
+		t.Fatalf("expected invalid JSON error, got %v", err)
+	}
+}
+
 // ── buildScriptSystemPrompt ───────────────────────────────────────────────────
 
 func TestBuildScriptSystemPrompt_Basic(t *testing.T) {
@@ -390,7 +516,7 @@ func TestGenerateScript_NotConfigured(t *testing.T) {
 // ── GenerateResponse — mock OpenAI server ─────────────────────────────────────
 
 func TestGenerateResponse_Success(t *testing.T) {
-responseBody := `{
+	responseBody := `{
 "statusCode": 200,
 "name": "Success",
 "description": "Returns a list of pets",
@@ -401,44 +527,44 @@ responseBody := `{
 "conditions": [],
 "delay": 0
 }`
-_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if result.StatusCode != 200 {
-t.Errorf("expected StatusCode 200, got %d", result.StatusCode)
-}
-if !result.Enabled {
-t.Error("expected Enabled true")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StatusCode != 200 {
+		t.Errorf("expected StatusCode 200, got %d", result.StatusCode)
+	}
+	if !result.Enabled {
+		t.Error("expected Enabled true")
+	}
 }
 
 func TestGenerateResponse_OpenAIError(t *testing.T) {
-errBody := `{"error":{"message":"invalid api key"}}`
-_, url := mockOpenAI(t, 401, errBody)
+	errBody := `{"error":{"message":"invalid api key"}}`
+	_, url := mockOpenAI(t, 401, errBody)
 
-g := NewGenerator(Config{APIKey: "bad-key", Endpoint: url})
-_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err == nil {
-t.Error("expected error from OpenAI error response")
-}
+	g := NewGenerator(Config{APIKey: "bad-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err == nil {
+		t.Error("expected error from OpenAI error response")
+	}
 }
 
 func TestGenerateResponse_InvalidJSON(t *testing.T) {
-_, url := mockOpenAI(t, 200, openAISuccessResponse("not valid json"))
+	_, url := mockOpenAI(t, 200, openAISuccessResponse("not valid json"))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err == nil {
-t.Error("expected error for invalid JSON from model")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err == nil {
+		t.Error("expected error for invalid JSON from model")
+	}
 }
 
 func TestGenerateResponse_InvalidConditions(t *testing.T) {
-responseBody := `{
+	responseBody := `{
 "statusCode": 200,
 "name": "Bad",
 "headers": {},
@@ -448,28 +574,28 @@ responseBody := `{
 "conditions": [{"source":"cookie","key":"x","operator":"eq","value":"1"}],
 "delay": 0
 }`
-_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err == nil {
-t.Error("expected error for invalid condition source")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err == nil {
+		t.Error("expected error for invalid condition source")
+	}
 }
 
 func TestGenerateResponse_NoChoices(t *testing.T) {
-_, url := mockOpenAI(t, 200, `{"choices":[]}`)
+	_, url := mockOpenAI(t, 200, `{"choices":[]}`)
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err == nil {
-t.Error("expected error when OpenAI returns no choices")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err == nil {
+		t.Error("expected error when OpenAI returns no choices")
+	}
 }
 
 func TestGenerateResponse_DefaultsApplied(t *testing.T) {
-// Model omits optional fields — defaults should be applied.
-responseBody := `{
+	// Model omits optional fields — defaults should be applied.
+	responseBody := `{
 "statusCode": 0,
 "name": "Minimal",
 "headers": null,
@@ -479,83 +605,83 @@ responseBody := `{
 "conditions": null,
 "delay": 0
 }`
-_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if result.StatusCode != 200 {
-t.Errorf("expected default StatusCode 200, got %d", result.StatusCode)
-}
-if result.Headers == nil {
-t.Error("expected default headers to be applied")
-}
-if result.Conditions == nil {
-t.Error("expected default conditions slice (not nil)")
-}
-if result.Priority != 10 {
-t.Errorf("expected default priority 10, got %d", result.Priority)
-}
-if !result.Enabled {
-t.Error("expected Enabled to be forced true")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StatusCode != 200 {
+		t.Errorf("expected default StatusCode 200, got %d", result.StatusCode)
+	}
+	if result.Headers == nil {
+		t.Error("expected default headers to be applied")
+	}
+	if result.Conditions == nil {
+		t.Error("expected default conditions slice (not nil)")
+	}
+	if result.Priority != 10 {
+		t.Errorf("expected default priority 10, got %d", result.Priority)
+	}
+	if !result.Enabled {
+		t.Error("expected Enabled to be forced true")
+	}
 }
 
 // ── GenerateScript — mock OpenAI server ──────────────────────────────────────
 
 func TestGenerateScript_Success(t *testing.T) {
-scriptSrc := "# Count requests\n#\n# Inputs:  none\n# Store:   reads/writes \"count\"\n# Returns: {\"count\"}\n\ndef run(req):\n    count = store.get(\"count\", 0)\n    store.set(\"count\", count + 1)\n    return {\"count\": count + 1}\n"
-wrapper, _ := json.Marshal(map[string]string{"source": scriptSrc})
-_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
+	scriptSrc := "# Count requests\n#\n# Inputs:  none\n# Store:   reads/writes \"count\"\n# Returns: {\"count\"}\n\ndef run(req):\n    count = store.get(\"count\", 0)\n    store.set(\"count\", count + 1)\n    return {\"count\": count + 1}\n"
+	wrapper, _ := json.Marshal(map[string]string{"source": scriptSrc})
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-source, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "count requests")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if !strings.Contains(source, "def run(req):") {
-t.Errorf("generated source should contain run(req), got: %s", source)
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	source, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "count requests")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(source, "def run(req):") {
+		t.Errorf("generated source should contain run(req), got: %s", source)
+	}
 }
 
 func TestGenerateScript_WithHistory(t *testing.T) {
-scriptSrc := "def run(req):\n    return {\"ok\": True}\n"
-wrapper, _ := json.Marshal(map[string]string{"source": scriptSrc})
-_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
+	scriptSrc := "def run(req):\n    return {\"ok\": True}\n"
+	wrapper, _ := json.Marshal(map[string]string{"source": scriptSrc})
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
 
-history := []ChatMessage{
-{Role: "user", Content: "initial prompt"},
-{Role: "assistant", Content: "{\"source\": \"def run(req): return {}\"}"},
-}
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-source, err := g.GenerateScript(context.Background(), ScriptContext{}, history, "def run(req): return {}", "add ok flag")
-if err != nil {
-t.Fatalf("unexpected error: %v", err)
-}
-if source == "" {
-t.Error("expected non-empty source")
-}
+	history := []ChatMessage{
+		{Role: "user", Content: "initial prompt"},
+		{Role: "assistant", Content: "{\"source\": \"def run(req): return {}\"}"},
+	}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	source, err := g.GenerateScript(context.Background(), ScriptContext{}, history, "def run(req): return {}", "add ok flag")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if source == "" {
+		t.Error("expected non-empty source")
+	}
 }
 
 func TestGenerateScript_EmptySource(t *testing.T) {
-wrapper, _ := json.Marshal(map[string]string{"source": "   "})
-_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
+	wrapper, _ := json.Marshal(map[string]string{"source": "   "})
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(string(wrapper)))
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-_, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "something")
-if err == nil {
-t.Error("expected error for empty generated source")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "something")
+	if err == nil {
+		t.Error("expected error for empty generated source")
+	}
 }
 
 func TestGenerateScript_OpenAIError(t *testing.T) {
-_, url := mockOpenAI(t, 200, `{"error":{"message":"quota exceeded"}}`)
+	_, url := mockOpenAI(t, 200, `{"error":{"message":"quota exceeded"}}`)
 
-g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
-_, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "something")
-if err == nil {
-t.Error("expected error from OpenAI error response")
-}
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "something")
+	if err == nil {
+		t.Error("expected error from OpenAI error response")
+	}
 }

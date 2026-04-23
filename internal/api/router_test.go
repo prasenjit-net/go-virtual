@@ -1,6 +1,5 @@
 package api
 
-
 import (
 	"net/http"
 	"net/http/httptest"
@@ -130,6 +129,75 @@ func TestServeEmbeddedUI_DoesNotHijackProxyRoutes(t *testing.T) {
 
 	if w.Code == http.StatusOK && strings.Contains(w.Body.String(), "embedded") {
 		t.Fatalf("expected non-UI routes to bypass the SPA handler")
+	}
+}
+
+func TestServeDocsFromFS_MissingDir(t *testing.T) {
+	router := setupTestRouter()
+	router.ServeDocsFromFS(filepath.Join(t.TempDir(), "missing"))
+
+	req := httptest.NewRequest("GET", "/_docs/anything", nil)
+	w := httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected status 503, got %d", w.Code)
+	}
+}
+
+func TestServeDocsFromFS(t *testing.T) {
+	router := setupTestRouter()
+	dir := t.TempDir()
+	indexPath := filepath.Join(dir, "index.html")
+	if err := os.WriteFile(indexPath, []byte("<html>docs</html>"), 0644); err != nil {
+		t.Fatalf("failed to write docs index: %v", err)
+	}
+
+	router.ServeDocsFromFS(dir)
+
+	req := httptest.NewRequest("GET", "/_docs/", nil)
+	w := httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "docs") {
+		t.Fatalf("expected docs file to be served, got status=%d body=%q", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/_docs", nil)
+	w = httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusMovedPermanently {
+		t.Fatalf("expected /_docs redirect, got %d", w.Code)
+	}
+}
+
+func TestServeEmbeddedDocs(t *testing.T) {
+	router := setupTestRouter()
+	docsFS := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html>embedded docs</html>")},
+		"guide.html": &fstest.MapFile{Data: []byte("<html>guide</html>")},
+	}
+
+	router.ServeEmbeddedDocs(docsFS)
+
+	req := httptest.NewRequest("GET", "/_docs/guide.html", nil)
+	w := httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "guide") {
+		t.Fatalf("expected embedded guide to be served, got status=%d body=%q", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/_docs/", nil)
+	w = httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "embedded docs") {
+		t.Fatalf("expected embedded index to be served, got status=%d body=%q", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest("GET", "/_docs/missing.html", nil)
+	w = httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing embedded doc, got %d", w.Code)
 	}
 }
 

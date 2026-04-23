@@ -7,6 +7,7 @@ import (
 
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/storage"
+	"github.com/prasenjit/go-virtual/internal/store"
 )
 
 // newEngineStore returns a MemoryStorage pre-populated with the given scripts and bindings.
@@ -58,6 +59,18 @@ func TestRunBindings_NoBindings(t *testing.T) {
 	}
 	if len(traces) != 0 {
 		t.Errorf("Expected empty traces, got %v", traces)
+	}
+}
+
+func TestSetGlobalStore(t *testing.T) {
+	mem := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(mem, 100)
+	global := &store.GlobalStore{}
+
+	engine.SetGlobalStore(global)
+
+	if engine.globalStore != global {
+		t.Fatal("SetGlobalStore did not update engine")
 	}
 }
 
