@@ -120,15 +120,15 @@
 
   <main class="main">
     <div class="page-header">
-      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Proxy Mode</div>
-      <h1>Proxy Mode &amp; Request Signatures</h1>
-      <p class="lead">Proxy mode turns go-virtual into a transparent recording proxy — it forwards live traffic to a real backend, captures every response, and replays those exact responses in future offline runs. Request signatures let you fingerprint requests by any combination of path, query, headers, and body fields so each unique variant gets its own recorded mock.</p>
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Modes &amp; Recording</div>
+      <h1>Modes, Recording &amp; Request Signatures</h1>
+      <p class="lead">go-virtual now supports standard, AI, and proxy modes. Saved responses are always checked first; if none match, the selected mode falls back to examples, runtime AI generation, or upstream proxying. Request signatures make those generated responses replayable.</p>
     </div>
 
     <div class="toc">
       <div class="toc-title">On this page</div>
       <ul>
-        <li><a href="#concepts">How Proxy Mode Works</a></li>
+        <li><a href="#concepts">How Modes Work</a></li>
         <li><a href="#setup">Setting Up Proxy Mode</a></li>
         <li><a href="#recording">Recording &amp; Deduplication</a></li>
         <li><a href="#disabling">Switching to Replay Mode</a></li>
@@ -146,9 +146,9 @@
 
     <!-- How it works -->
     <div class="section" id="concepts">
-      <h2>How Proxy Mode Works</h2>
+      <h2>How Modes Work</h2>
 
-      <p>When proxy mode is active on a spec, the request pipeline changes:</p>
+      <p>For any matched operation, go-virtual computes a request signature and tries saved response configs first. If no config matches, the spec’s mode decides the fallback behavior.</p>
 
       <div class="flow-diagram">
         <pre>
@@ -191,10 +191,11 @@
 
       <p>Key characteristics:</p>
       <ul>
+        <li><strong>Saved responses always win first</strong> — manual and previously recorded/generated responses are matched before any fallback.</li>
         <li><strong>Pass-through while recording</strong> — the real backend response is returned to the client immediately; recording is async and does not add latency.</li>
-        <li><strong>Deduplication by signature</strong> — the same logical request (same path params, query, headers, body — as defined by the signature config) updates the existing mock rather than creating a duplicate.</li>
+        <li><strong>Deduplication by signature and origin</strong> — proxy recordings update an existing proxy entry for the same request fingerprint instead of creating duplicates.</li>
         <li><strong>Zero-edit mocks</strong> — recorded responses are immediately usable without any manual editing.</li>
-        <li><strong>Seamless switch</strong> — turn off proxy mode and all future requests are served from the captured mocks, no code changes needed.</li>
+        <li><strong>Shared generated-response page</strong> — proxy-recorded and AI-generated responses are reviewed together in the UI and distinguished by origin badges.</li>
       </ul>
     </div>
 
@@ -202,7 +203,7 @@
     <div class="section" id="setup">
       <h2>Setting Up Proxy Mode</h2>
 
-      <p>Two steps are required: configure the backend URL, then enable proxy mode.</p>
+      <p>Two steps are required: configure the backend URL, then switch the spec to <code>proxy</code> mode.</p>
 
       <h3>Step 1 — Set the backend URL</h3>
       <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/backend \
@@ -220,14 +221,14 @@
       </div>
 
       <h3>Step 2 — Enable proxy mode</h3>
-      <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/proxy-mode \
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/&lt;spec-id&gt;/mode \
   -H <span class="str">"Content-Type: application/json"</span> \
-  -d <span class="str">'{"enabled": true}'</span>
+  -d <span class="str">'{"mode": "proxy"}'</span>
 </code></pre>
-      <p>Proxy mode can only be enabled when a <code>backendUri</code> is already set. Attempting to enable it without a backend returns a 400 error.</p>
+      <p>Proxy mode can only be enabled when a <code>backendUri</code> is already set. The legacy <code>/_api/specs/:id/proxy-mode</code> endpoint still works for compatibility, but the explicit mode endpoint is preferred.</p>
 
       <h3>Via the Admin UI</h3>
-      <p>On the <strong>Spec Detail</strong> page, the <strong>Backend Configuration</strong> card lets you paste the backend URI and save it. A <strong>Proxy Mode</strong> toggle appears once the URI is set. When active, an animated <strong>Recording</strong> badge (violet, with a radio icon) appears on each operation row.</p>
+      <p>On the <strong>Spec Detail</strong> page, use the mode selector to choose <strong>Proxy</strong>, then save the backend URI. The resulting generated responses can be reviewed on each operation’s generated responses subpage.</p>
 
       <h3>Verify the setup</h3>
       <pre><code>curl http://localhost:8080/_api/specs/&lt;spec-id&gt;
@@ -255,7 +256,7 @@
             <tr><td>Status code</td><td>Exact status code returned by the backend</td></tr>
             <tr><td>Headers</td><td>Backend headers minus transport-level headers (see <a href="#headers">Header Handling</a>)</td></tr>
             <tr><td>Body</td><td>Exact response body string</td></tr>
-            <tr><td>Recorded flag</td><td><code>true</code> — marked visually in the UI with a <span class="recorded-badge">● Recorded</span> badge</td></tr>
+            <tr><td>Origin</td><td><code>proxy</code> — marked visually in the UI with a proxy badge and stored separately from AI-generated responses</td></tr>
           </tbody>
         </table>
       </div>

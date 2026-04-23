@@ -188,3 +188,41 @@ func TestComputeSignature_EmptyInputs(t *testing.T) {
 		t.Errorf("expected 16-char signature for empty inputs, got %q", sig)
 	}
 }
+
+func TestComputeSignature_IgnoresVirtualHeaders(t *testing.T) {
+	cfg := &models.SignatureConfig{Headers: []string{"X-Virtual-AI-Scenario", "X-Tenant"}}
+
+	headersA := map[string][]string{
+		"X-Virtual-AI-Scenario": {"success"},
+		"X-Tenant":              {"tenant-a"},
+	}
+	headersB := map[string][]string{
+		"X-Virtual-AI-Scenario": {"client_error"},
+		"X-Tenant":              {"tenant-a"},
+	}
+
+	sigA := ComputeSignature(nil, nil, headersA, "", cfg)
+	sigB := ComputeSignature(nil, nil, headersB, "", cfg)
+	if sigA != sigB {
+		t.Fatalf("expected virtual headers to be ignored, got %q != %q", sigA, sigB)
+	}
+}
+
+func TestComputeSignature_IgnoresVirtualHeadersCaseInsensitive(t *testing.T) {
+	cfg := &models.SignatureConfig{Headers: []string{"x-virtual-trace", "X-Test"}}
+
+	headersA := map[string][]string{
+		"X-VIRTUAL-TRACE": {"one"},
+		"X-Test":          {"same"},
+	}
+	headersB := map[string][]string{
+		"x-virtual-trace": {"two"},
+		"X-Test":          {"same"},
+	}
+
+	sigA := ComputeSignature(nil, nil, headersA, "", cfg)
+	sigB := ComputeSignature(nil, nil, headersB, "", cfg)
+	if sigA != sigB {
+		t.Fatalf("expected case-insensitive virtual headers to be ignored, got %q != %q", sigA, sigB)
+	}
+}

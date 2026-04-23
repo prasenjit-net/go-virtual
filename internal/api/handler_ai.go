@@ -75,6 +75,7 @@ func (h *Handler) GenerateAIResponse(c *gin.Context) {
 		Body:        input.Body,
 		Delay:       input.Delay,
 		Enabled:     input.Enabled,
+		Origin:      models.ResponseOriginAI,
 	}
 	if cfg.Tag == "" {
 		cfg.Tag = models.DefaultTagName

@@ -4,19 +4,38 @@ import (
 	"time"
 )
 
+const (
+	TraceResponseSourceConfig  = "config"
+	TraceResponseSourceExample = "example"
+	TraceResponseSourceAI      = "ai"
+	TraceResponseSourceProxy   = "proxy"
+
+	TraceResponseTierConfigured = "configured"
+	TraceResponseTierRecorded   = "recorded"
+	TraceResponseTierFallback   = "fallback"
+)
+
 // Trace represents a captured request/response trace
 type Trace struct {
-	ID              string        `json:"id"`
-	SpecID          string        `json:"specId"`
-	SpecName        string        `json:"specName"`
-	OperationID     string        `json:"operationId"`
-	OperationPath   string        `json:"operationPath"`
-	Timestamp       time.Time     `json:"timestamp"`
-	Duration        int64         `json:"duration"` // Duration in nanoseconds
-	Request         TraceRequest  `json:"request"`
-	Response        TraceResponse `json:"response"`
-	MatchedConfigID string        `json:"matchedConfigId,omitempty"`
-	MatchedConfig   string        `json:"matchedConfig,omitempty"` // Name of matched response config
+	ID                  string        `json:"id"`
+	SpecID              string        `json:"specId"`
+	SpecName            string        `json:"specName"`
+	OperationID         string        `json:"operationId"`
+	OperationPath       string        `json:"operationPath"`
+	Timestamp           time.Time     `json:"timestamp"`
+	Duration            int64         `json:"duration"` // Duration in nanoseconds
+	Request             TraceRequest  `json:"request"`
+	Response            TraceResponse `json:"response"`
+	MatchedConfigID     string        `json:"matchedConfigId,omitempty"`
+	MatchedConfig       string        `json:"matchedConfig,omitempty"` // Name of matched response config
+	MatchedConfigOrigin string        `json:"matchedConfigOrigin,omitempty"`
+	Mode                string        `json:"mode,omitempty"`
+	ResponseSource      string        `json:"responseSource,omitempty"`
+	ResponseTier        string        `json:"responseTier,omitempty"`
+	AISkippedReason     string        `json:"aiSkippedReason,omitempty"`
+	ProxySkippedReason  string        `json:"proxySkippedReason,omitempty"`
+	AIScenarioRequested string        `json:"aiScenarioRequested,omitempty"`
+	AIScenarioApplied   string        `json:"aiScenarioApplied,omitempty"`
 
 	// Proxy recording fields – populated when the trace is recorded in proxy mode
 	ProxyMode  bool   `json:"proxyMode,omitempty"`  // true when the request was forwarded to a real backend

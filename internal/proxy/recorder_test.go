@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,6 +29,37 @@ func makeTestRecorder(t *testing.T) (*Recorder, storage.Storage) {
 	t.Helper()
 	store := storage.NewMemoryStorage()
 	return NewRecorder(store), store
+}
+
+type barrierStorage struct {
+	storage.Storage
+	mu      sync.Mutex
+	waiting int
+	release chan struct{}
+}
+
+func newBarrierStorage(inner storage.Storage) *barrierStorage {
+	return &barrierStorage{
+		Storage: inner,
+		release: make(chan struct{}),
+	}
+}
+
+func (b *barrierStorage) GetResponseConfigsByOperation(opID string) ([]*models.ResponseConfig, error) {
+	b.mu.Lock()
+	b.waiting++
+	if b.waiting == 2 {
+		close(b.release)
+	}
+	release := b.release
+	b.mu.Unlock()
+
+	select {
+	case <-release:
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	return b.Storage.GetResponseConfigsByOperation(opID)
 }
 
 // ---- ProxyAndRecord ----
@@ -252,6 +284,39 @@ func TestRecordResponse_UpdatesExistingEntry(t *testing.T) {
 	}
 	if cfgs2[0].Body != `{"v":2}` {
 		t.Errorf("body should be updated to v:2, got %q", cfgs2[0].Body)
+	}
+}
+
+func TestSaveResponse_ConcurrentSameSignatureDoesNotDuplicate(t *testing.T) {
+	inner := storage.NewMemoryStorage()
+	store := newBarrierStorage(inner)
+	rec := NewRecorder(store)
+	op := &models.Operation{ID: "op-concurrent-1"}
+
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		body := fmt.Sprintf(`{"version":%d}`, i+1)
+		go func(body string) {
+			defer wg.Done()
+			<-start
+			rec.SaveResponse(op, "sharedsig", 200, map[string]string{"Content-Type": "application/json"}, body, models.ResponseOriginProxy)
+		}(body)
+	}
+
+	close(start)
+	wg.Wait()
+
+	cfgs, err := inner.GetResponseConfigsByOperation(op.ID)
+	if err != nil {
+		t.Fatalf("GetResponseConfigsByOperation: %v", err)
+	}
+	if len(cfgs) != 1 {
+		t.Fatalf("expected exactly 1 recorded config after concurrent save, got %d", len(cfgs))
+	}
+	if cfgs[0].EffectiveOrigin() != models.ResponseOriginProxy {
+		t.Fatalf("expected proxy origin, got %q", cfgs[0].EffectiveOrigin())
 	}
 }
 

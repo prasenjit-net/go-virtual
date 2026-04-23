@@ -45,8 +45,8 @@ build-ui:
 	cd $(UI_DIR) && npm run build
 	@echo "✓ UI build complete"
 
-## build-go: Compile the Go binary with embedded UI (requires ui/dist)
-build-go:
+## build-go: Build UI, then compile the Go binary with embedded assets
+build-go: build-ui
 	@echo "› Building Go binary ($(VERSION))…"
 	@mkdir -p $(BUILD_DIR)
 	$(GO) build -ldflags "$(LD_FLAGS)" -o $(BUILD_DIR)/$(BINARY) ./$(CMD_DIR)
@@ -165,4 +165,3 @@ help:
 		| sed 's/## //' \
 		| awk -F': ' '{ printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 }'
 	@echo ""
-

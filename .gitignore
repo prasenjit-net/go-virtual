@@ -15,6 +15,7 @@ go.work.sum
 # UI build output
 /ui/dist/
 /ui/node_modules/
+/ui/*.tsbuildinfo
 
 # IDE and editor
 .idea/

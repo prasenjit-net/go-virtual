@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/prasenjit/go-virtual/internal/models"
@@ -275,6 +276,228 @@ func TestUpdateSpec_ProxyModeWithoutBackendURI(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 when enabling proxyMode without backendUri, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id", handler.UpdateSpec)
+
+	update := map[string]interface{}{"mode": "ai"}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 when enabling ai mode without OpenAI key, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("OpenAI API key")) {
+		t.Fatalf("expected OpenAI API key error, got %s", w.Body.String())
+	}
+}
+
+func TestSetSpecMode(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	update := map[string]interface{}{"mode": "proxy"}
+	jsonBody, _ := json.Marshal(update)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	updated, _ := store.GetSpec("spec-1")
+	if updated.Mode != models.SpecModeProxy || !updated.ProxyMode || !updated.ModePolicy.Proxy.Enabled {
+		t.Fatalf("expected proxy mode enabled, got mode=%q proxyMode=%v policy=%+v", updated.Mode, updated.ProxyMode, updated.ModePolicy)
+	}
+}
+
+func TestSetSpecMode_InvalidJSON(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode", bytes.NewReader([]byte("not-json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestSetSpecMode_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/mode", handler.SetSpecMode)
+
+	req := httptest.NewRequest("PUT", "/specs/missing/mode", bytes.NewReader([]byte(`{"mode":"standard"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestGetSpecModePolicy(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{
+		ID:   "spec-1",
+		Name: "API",
+		ModePolicy: models.ModePolicy{
+			Configured: true,
+			AI:         models.ConditionalModeConfig{Enabled: true},
+			Proxy:      models.ConditionalModeConfig{Enabled: false},
+		},
+	})
+	r.GET("/specs/:id/mode-policy", handler.GetSpecModePolicy)
+
+	req := httptest.NewRequest("GET", "/specs/spec-1/mode-policy", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var result map[string]models.ModePolicy
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !result["modePolicy"].AI.Enabled || result["modePolicy"].Proxy.Enabled {
+		t.Fatalf("unexpected mode policy: %+v", result["modePolicy"])
+	}
+}
+
+func TestGetSpecModePolicy_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.GET("/specs/:id/mode-policy", handler.GetSpecModePolicy)
+
+	req := httptest.NewRequest("GET", "/specs/missing/mode-policy", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpecModePolicy(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	body := map[string]any{
+		"modePolicy": map[string]any{
+			"ai": map[string]any{
+				"enabled": false,
+				"conditions": []map[string]any{
+					{"source": "header", "key": "x-env", "operator": "eq", "value": "test"},
+				},
+			},
+			"proxy": map[string]any{
+				"enabled": true,
+				"conditions": []map[string]any{
+					{"source": "query", "key": "source", "operator": "eq", "value": "upstream"},
+				},
+			},
+		},
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	updatedSpec, _ := store.GetSpec("spec-1")
+	if !updatedSpec.ModePolicy.Configured || !updatedSpec.ModePolicy.Proxy.Enabled {
+		t.Fatalf("expected updated spec mode policy, got %+v", updatedSpec.ModePolicy)
+	}
+	if len(updatedSpec.ModePolicy.Proxy.Conditions) != 1 || len(updatedSpec.ModePolicy.AI.Conditions) != 1 {
+		t.Fatalf("expected saved conditions, got %+v", updatedSpec.ModePolicy)
+	}
+}
+
+func TestUpdateSpecModePolicy_InvalidJSON(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader([]byte("not-json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpecModePolicy_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	req := httptest.NewRequest("PUT", "/specs/missing/mode-policy", bytes.NewReader([]byte(`{"modePolicy":{"ai":{"enabled":false,"conditions":[]},"proxy":{"enabled":false,"conditions":[]}}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateSpecModePolicy_RejectsSignatureConditions(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", BackendURI: "http://backend"})
+	r.PUT("/specs/:id/mode-policy", handler.UpdateSpecModePolicy)
+
+	body := map[string]any{
+		"modePolicy": map[string]any{
+			"ai": map[string]any{
+				"enabled": false,
+				"conditions": []map[string]any{
+					{"source": "signature", "operator": "eq", "value": "abc123"},
+				},
+			},
+			"proxy": map[string]any{
+				"enabled":    true,
+				"conditions": []map[string]any{},
+			},
+		},
+	}
+	jsonBody, _ := json.Marshal(body)
+	req := httptest.NewRequest("PUT", "/specs/spec-1/mode-policy", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+	if !bytes.Contains(w.Body.Bytes(), []byte("signature conditions are only supported on operation responses")) {
+		t.Fatalf("expected signature-condition error, got %s", w.Body.String())
 	}
 }
 
@@ -695,6 +918,148 @@ func TestUpdateSpecTags_InvalidJSON(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateSpec_SeedsDefaultAIScenarios(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.POST("/specs", handler.CreateSpec)
+
+	specContent := `
+openapi: "3.0.0"
+info:
+  title: Scenario API
+  version: "1.0.0"
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          description: Success
+`
+	req := httptest.NewRequest("POST", "/specs", bytes.NewReader([]byte(`{"content":`+strconv.Quote(specContent)+`,"basePath":"/"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var created struct {
+		AIScenarios []models.AIScenario `json:"aiScenarios"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(created.AIScenarios) != 3 {
+		t.Fatalf("expected 3 seeded scenarios, got %d", len(created.AIScenarios))
+	}
+}
+
+func TestListAIScenarios(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.GET("/specs/:id/ai-scenarios", handler.ListAIScenarios)
+
+	req := httptest.NewRequest("GET", "/specs/spec-1/ai-scenarios", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Scenarios []models.AIScenario `json:"scenarios"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(resp.Scenarios) != 3 {
+		t.Fatalf("expected 3 scenarios, got %d", len(resp.Scenarios))
+	}
+}
+
+func TestCreateUpdateDeleteAIScenario(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.POST("/specs/:id/ai-scenarios", handler.CreateAIScenario)
+	r.PUT("/specs/:id/ai-scenarios/:scenarioId", handler.UpdateAIScenario)
+	r.DELETE("/specs/:id/ai-scenarios/:scenarioId", handler.DeleteAIScenario)
+
+	createReq := httptest.NewRequest("POST", "/specs/spec-1/ai-scenarios", bytes.NewReader([]byte(`{"scenario":{"name":"unauthorized","responseKind":"error","statusCode":401,"instructions":"Return auth error","enabled":true}}`)))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	r.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createW.Code, createW.Body.String())
+	}
+
+	var created struct {
+		Scenario models.AIScenario `json:"scenario"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if created.Scenario.Name != "unauthorized" {
+		t.Fatalf("unexpected scenario name %q", created.Scenario.Name)
+	}
+
+	updateReq := httptest.NewRequest("PUT", "/specs/spec-1/ai-scenarios/"+created.Scenario.ID, bytes.NewReader([]byte(`{"scenario":{"name":"unauthorized","responseKind":"error","statusCode":403,"count":2,"enabled":false}}`)))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateW := httptest.NewRecorder()
+	r.ServeHTTP(updateW, updateReq)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", updateW.Code, updateW.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest("DELETE", "/specs/spec-1/ai-scenarios/"+created.Scenario.ID, nil)
+	deleteW := httptest.NewRecorder()
+	r.ServeHTTP(deleteW, deleteReq)
+	if deleteW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", deleteW.Code, deleteW.Body.String())
+	}
+}
+
+func TestCreateAIScenario_RejectsDuplicateName(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.POST("/specs/:id/ai-scenarios", handler.CreateAIScenario)
+
+	req := httptest.NewRequest("POST", "/specs/spec-1/ai-scenarios", bytes.NewReader([]byte(`{"scenario":{"name":"success","responseKind":"success","enabled":true}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestDeleteAIScenario_NotFound(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", AIScenarios: models.DefaultAIScenarios()})
+	r.DELETE("/specs/:id/ai-scenarios/:scenarioId", handler.DeleteAIScenario)
+
+	req := httptest.NewRequest("DELETE", "/specs/spec-1/ai-scenarios/missing", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 

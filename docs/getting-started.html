@@ -91,7 +91,7 @@
       <h2>Installation</h2>
 
       <h3>Build from source</h3>
-      <pre><code>git clone https://github.com/your-org/go-virtual.git
+      <pre><code>git clone https://github.com/prasenjit-net/go-virtual.git
 cd go-virtual
 
 <span class="cm"># Install all dependencies and build UI + Go binary</span>
@@ -103,12 +103,12 @@ make build
 </code></pre>
 
       <h3>Go install</h3>
-      <pre><code>go install github.com/your-org/go-virtual@latest
+      <pre><code>go install github.com/prasenjit-net/go-virtual@latest
 </code></pre>
 
       <h3>Docker</h3>
-      <pre><code>docker pull ghcr.io/your-org/go-virtual:latest
-docker run -p 8080:8080 -v $(pwd)/data:/app/data ghcr.io/your-org/go-virtual:latest
+      <pre><code>docker build -t go-virtual:latest .
+docker run -p 8080:8080 -v $(pwd)/data:/app/data go-virtual:latest
 </code></pre>
 
       <div class="callout info">
@@ -370,7 +370,7 @@ docker build -t go-virtual .
       <pre><code><span class="key">version</span><span class="op">:</span> <span class="str">"3.9"</span>
 <span class="key">services</span><span class="op">:</span>
   <span class="key">go-virtual</span><span class="op">:</span>
-    <span class="key">image</span><span class="op">:</span> <span class="str">ghcr.io/your-org/go-virtual:latest</span>
+    <span class="key">image</span><span class="op">:</span> <span class="str">go-virtual:latest</span>
     <span class="key">ports</span><span class="op">:</span>
       <span class="op">-</span> <span class="str">"8080:8080"</span>
     <span class="key">volumes</span><span class="op">:</span>
@@ -385,7 +385,7 @@ docker build -t go-virtual .
       <h2>Development Mode</h2>
       <p>When contributing to go-virtual or customizing the UI:</p>
       <pre><code><span class="cm"># Terminal 1 — Go server (auto-reloads with air or manual restart)</span>
-make dev-server
+make dev
 
 <span class="cm"># Terminal 2 — Vite dev server with HMR on :5173</span>
 make dev-ui

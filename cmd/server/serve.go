@@ -47,9 +47,9 @@ or specify a custom config file with the --config flag.`,
 }
 
 var (
-	devMode     bool
-	portFlag    int
-	tlsFlag     bool
+	devMode      bool
+	portFlag     int
+	tlsFlag      bool
 	headlessFlag bool
 )
 
@@ -113,9 +113,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize tracing service
 	tracingService := tracing.NewService(maxTraces)
 
+	aiGenerator := ai.NewGenerator(ai.Config{
+		APIKey: viper.GetString("ai.openaiApiKey"),
+		Model:  viper.GetString("ai.openaiModel"),
+	})
+
 	// Initialize proxy engine
 	scriptTimeoutMs := viper.GetInt("scripting.defaultTimeoutMs")
 	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService, scriptTimeoutMs)
+	proxyEngine.SetAIGenerator(aiGenerator)
 
 	// Initialize Phase 2 — GlobalStore and SessionManager
 	storePath := storagePath // already resolved above
@@ -201,10 +207,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Branding:       branding,
 		Headless:       headless,
 		ScriptTimeout:  scriptTimeoutMs,
-		AIGenerator: ai.NewGenerator(ai.Config{
-			APIKey: viper.GetString("ai.openaiApiKey"),
-			Model:  viper.GetString("ai.openaiModel"),
-		}),
+		AIGenerator:    aiGenerator,
 	})
 
 	// Setup UI and docs serving (skipped in headless mode)

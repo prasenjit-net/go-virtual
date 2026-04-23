@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
@@ -17,6 +16,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/tracing"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // RouterConfig holds all dependencies and options for creating a Router.
@@ -106,7 +106,14 @@ func (r *Router) setupRoutes() {
 		api.PUT("/specs/:id/tracing", r.handler.ToggleTracing)
 		api.PUT("/specs/:id/example-fallback", r.handler.ToggleExampleFallback)
 		api.PUT("/specs/:id/backend", r.handler.SetBackendURI)
+		api.PUT("/specs/:id/mode", r.handler.SetSpecMode)
+		api.GET("/specs/:id/mode-policy", r.handler.GetSpecModePolicy)
+		api.PUT("/specs/:id/mode-policy", r.handler.UpdateSpecModePolicy)
 		api.PUT("/specs/:id/proxy-mode", r.handler.ToggleProxyMode)
+		api.GET("/specs/:id/ai-scenarios", r.handler.ListAIScenarios)
+		api.POST("/specs/:id/ai-scenarios", r.handler.CreateAIScenario)
+		api.PUT("/specs/:id/ai-scenarios/:scenarioId", r.handler.UpdateAIScenario)
+		api.DELETE("/specs/:id/ai-scenarios/:scenarioId", r.handler.DeleteAIScenario)
 		api.GET("/specs/:id/tags", r.handler.GetSpecTags)
 		api.PUT("/specs/:id/tags", r.handler.UpdateSpecTags)
 
@@ -238,11 +245,11 @@ func (r *Router) ServeUIFromFS(dir string) {
 func (r *Router) ServeEmbeddedUI(uiFS fs.FS) {
 	// Serve embedded static files
 	staticServer := http.FileServer(http.FS(uiFS))
-	
+
 	r.engine.GET("/_ui/*filepath", func(c *gin.Context) {
 		// Remove /_ui prefix for file serving
 		path := strings.TrimPrefix(c.Param("filepath"), "/")
-		
+
 		// Check if file exists
 		if f, err := uiFS.Open(path); err == nil {
 			f.Close()

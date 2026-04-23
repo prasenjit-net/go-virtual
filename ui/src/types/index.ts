@@ -1,4 +1,8 @@
 // Spec types
+export type SpecMode = 'standard' | 'ai' | 'proxy';
+export type ResponseOrigin = 'manual' | 'proxy' | 'ai';
+export type ResponseTier = 'configured' | 'recorded' | 'fallback';
+
 export interface Spec {
     id: string;
     name: string;
@@ -10,8 +14,11 @@ export interface Spec {
     tracing: boolean;
     useExampleFallback: boolean;
     enabledTags?: string[];
+    mode: SpecMode;
     backendUri: string;
     proxyMode: boolean;
+    modePolicy: ModePolicy;
+    aiScenarios?: AIScenario[];
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -38,6 +45,32 @@ export interface Operation {
     responses?: ResponseConfig[];
     exampleResponse?: ExampleResponse;
     signatureConfig?: SignatureConfig | null;
+}
+
+export interface ConditionalModeConfig {
+    enabled: boolean;
+    conditions: Condition[];
+}
+
+export interface ModePolicy {
+    configured?: boolean;
+    ai: ConditionalModeConfig;
+    proxy: ConditionalModeConfig;
+}
+
+export type AIScenarioKind = 'success' | 'error';
+
+export interface AIScenario {
+    id: string;
+    name: string;
+    description: string;
+    responseKind: AIScenarioKind;
+    statusCode: number;
+    count: number;
+    instructions: string;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 // SignatureConfig controls which request parts contribute to the signature hash
@@ -87,6 +120,7 @@ export interface ResponseConfig {
     delay: number;
     enabled: boolean;
     recorded: boolean;
+    origin: ResponseOrigin;
 }
 
 export interface ResponseConfigInput {
@@ -136,6 +170,14 @@ export interface Trace {
     response: TraceResponse;
     matchedConfigId?: string;
     matchedConfig?: string;
+    matchedConfigOrigin?: ResponseOrigin;
+    mode?: SpecMode;
+    responseSource?: 'config' | 'example' | 'ai' | 'proxy';
+    responseTier?: ResponseTier;
+    aiSkippedReason?: string;
+    proxySkippedReason?: string;
+    aiScenarioRequested?: string;
+    aiScenarioApplied?: string;
     // Proxy recording fields
     proxyMode?: boolean;
     signature?: string;

@@ -56,7 +56,7 @@
     <div class="page-header">
       <div class="breadcrumb"><a href="index.html">go-virtual</a> / Specs &amp; Responses</div>
       <h1>Specs &amp; Responses</h1>
-      <p class="lead">Upload and manage OpenAPI 3 specifications, browse their operations, and design mock response configurations with priorities, delays, and conditions.</p>
+      <p class="lead">Upload and manage OpenAPI 3 specifications, choose how each spec executes, browse operations, and design both manual and replayable response configurations.</p>
     </div>
 
     <div class="toc">
@@ -67,8 +67,8 @@
         <li><a href="#responses">Response Configurations</a></li>
         <li><a href="#priority">Priority &amp; Matching Order</a></li>
         <li><a href="#delay">Response Delays</a></li>
-        <li><a href="#proxy-mode">Proxy Mode</a></li>
-        <li><a href="#recording">Auto-Recording</a></li>
+        <li><a href="#proxy-mode">Spec Modes</a></li>
+        <li><a href="#recording">Generated &amp; Recorded Responses</a></li>
         <li><a href="#examples">Complete Examples</a></li>
       </ul>
     </div>
@@ -106,8 +106,11 @@ curl -X POST http://localhost:8080/_api/specs \
             <tr><td>name</td><td>string</td><td>Human-readable name displayed in the UI</td></tr>
             <tr><td>content</td><td>string</td><td>Raw YAML or JSON OpenAPI 3 content</td></tr>
             <tr><td>basePath</td><td>string</td><td>Optional path prefix for all operations (e.g., <code>/v1</code>)</td></tr>
-            <tr><td>enabled</td><td>bool</td><td>Whether this spec's operations are active (default: true)</td></tr>
-            <tr><td>tracingEnabled</td><td>bool</td><td>Whether requests to this spec are traced (default: true)</td></tr>
+            <tr><td>enabled</td><td>bool</td><td>Whether this spec's operations are active</td></tr>
+            <tr><td>tracing</td><td>bool</td><td>Whether requests to this spec are traced</td></tr>
+            <tr><td>useExampleFallback</td><td>bool</td><td>Whether standard mode can fall back to OpenAPI examples/default responses</td></tr>
+            <tr><td>mode</td><td>string</td><td>Execution mode: <code>standard</code>, <code>ai</code>, or <code>proxy</code></td></tr>
+            <tr><td>backendUri</td><td>string</td><td>Upstream backend URL used by proxy fallback</td></tr>
           </tbody>
         </table>
       </div>
@@ -190,7 +193,8 @@ curl -X PUT http://localhost:8080/_api/specs/spec_abc123/enable
       "X-Request-Id": "{{random.uuid}}"
     },
     "body": "{\"id\": \"{{path.id}}\", \"name\": \"{{faker.animal.name}}\"}",
-    "delayMs": 50
+    "delay": 50,
+    "tag": "default"
   }'</span>
 </code></pre>
 
@@ -205,8 +209,8 @@ curl -X PUT http://localhost:8080/_api/specs/spec_abc123/enable
             <tr><td>headers</td><td>object</td><td>No</td><td>HTTP headers to include in the response. Values support templates.</td></tr>
             <tr><td>body</td><td>string</td><td>No</td><td>Response body string. Supports template variables.</td></tr>
             <tr><td>conditions</td><td>array</td><td>No</td><td>Array of condition objects. If empty, this config always matches.</td></tr>
-            <tr><td>delayMs</td><td>integer</td><td>No</td><td>Additional delay in milliseconds before responding</td></tr>
-            <tr><td>tags</td><td>array</td><td>No</td><td>Tags for organizing responses in the UI</td></tr>
+            <tr><td>delay</td><td>integer</td><td>No</td><td>Additional delay in milliseconds before responding</td></tr>
+            <tr><td>tag</td><td>string</td><td>No</td><td>Tag used to organize and filter responses in the UI</td></tr>
           </tbody>
         </table>
       </div>
@@ -273,11 +277,11 @@ curl -X DELETE http://localhost:8080/_api/responses/resp_id
     <!-- Delays -->
     <div class="section" id="delay">
       <h2>Response Delays</h2>
-      <p>Simulate realistic network latency by setting <code>delayMs</code> on a response config. The server waits the specified number of milliseconds before sending the response.</p>
+      <p>Simulate realistic network latency by setting <code>delay</code> on a response config. The server waits the specified number of milliseconds before sending the response.</p>
       <pre><code>{
   <span class="key">"name"</span>: <span class="str">"Slow endpoint"</span>,
   <span class="key">"statusCode"</span>: <span class="num">200</span>,
-  <span class="key">"delayMs"</span>: <span class="num">2000</span>,  <span class="cm">// 2 second delay</span>
+  <span class="key">"delay"</span>: <span class="num">2000</span>,  <span class="cm">// 2 second delay</span>
   <span class="key">"body"</span>: <span class="str">"{\"result\": \"slow\"}"</span>
 }
 </code></pre>
@@ -291,18 +295,37 @@ curl -X DELETE http://localhost:8080/_api/responses/resp_id
 
     <!-- Proxy mode -->
     <div class="section" id="proxy-mode">
-      <h2>Proxy Mode</h2>
-      <p>In proxy mode, go-virtual forwards requests to a real backend instead of (or in addition to) serving mock responses. Configure the backend URL in your spec upload:</p>
+      <h2>Spec Modes</h2>
+      <p>Each spec runs in one mode. In every case, saved responses are evaluated first; only after they miss does the selected fallback run.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>Fallback behavior after saved responses miss</th></tr></thead>
+          <tbody>
+            <tr><td><code>standard</code></td><td>Use the OpenAPI example/default fallback when enabled</td></tr>
+            <tr><td><code>ai</code></td><td>Generate a structured response from the request and response schema, then record it</td></tr>
+            <tr><td><code>proxy</code></td><td>Forward to the configured backend, then record the upstream response</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Use the spec mode selector in the UI or the explicit mode API to switch between behaviors:</p>
+      <pre><code>curl -X PUT http://localhost:8080/_api/specs/spec_abc123/mode \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"mode": "proxy"}'</span>
+
+curl -X PUT http://localhost:8080/_api/specs/spec_abc123/backend \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"backendUri": "https://api.example.com"}'</span>
+</code></pre>
       <pre><code>curl -X POST http://localhost:8080/_api/specs \
   -H <span class="str">"Content-Type: application/json"</span> \
   -d <span class="str">'{
     "name": "Live API",
     "content": "...",
-    "proxyTarget": "https://api.example.com"
+    "backendUri": "https://api.example.com"
   }'</span>
 </code></pre>
 
-      <p>When a <code>proxyTarget</code> is set and an operation has no matching response config, the request is forwarded to the target and the real response is returned.</p>
+      <p>When a spec runs in <code>proxy</code> mode and an operation has no matching saved response config, the request is forwarded to the configured <code>backendUri</code> and the real response is returned.</p>
 
       <h3>mTLS for backend requests</h3>
       <p>If your backend requires mutual TLS authentication, configure client certificates in <code>config.yaml</code>:</p>
@@ -317,14 +340,14 @@ curl -X DELETE http://localhost:8080/_api/responses/resp_id
 
     <!-- Recording -->
     <div class="section" id="recording">
-      <h2>Auto-Recording</h2>
-      <p>When proxy mode is active, go-virtual can automatically record real responses and generate mock response configs from live traffic. This is useful for bootstrapping a mock library from production data.</p>
-      <pre><code><span class="cm"># Enable recording on a spec</span>
-curl -X PUT http://localhost:8080/_api/specs/spec_id/recording/enable
-
-<span class="cm"># After making real requests, recorded responses appear automatically</span>
-curl http://localhost:8080/_api/operations/op_id/responses
-</code></pre>
+      <h2>Generated &amp; Recorded Responses</h2>
+      <p>AI mode and proxy mode both produce replayable response configs. These responses are stored on the operation and shown on a dedicated generated responses page in the UI, separate from manual responses.</p>
+      <ul>
+        <li><strong>AI origin</strong> — generated at runtime and saved for replay</li>
+        <li><strong>Proxy origin</strong> — captured from the upstream backend and saved for replay</li>
+        <li><strong>Manual origin</strong> — created directly by a user</li>
+      </ul>
+      <p>Recorded/generated responses normally use a <code>signature</code> condition. That lets the runtime match the exact request fingerprint again later without re-running AI or proxy fallback.</p>
       <div class="callout warning">
         <span class="callout-icon">⚠️</span>
         <div class="callout-body">
@@ -366,7 +389,7 @@ curl http://localhost:8080/_api/operations/op_id/responses
   <span class="key">"name"</span>: <span class="str">"Server Error"</span>, <span class="key">"priority"</span>: <span class="num">0</span>, <span class="key">"statusCode"</span>: <span class="num">500</span>,
   <span class="key">"conditions"</span>: [{<span class="key">"source"</span>: <span class="str">"query"</span>, <span class="key">"key"</span>: <span class="str">"fail"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"true"</span>}],
   <span class="key">"body"</span>: <span class="str">"{\"error\": \"Internal server error\"}"</span>,
-  <span class="key">"delayMs"</span>: <span class="num">3000</span>
+  <span class="key">"delay"</span>: <span class="num">3000</span>
 }
 </code></pre>
 

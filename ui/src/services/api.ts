@@ -86,6 +86,29 @@ export const specsApi = {
         return handleResponse<any>(response);
     },
 
+    setMode: async (id: string, mode: import('../types').SpecMode) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+        });
+        return handleResponse<any>(response);
+    },
+
+    getModePolicy: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode-policy`);
+        return handleResponse<{ modePolicy: import('../types').ModePolicy }>(response);
+    },
+
+    updateModePolicy: async (id: string, modePolicy: import('../types').ModePolicy) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode-policy`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modePolicy }),
+        });
+        return handleResponse<{ modePolicy: import('../types').ModePolicy }>(response);
+    },
+
     toggleProxyMode: async (id: string, enabled: boolean) => {
         const response = await fetch(`${API_BASE}/specs/${id}/proxy-mode`, {
             method: 'PUT',
@@ -93,6 +116,36 @@ export const specsApi = {
             body: JSON.stringify({ enabled }),
         });
         return handleResponse<any>(response);
+    },
+
+    listAIScenarios: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios`);
+        return handleResponse<{ scenarios: import('../types').AIScenario[] }>(response);
+    },
+
+    createAIScenario: async (id: string, scenario: Partial<import('../types').AIScenario>) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario }),
+        });
+        return handleResponse<{ scenario: import('../types').AIScenario }>(response);
+    },
+
+    updateAIScenario: async (id: string, scenarioId: string, scenario: Partial<import('../types').AIScenario>) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios/${scenarioId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario }),
+        });
+        return handleResponse<{ scenario: import('../types').AIScenario }>(response);
+    },
+
+    deleteAIScenario: async (id: string, scenarioId: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios/${scenarioId}`, {
+            method: 'DELETE',
+        });
+        return handleResponse<{ deleted: boolean }>(response);
     },
 
     getTags: async (id: string) => {
@@ -168,6 +221,7 @@ export const operationsApi = {
         });
         return handleResponse<any>(response);
     },
+
 };
 
 // Response configs API

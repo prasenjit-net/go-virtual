@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Activity,
+    Bot,
     Trash2,
     Search,
     ChevronRight,
@@ -27,6 +28,19 @@ const methodColors: Record<string, string> = {
     PUT: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
     DELETE: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     PATCH: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+}
+
+const responseTierLabels: Record<string, string> = {
+    configured: 'Configured',
+    recorded: 'Recorded',
+    fallback: 'Fallback',
+}
+
+const skipReasonLabels: Record<string, string> = {
+    disabled: 'disabled',
+    'not-configured': 'not configured',
+    'no-backend': 'no upstream',
+    'conditions-not-matched': 'conditions not matched',
 }
 
 export default function TraceViewer() {
@@ -246,15 +260,26 @@ export default function TraceViewer() {
                                             )}>
                                                 {trace.request.method}
                                             </span>
-                                            {trace.proxyMode && (
+                                            {trace.responseSource === 'proxy' && (
                                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 shrink-0">
                                                     <Radio className="w-2.5 h-2.5" />
                                                     Proxy
                                                 </span>
                                             )}
-                                            <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
-                                                {trace.request.path}
-                                            </span>
+                                            {trace.responseSource === 'ai' && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 shrink-0">
+                                                    <Bot className="w-2.5 h-2.5" />
+                                                    AI
+                                                </span>
+                                            )}
+                                            {trace.responseTier && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 shrink-0">
+                                                    {responseTierLabels[trace.responseTier] || trace.responseTier}
+                                                </span>
+                                            )}
+                                        <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
+                                            {trace.request.path}
+                                        </span>
                                         </div>
                                         <span className={clsx(
                                             'px-2 py-0.5 rounded text-xs font-medium shrink-0 ml-2',
@@ -482,20 +507,23 @@ function TraceDetail({
 }) {
     return (
         <div className="p-6 space-y-6">
-            {/* Proxy Recording Banner */}
-            {trace.proxyMode && (
+            {/* Generated/Proxy Banner */}
+            {(trace.responseSource === 'proxy' || trace.responseSource === 'ai') && (
                 <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 p-4">
                     <div className="flex items-center gap-2 mb-3">
-                        <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                        {trace.responseSource === 'proxy' ? (
+                            <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                        ) : (
+                            <Bot className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400 shrink-0" />
+                        )}
                         <span className="text-sm font-semibold text-violet-800 dark:text-violet-200">
-                            Proxy Recording
+                            {trace.responseSource === 'proxy' ? 'Proxy Recording' : 'AI Generation'}
                         </span>
                         <span className="ml-auto text-xs text-violet-500 dark:text-violet-400">
                             {formatDuration(trace.duration)}
                         </span>
                     </div>
                     <div className="space-y-2 text-sm">
-                        {/* Backend URI */}
                         {trace.backendUri && (
                             <div className="flex items-start gap-2">
                                 <Globe className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400 mt-0.5 shrink-0" />
@@ -526,6 +554,52 @@ function TraceDetail({
                                         This hash uniquely identifies the request and is used to match replayed responses.
                                     </p>
                                 </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {(trace.aiSkippedReason || trace.proxySkippedReason || trace.mode || trace.responseTier || trace.aiScenarioRequested || trace.aiScenarioApplied) && (
+                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3">
+                        Fallback decision
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {trace.mode && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Selected mode</span>
+                                <div className="text-gray-700 dark:text-slate-200 capitalize">{trace.mode}</div>
+                            </div>
+                        )}
+                        {trace.responseTier && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Response tier</span>
+                                <div className="text-gray-700 dark:text-slate-200">{responseTierLabels[trace.responseTier] || trace.responseTier}</div>
+                            </div>
+                        )}
+                        {trace.aiSkippedReason && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">AI skip reason</span>
+                                <div className="text-gray-700 dark:text-slate-200">{skipReasonLabels[trace.aiSkippedReason] || trace.aiSkippedReason}</div>
+                            </div>
+                        )}
+                        {trace.proxySkippedReason && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Proxy skip reason</span>
+                                <div className="text-gray-700 dark:text-slate-200">{skipReasonLabels[trace.proxySkippedReason] || trace.proxySkippedReason}</div>
+                            </div>
+                        )}
+                        {trace.aiScenarioRequested && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Requested AI scenario</span>
+                                <div className="text-gray-700 dark:text-slate-200">{trace.aiScenarioRequested}</div>
+                            </div>
+                        )}
+                        {trace.aiScenarioApplied && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Applied AI scenario</span>
+                                <div className="text-gray-700 dark:text-slate-200">{trace.aiScenarioApplied}</div>
                             </div>
                         )}
                     </div>
@@ -586,9 +660,11 @@ function TraceDetail({
                             )}>
                                 {trace.response.statusCode}
                             </span>
-                            {trace.proxyMode && (
+                            {(trace.responseSource === 'proxy' || trace.responseSource === 'ai') && (
                                 <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">
-                                    Recorded &amp; saved for replay
+                                    {trace.responseSource === 'proxy'
+                                        ? 'Recorded & saved for replay'
+                                        : 'AI-generated & saved for replay'}
                                 </span>
                             )}
                         </div>
@@ -602,9 +678,14 @@ function TraceDetail({
             </div>
 
             {/* Matched Config (virtual mode) */}
-            {!trace.proxyMode && trace.matchedConfig && (
+            {trace.matchedConfig && trace.responseSource === 'config' && (
                 <div className="text-sm text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
                     Matched config: <span className="font-medium text-gray-700 dark:text-slate-200">{trace.matchedConfig}</span>
+                    {trace.matchedConfigOrigin && (
+                        <span className="ml-2 text-xs uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                            ({trace.matchedConfigOrigin})
+                        </span>
+                    )}
                 </div>
             )}
 

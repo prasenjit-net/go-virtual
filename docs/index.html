@@ -55,11 +55,11 @@
   <main class="main">
     <div class="hero">
       <h1>API Mock &amp; <span>Virtualization</span><br>for OpenAPI 3</h1>
-      <p>go-virtual is a powerful, self-hosted service that lets you mock, virtualize, and proxy OpenAPI 3 APIs — with dynamic responses, Starlark scripting, session state, and real-time tracing.</p>
+      <p>go-virtual is a self-hosted OpenAPI 3 virtualization service with three execution modes — standard, AI, and proxy — plus dynamic responses, Starlark scripting, session state, and real-time tracing.</p>
       <div class="hero-actions">
         <a href="getting-started.html" class="btn btn-primary">&#8594; Get Started</a>
         <a href="admin-ui.html" class="btn btn-secondary">🖥️ Admin UI Guide</a>
-        <a href="proxy-mode.html" class="btn btn-secondary">🔀 Proxy Mode</a>
+        <a href="proxy-mode.html" class="btn btn-secondary">🔀 Modes &amp; Recording</a>
         <a href="admin-api.html" class="btn btn-secondary">API Reference</a>
       </div>
     </div>
@@ -72,7 +72,8 @@
         <li><strong>Integration testing</strong> — Simulate edge cases, errors, and latency</li>
         <li><strong>API contract validation</strong> — Ensure clients respect the spec</li>
         <li><strong>Demos &amp; staging environments</strong> — Serve predictable, configurable data</li>
-        <li><strong>Traffic recording</strong> — Proxy live traffic and auto-generate mocks</li>
+        <li><strong>Traffic recording</strong> — Proxy live traffic and replay captured responses later</li>
+        <li><strong>Runtime AI generation</strong> — Generate structured responses from the request and OpenAPI response schema</li>
       </ul>
 
       <div class="feature-list">
@@ -84,6 +85,8 @@
         <span class="feature-pill"><span class="dot"></span>Session &amp; global key-value store</span>
         <span class="feature-pill"><span class="dot"></span>WebSocket live tracing</span>
         <span class="feature-pill"><span class="dot"></span>Prometheus metrics</span>
+        <span class="feature-pill"><span class="dot"></span>Standard / AI / Proxy modes</span>
+        <span class="feature-pill"><span class="dot"></span>Generated response management</span>
         <span class="feature-pill"><span class="dot"></span>TLS &amp; mTLS support</span>
         <span class="feature-pill"><span class="dot"></span>React admin UI</span>
         <span class="feature-pill"><span class="dot"></span>File &amp; in-memory storage</span>
@@ -102,22 +105,22 @@
         </li>
         <li>
           <div>
-            <p><strong>Script Execution</strong> — If a Starlark script is bound to the operation, it runs with the request context and produces named output variables.</p>
+            <p><strong>Request Signature</strong> — The request is fingerprinted using the operation’s signature configuration so recorded/generated responses can be replayed precisely.</p>
           </div>
         </li>
         <li>
           <div>
-            <p><strong>Condition Evaluation</strong> — Response configurations are evaluated in priority order. The first config whose conditions match (or has no conditions) is selected.</p>
+            <p><strong>Condition Evaluation</strong> — Saved response configurations are evaluated in priority order. The first config whose conditions match is selected.</p>
           </div>
         </li>
         <li>
           <div>
-            <p><strong>Template Rendering</strong> — The selected response body and headers are rendered with template variables drawn from path, query, headers, request body, faker data, and script output.</p>
+            <p><strong>Mode Fallback</strong> — If no saved response matches, the spec falls back according to its mode: OpenAPI example/default, runtime AI generation, or upstream proxy.</p>
           </div>
         </li>
         <li>
           <div>
-            <p><strong>Response &amp; Tracing</strong> — The final response is sent to the client. The full request/response cycle is captured as a trace entry.</p>
+            <p><strong>Response, Recording &amp; Tracing</strong> — The final response is sent to the client, optionally recorded for replay, and captured with mode/source-aware trace metadata.</p>
           </div>
         </li>
       </ol>
@@ -138,8 +141,8 @@
         </a>
         <a href="proxy-mode.html" class="card" style="border-color: #6366f1;">
           <div class="card-icon">🔀</div>
-          <div class="card-title">Proxy Mode</div>
-          <div class="card-desc">Forward requests to a real backend, record live responses, and replay them offline with signature-based deduplication.</div>
+          <div class="card-title">Modes &amp; Recording</div>
+          <div class="card-desc">Learn how proxy fallback, AI generation, and signature-based recorded responses work together.</div>
         </a>
         <a href="specs-and-responses.html" class="card">
           <div class="card-icon">📄</div>
@@ -184,10 +187,10 @@
 
       <h3>1. Install</h3>
       <pre><code><span class="cm"># Using Go toolchain</span>
-go install github.com/your-org/go-virtual@latest
+go install github.com/prasenjit-net/go-virtual@latest
 
 <span class="cm"># Or build from source</span>
-git clone https://github.com/your-org/go-virtual
+git clone https://github.com/prasenjit-net/go-virtual.git
 make build
 </code></pre>
 
@@ -235,7 +238,7 @@ curl -X POST http://localhost:8080/_api/operations/&lt;op-id&gt;/responses \
 
     <div class="section" id="versions">
       <h2>Project Status</h2>
-      <p>go-virtual is actively developed. The current feature set includes all Phase 1 and Phase 2 scripting capabilities (Starlark builtins, session store). See the <a href="https://github.com/your-org/go-virtual">GitHub repository</a> for releases.</p>
+      <p>go-virtual is actively developed. The current feature set includes spec modes, recorded/generated response management, Starlark scripting, session-aware store, tracing, archives, and an embedded admin UI. See the <a href="https://github.com/prasenjit-net/go-virtual">GitHub repository</a> for releases.</p>
       <div class="callout success">
         <span class="callout-icon">✅</span>
         <div class="callout-body">

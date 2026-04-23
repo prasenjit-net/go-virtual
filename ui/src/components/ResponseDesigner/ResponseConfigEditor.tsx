@@ -29,7 +29,7 @@ const operators: { value: ConditionOperator; label: string }[] = [
     { value: 'lte', label: 'Less or Equal' },
 ]
 
-const sources = ['path', 'query', 'header', 'body'] as const
+const sources = ['path', 'query', 'header', 'body', 'signature'] as const
 
 const templateDocs = {
     request: [
@@ -325,7 +325,13 @@ export default function ResponseConfigEditor({
 
     const updateCondition = (index: number, updates: Partial<Condition>) => {
         const newConditions = [...conditions]
-        newConditions[index] = { ...newConditions[index], ...updates }
+        const nextCondition = { ...newConditions[index], ...updates }
+
+        if (updates.source === 'signature') {
+            nextCondition.key = ''
+        }
+
+        newConditions[index] = nextCondition
         setConditions(newConditions)
     }
 
@@ -520,8 +526,9 @@ export default function ResponseConfigEditor({
                                         type="text"
                                         value={cond.key}
                                         onChange={(e) => updateCondition(index, { key: e.target.value })}
-                                        placeholder="key"
+                                        placeholder={cond.source === 'signature' ? 'computed request signature' : 'key'}
                                         className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                        disabled={cond.source === 'signature'}
                                     />
                                     <select
                                         value={cond.operator}
@@ -554,6 +561,11 @@ export default function ResponseConfigEditor({
                                 </div>
                             ))}
                         </div>
+                        {conditions.some((cond) => cond.source === 'signature') && (
+                            <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">
+                                Recorded responses use a computed request signature hash, so the key is fixed and only the hash value is stored.
+                            </p>
+                        )}
                     </div>
 
                     {/* Headers */}
