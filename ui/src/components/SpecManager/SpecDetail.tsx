@@ -9,11 +9,19 @@ import {
     Sparkles,
     Radio,
     Save,
-    Globe
+    Globe,
+    Plus,
+    Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
-import type { Spec, OperationSummary, SpecMode } from '../../types'
+import type {
+    Condition,
+    ConditionOperator,
+    OperationModePolicy,
+    OperationSummary,
+    Spec,
+} from '../../types'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -25,10 +33,152 @@ const methodColors: Record<string, string> = {
     OPTIONS: 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300',
 }
 
+const operators: { value: ConditionOperator; label: string }[] = [
+    { value: 'eq', label: 'Equals' },
+    { value: 'ne', label: 'Not Equals' },
+    { value: 'contains', label: 'Contains' },
+    { value: 'notContains', label: 'Not Contains' },
+    { value: 'startsWith', label: 'Starts With' },
+    { value: 'endsWith', label: 'Ends With' },
+    { value: 'regex', label: 'Regex' },
+    { value: 'exists', label: 'Exists' },
+    { value: 'notExists', label: 'Not Exists' },
+    { value: 'gt', label: 'Greater Than' },
+    { value: 'lt', label: 'Less Than' },
+    { value: 'gte', label: 'Greater or Equal' },
+    { value: 'lte', label: 'Less or Equal' },
+]
+
+const sources = ['path', 'query', 'header', 'body', 'signature'] as const
+
+const createDefaultPolicy = (): OperationModePolicy => ({
+    configured: true,
+    ai: { enabled: false, conditions: [] },
+    proxy: { enabled: false, conditions: [] },
+})
+
+const clonePolicy = (policy?: OperationModePolicy): OperationModePolicy => ({
+    configured: true,
+    ai: {
+        enabled: policy?.ai.enabled ?? false,
+        conditions: [...(policy?.ai.conditions ?? [])],
+    },
+    proxy: {
+        enabled: policy?.proxy.enabled ?? false,
+        conditions: [...(policy?.proxy.conditions ?? [])],
+    },
+})
+
+function ConditionsEditor({
+    title,
+    description,
+    conditions,
+    onChange,
+}: {
+    title: string
+    description: string
+    conditions: Condition[]
+    onChange: (conditions: Condition[]) => void
+}) {
+    const addCondition = () => {
+        onChange([...conditions, { source: 'query', key: '', operator: 'eq', value: '' }])
+    }
+
+    const updateCondition = (index: number, updates: Partial<Condition>) => {
+        const next = [...conditions]
+        const updated = { ...next[index], ...updates }
+        if (updates.source === 'signature') {
+            updated.key = ''
+        }
+        next[index] = updated
+        onChange(next)
+    }
+
+    const removeCondition = (index: number) => {
+        onChange(conditions.filter((_, i) => i !== index))
+    }
+
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-2">
+                <div>
+                    <h4 className="text-sm font-medium text-gray-900 dark:text-slate-100">{title}</h4>
+                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{description}</p>
+                </div>
+                <button
+                    type="button"
+                    onClick={addCondition}
+                    className="text-sm text-primary-600 hover:text-primary-700 flex items-center"
+                >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Add Condition
+                </button>
+            </div>
+            <div className="space-y-2">
+                {conditions.length === 0 && (
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-slate-700 px-3 py-3 text-xs text-gray-500 dark:text-slate-400">
+                        No conditions configured. This mode matches all requests when enabled.
+                    </div>
+                )}
+                {conditions.map((cond, index) => (
+                    <div key={index} className="flex flex-wrap items-center gap-2">
+                        <select
+                            value={cond.source}
+                            onChange={(e) => updateCondition(index, { source: e.target.value as Condition['source'] })}
+                            className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                        >
+                            {sources.map((source) => (
+                                <option key={source} value={source}>
+                                    {source}
+                                </option>
+                            ))}
+                        </select>
+                        <input
+                            type="text"
+                            value={cond.key}
+                            onChange={(e) => updateCondition(index, { key: e.target.value })}
+                            disabled={cond.source === 'signature'}
+                            placeholder={cond.source === 'signature' ? 'signature has no key' : 'key / path'}
+                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:bg-gray-100 disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-500"
+                        />
+                        <select
+                            value={cond.operator}
+                            onChange={(e) => updateCondition(index, { operator: e.target.value as ConditionOperator })}
+                            className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                        >
+                            {operators.map((operator) => (
+                                <option key={operator.value} value={operator.value}>
+                                    {operator.label}
+                                </option>
+                            ))}
+                        </select>
+                        <input
+                            type="text"
+                            value={cond.value}
+                            onChange={(e) => updateCondition(index, { value: e.target.value })}
+                            placeholder="value"
+                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => removeCondition(index)}
+                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/30"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 export default function SpecDetail() {
     const { specId } = useParams<{ specId: string }>()
     const queryClient = useQueryClient()
     const [backendURIInput, setBackendURIInput] = useState<string | null>(null)
+    const [draftPolicy, setDraftPolicy] = useState<OperationModePolicy | null>(null)
+    const [policyError, setPolicyError] = useState('')
 
     const { data: spec, isLoading: specLoading } = useQuery<Spec>({
         queryKey: ['spec', specId],
@@ -47,6 +197,12 @@ export default function SpecDetail() {
         queryFn: tagsApi.list,
     })
 
+    const { data: aiConfigured = false, isLoading: aiConfigLoading } = useQuery<boolean>({
+        queryKey: ['ai-configured'],
+        queryFn: () => aiApi.isConfigured(),
+        staleTime: 60_000,
+    })
+
     const updateTagsMutation = useMutation({
         mutationFn: (enabledTags: string[]) => specsApi.updateTags(specId!, enabledTags),
         onSuccess: () => {
@@ -62,16 +218,15 @@ export default function SpecDetail() {
         },
     })
 
-    const { data: aiConfigured = false, isLoading: aiConfigLoading } = useQuery<boolean>({
-        queryKey: ['ai-configured'],
-        queryFn: () => aiApi.isConfigured(),
-        staleTime: 60_000,
-    })
-
-    const setModeMutation = useMutation({
-        mutationFn: (mode: SpecMode) => specsApi.setMode(specId!, mode),
+    const updateModePolicyMutation = useMutation({
+        mutationFn: (modePolicy: OperationModePolicy) => specsApi.updateModePolicy(specId!, modePolicy),
         onSuccess: () => {
+            setPolicyError('')
+            setDraftPolicy(null)
             queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+        },
+        onError: (error: Error) => {
+            setPolicyError(error.message)
         },
     })
 
@@ -97,6 +252,7 @@ export default function SpecDetail() {
     }
 
     const enabledTags = new Set(spec.enabledTags || [])
+    const currentPolicy = draftPolicy ?? clonePolicy(spec.modePolicy ?? createDefaultPolicy())
 
     const toggleTag = (tagName: string) => {
         if (!specId) return
@@ -109,7 +265,6 @@ export default function SpecDetail() {
         updateTagsMutation.mutate(Array.from(next))
     }
 
-    // Group operations by tag
     const groupedOps = (operations || []).reduce((acc, op) => {
         const tag = op.operationId.split('_')[0] || 'default'
         if (!acc[tag]) acc[tag] = []
@@ -117,9 +272,12 @@ export default function SpecDetail() {
         return acc
     }, {} as Record<string, OperationSummary[]>)
 
+    const updatePolicy = (updater: (policy: OperationModePolicy) => OperationModePolicy) => {
+        setDraftPolicy((prev) => updater(clonePolicy(prev ?? spec.modePolicy ?? createDefaultPolicy())))
+    }
+
     return (
         <div className="p-8">
-            {/* Header */}
             <div className="mb-8">
                 <Link
                     to="/specs"
@@ -129,35 +287,191 @@ export default function SpecDetail() {
                     Back to Specifications
                 </Link>
 
-                <div className="flex items-start justify-between">
-                    <div className="flex items-start">
-                        <div className="p-3 bg-primary-100/80 dark:bg-primary-900/40 rounded-lg">
-                            <FileCode2 className="w-8 h-8 text-primary-600" />
-                        </div>
-                        <div className="ml-4">
-                            <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{spec.name}</h1>
-                            <p className="text-gray-500 dark:text-slate-400 mt-1">{spec.description || 'No description'}</p>
-                            <div className="flex items-center gap-4 mt-3 text-sm">
-                                <span className={clsx(
-                                    'px-2 py-1 rounded-full text-xs font-medium',
-                                    spec.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
-                                )}>
-                                    {spec.enabled ? 'Enabled' : 'Disabled'}
-                                </span>
-                                <span className="text-gray-500 dark:text-slate-400">
-                                    Version: <span className="font-medium text-gray-700 dark:text-slate-200">{spec.version}</span>
-                                </span>
-                                <span className="text-gray-500 dark:text-slate-400">
-                                    Base Path: <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">{spec.basePath || '/'}</code>
-                                </span>
-                            </div>
+                <div className="flex items-start">
+                    <div className="p-3 bg-primary-100/80 dark:bg-primary-900/40 rounded-lg">
+                        <FileCode2 className="w-8 h-8 text-primary-600" />
+                    </div>
+                    <div className="ml-4">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{spec.name}</h1>
+                        <p className="text-gray-500 dark:text-slate-400 mt-1">{spec.description || 'No description'}</p>
+                        <div className="flex items-center gap-4 mt-3 text-sm">
+                            <span className={clsx(
+                                'px-2 py-1 rounded-full text-xs font-medium',
+                                spec.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
+                            )}>
+                                {spec.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                            <span className="text-gray-500 dark:text-slate-400">
+                                Version: <span className="font-medium text-gray-700 dark:text-slate-200">{spec.version}</span>
+                            </span>
+                            <span className="text-gray-500 dark:text-slate-400">
+                                Base Path: <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded">{spec.basePath || '/'}</code>
+                            </span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Operations */}
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">
+                    <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+                        <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Spec Fallback Policy</h2>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+                            Manual and pre-generated responses are always tried first, then recorded responses. This policy controls what happens only after all saved responses miss.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="p-6 space-y-5">
+                    {policyError && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-900/40 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                            {policyError}
+                        </div>
+                    )}
+
+                    <div className="rounded-xl border border-gray-200 dark:border-slate-800 px-4 py-3 bg-gray-50 dark:bg-slate-950 text-sm text-gray-600 dark:text-slate-300">
+                        <span className="font-medium text-gray-900 dark:text-slate-100 mr-2">Standard fallback:</span>
+                        always available last, using the spec example/default response when enabled.
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="url"
+                            placeholder="https://api.example.com"
+                            value={backendURIInput !== null ? backendURIInput : (spec.backendUri || '')}
+                            onChange={e => setBackendURIInput(e.target.value)}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:ring-violet-400"
+                        />
+                        <button
+                            onClick={() => setBackendMutation.mutate(backendURIInput ?? spec.backendUri ?? '')}
+                            disabled={backendURIInput === null || setBackendMutation.isPending}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                        >
+                            <Save className="w-4 h-4" />
+                            Save Upstream
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                        <div className="rounded-xl border border-fuchsia-200 dark:border-fuchsia-900/40 bg-white dark:bg-slate-900 p-4 space-y-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+                                        <Bot className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400" />
+                                        AI fallback
+                                    </h3>
+                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                        Evaluated before proxy on every incoming request when enabled.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={aiConfigLoading || !aiConfigured}
+                                    onClick={() => updatePolicy((policy) => ({
+                                        ...policy,
+                                        ai: { ...policy.ai, enabled: !policy.ai.enabled },
+                                    }))}
+                                    className={clsx(
+                                        'px-3 py-1.5 rounded-lg text-sm border',
+                                        currentPolicy.ai.enabled
+                                            ? 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300 dark:bg-fuchsia-900/30 dark:text-fuchsia-300 dark:border-fuchsia-700'
+                                            : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+                                        (!aiConfigured || aiConfigLoading) && 'opacity-50 cursor-not-allowed'
+                                    )}
+                                >
+                                    {currentPolicy.ai.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                            </div>
+                            {!aiConfigured && (
+                                <p className="text-xs text-fuchsia-600 dark:text-fuchsia-400">
+                                    Configure an OpenAI API key to enable AI fallback.
+                                </p>
+                            )}
+                            <ConditionsEditor
+                                title="AI conditions"
+                                description="If no conditions are set, AI handles all unmatched requests while enabled."
+                                conditions={currentPolicy.ai.conditions}
+                                onChange={(conditions) => updatePolicy((policy) => ({
+                                    ...policy,
+                                    ai: { ...policy.ai, conditions },
+                                }))}
+                            />
+                        </div>
+
+                        <div className="rounded-xl border border-violet-200 dark:border-violet-900/40 bg-white dark:bg-slate-900 p-4 space-y-4">
+                            <div className="flex items-start justify-between gap-3">
+                                <div>
+                                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
+                                        <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                                        Proxy fallback
+                                    </h3>
+                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                        Evaluated after AI on every incoming request when enabled.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={!spec.backendUri}
+                                    onClick={() => updatePolicy((policy) => ({
+                                        ...policy,
+                                        proxy: { ...policy.proxy, enabled: !policy.proxy.enabled },
+                                    }))}
+                                    className={clsx(
+                                        'px-3 py-1.5 rounded-lg text-sm border',
+                                        currentPolicy.proxy.enabled
+                                            ? 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700'
+                                            : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+                                        !spec.backendUri && 'opacity-50 cursor-not-allowed'
+                                    )}
+                                >
+                                    {currentPolicy.proxy.enabled ? 'Enabled' : 'Disabled'}
+                                </button>
+                            </div>
+                            {!spec.backendUri && (
+                                <p className="text-xs text-violet-600 dark:text-violet-400">
+                                    Save an upstream URL before enabling proxy fallback.
+                                </p>
+                            )}
+                            <ConditionsEditor
+                                title="Proxy conditions"
+                                description="If no conditions are set, proxy handles all unmatched requests while enabled."
+                                conditions={currentPolicy.proxy.conditions}
+                                onChange={(conditions) => updatePolicy((policy) => ({
+                                    ...policy,
+                                    proxy: { ...policy.proxy, conditions },
+                                }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setDraftPolicy(null)
+                                setPolicyError('')
+                            }}
+                            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800"
+                        >
+                            Reset
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => updateModePolicyMutation.mutate(currentPolicy)}
+                            disabled={updateModePolicyMutation.isPending}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        >
+                            <Save className="w-4 h-4" />
+                            Save Fallback Policy
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">
                         Operations ({operations?.length || 0})
@@ -215,130 +529,6 @@ export default function SpecDetail() {
                 )}
             </div>
 
-            {/* Execution Mode & Backend Configuration */}
-            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
-                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
-                            <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Execution Mode</h2>
-                            <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-                                Existing saved responses are always tried first; mode controls what happens when none match.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="p-6 space-y-5">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <button
-                            onClick={() => setModeMutation.mutate('standard')}
-                            disabled={setModeMutation.isPending}
-                            className={clsx(
-                                'rounded-xl border px-4 py-3 text-left transition-colors',
-                                spec.mode === 'standard'
-                                    ? 'border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-200'
-                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
-                            )}
-                        >
-                            <div className="font-semibold">Standard</div>
-                            <p className="text-xs mt-1 opacity-80">
-                                Fall back to the spec example/default response when no saved response matches.
-                            </p>
-                        </button>
-                        <button
-                            onClick={() => setModeMutation.mutate('ai')}
-                            disabled={setModeMutation.isPending || aiConfigLoading || !aiConfigured}
-                            className={clsx(
-                                'rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                                spec.mode === 'ai'
-                                    ? 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 dark:border-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-200'
-                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
-                            )}
-                        >
-                            <div className="font-semibold flex items-center gap-2">
-                                <Bot className="w-4 h-4" />
-                                AI
-                            </div>
-                            <p className="text-xs mt-1 opacity-80">
-                                Generate a structured response with AI on misses, then save it for replay.
-                            </p>
-                        </button>
-                        <button
-                            onClick={() => setModeMutation.mutate('proxy')}
-                            disabled={setModeMutation.isPending || !spec.backendUri}
-                            className={clsx(
-                                'rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
-                                spec.mode === 'proxy'
-                                    ? 'border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-700 dark:bg-violet-900/30 dark:text-violet-200'
-                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
-                            )}
-                        >
-                            <div className="font-semibold flex items-center gap-2">
-                                <Radio className="w-4 h-4" />
-                                Proxy
-                            </div>
-                            <p className="text-xs mt-1 opacity-80">
-                                Forward misses to the upstream backend and save the returned response for replay.
-                            </p>
-                        </button>
-                    </div>
-
-                    <div className="rounded-xl border border-gray-200 dark:border-slate-800 px-4 py-3 bg-gray-50 dark:bg-slate-950 text-sm text-gray-600 dark:text-slate-300">
-                        <span className="font-medium text-gray-900 dark:text-slate-100 mr-2">Active mode:</span>
-                        <span className="capitalize">{spec.mode}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                        <input
-                            type="url"
-                            placeholder="https://api.example.com"
-                            value={backendURIInput !== null ? backendURIInput : (spec.backendUri || '')}
-                            onChange={e => setBackendURIInput(e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:ring-violet-400"
-                        />
-                        <button
-                            onClick={() => setBackendMutation.mutate(backendURIInput ?? spec.backendUri ?? '')}
-                            disabled={backendURIInput === null || setBackendMutation.isPending}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
-                        >
-                            <Save className="w-4 h-4" />
-                            Save
-                        </button>
-                    </div>
-                    {!aiConfigured && (
-                        <p className="mt-2 text-xs text-fuchsia-600 dark:text-fuchsia-400">
-                            AI mode is unavailable until an OpenAI API key is configured.
-                        </p>
-                    )}
-                    {spec.backendUri && spec.mode !== 'proxy' && (
-                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
-                            Backend configured. Switch to <strong>Proxy</strong> mode to use upstream fallback after saved responses miss.
-                        </p>
-                    )}
-                    {spec.mode === 'proxy' && (
-                        <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">
-                            <Radio className="w-3 h-3 inline mr-1 animate-pulse" />
-                            Proxy mode active — saved responses are checked first, then unmatched requests are forwarded to <strong>{spec.backendUri}</strong> and recorded.
-                        </p>
-                    )}
-                    {spec.mode === 'ai' && (
-                        <p className="mt-2 text-xs text-fuchsia-600 dark:text-fuchsia-400">
-                            <Bot className="w-3 h-3 inline mr-1" />
-                            AI mode active — saved responses are checked first, then unmatched requests are generated with AI and saved for replay.
-                        </p>
-                    )}
-                    {spec.mode === 'standard' && (
-                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
-                            Standard mode active — saved responses are checked first, then the spec example/default response is used when enabled.
-                        </p>
-                    )}
-                </div>
-            </div>
-
-            {/* Enabled Tags */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Enabled Tags</h2>

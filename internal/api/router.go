@@ -107,6 +107,8 @@ func (r *Router) setupRoutes() {
 		api.PUT("/specs/:id/example-fallback", r.handler.ToggleExampleFallback)
 		api.PUT("/specs/:id/backend", r.handler.SetBackendURI)
 		api.PUT("/specs/:id/mode", r.handler.SetSpecMode)
+		api.GET("/specs/:id/mode-policy", r.handler.GetSpecModePolicy)
+		api.PUT("/specs/:id/mode-policy", r.handler.UpdateSpecModePolicy)
 		api.PUT("/specs/:id/proxy-mode", r.handler.ToggleProxyMode)
 		api.GET("/specs/:id/tags", r.handler.GetSpecTags)
 		api.PUT("/specs/:id/tags", r.handler.UpdateSpecTags)
@@ -116,6 +118,8 @@ func (r *Router) setupRoutes() {
 		api.GET("/operations/:id", r.handler.GetOperation)
 		api.GET("/operations/:id/signature", r.handler.GetSignatureConfig)
 		api.PUT("/operations/:id/signature", r.handler.UpdateSignatureConfig)
+		api.GET("/operations/:id/mode-policy", r.handler.GetModePolicy)
+		api.PUT("/operations/:id/mode-policy", r.handler.UpdateModePolicy)
 
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)

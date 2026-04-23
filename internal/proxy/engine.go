@@ -209,8 +209,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	specMode := matchedRoute.spec.EffectiveMode()
-
 	// Compute the request signature (needed for both proxy recording and condition evaluation)
 	signature := ComputeSignature(
 		pathParams,
@@ -232,171 +230,32 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
+	enabledTags := make(map[string]struct{})
+	enabledTags[models.DefaultTagName] = struct{}{}
+	for _, tag := range matchedRoute.spec.EnabledTags {
+		enabledTags[tag] = struct{}{}
+	}
 
-	// Find matching response config by priority (only if configs exist)
 	var matchedConfig *models.ResponseConfig
+	responseTier := ""
 	if err == nil && len(responseConfigs) > 0 {
-		enabledTags := make(map[string]struct{})
-		enabledTags[models.DefaultTagName] = struct{}{}
-		for _, tag := range matchedRoute.spec.EnabledTags {
-			enabledTags[tag] = struct{}{}
-		}
-
-		for _, cfg := range responseConfigs {
-			if !cfg.Enabled {
-				continue
-			}
-			tag := cfg.Tag
-			if tag == "" {
-				tag = models.DefaultTagName
-			}
-			if _, ok := enabledTags[tag]; !ok {
-				continue
-			}
-			if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
-				matchedConfig = cfg
-				break
+		matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, false)
+		if matchedConfig != nil {
+			responseTier = models.TraceResponseTierConfigured
+		} else {
+			matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, true)
+			if matchedConfig != nil {
+				responseTier = models.TraceResponseTierRecorded
 			}
 		}
 	}
 
+	modeSelection := e.selectMode(matchedRoute.spec, reqData)
+	specMode := modeSelection.Mode
+
 	if matchedConfig == nil {
 		switch specMode {
-		case models.SpecModeProxy:
-			if matchedRoute.spec.BackendURI != "" {
-				statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
-					r.Method,
-					r.URL.Path,
-					r.URL.RawQuery,
-					r.Header,
-					requestBody,
-					matchedRoute.operation,
-					matchedRoute.spec,
-					signature,
-				)
-				if proxyErr != nil {
-					statusCode = http.StatusBadGateway
-					respBody = `{"error":"proxy backend unavailable: ` + proxyErr.Error() + `"}`
-					http.Error(w, respBody, statusCode)
-				} else {
-					for key, val := range respHeaders {
-						w.Header().Set(key, val)
-					}
-					w.WriteHeader(statusCode)
-					_, _ = w.Write([]byte(respBody))
-				}
-
-				duration := time.Since(startTime)
-				isError := statusCode >= 400
-				e.statsCollector.RecordRequest(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					duration,
-					isError,
-				)
-				metrics.RequestsTotal.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					metrics.StatusLabel(statusCode),
-				).Inc()
-				metrics.RequestDurationSeconds.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-				).Observe(duration.Seconds())
-				metrics.ProxyRequestsTotal.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.spec.BackendURI,
-				).Inc()
-				if matchedRoute.spec.Tracing {
-					trace := &models.Trace{
-						SpecID:         matchedRoute.spec.ID,
-						SpecName:       matchedRoute.spec.Name,
-						OperationID:    matchedRoute.operation.ID,
-						OperationPath:  matchedRoute.operation.Path,
-						Timestamp:      startTime,
-						Duration:       duration.Nanoseconds(),
-						MatchedConfig:  "[proxy-recorded]",
-						Mode:           specMode,
-						ResponseSource: models.TraceResponseSourceProxy,
-						ProxyMode:      proxyErr == nil,
-						Signature:      signature,
-						BackendURI:     matchedRoute.spec.BackendURI,
-						Request: models.TraceRequest{
-							Method:  r.Method,
-							URL:     r.URL.String(),
-							Path:    r.URL.Path,
-							Query:   r.URL.Query(),
-							Headers: r.Header,
-							Body:    requestBody,
-						},
-						Response: models.TraceResponse{
-							StatusCode: statusCode,
-							Headers:    headersToMap(w.Header()),
-							Body:       respBody,
-						},
-					}
-					e.tracingService.RecordTrace(trace)
-				}
-				return
-			}
 		case models.SpecModeAI:
-			if e.aiGenerator == nil || !e.aiGenerator.IsConfigured() {
-				statusCode := http.StatusBadGateway
-				respBody := `{"error":"AI mode is enabled but AI generation is not configured"}`
-				http.Error(w, respBody, statusCode)
-				duration := time.Since(startTime)
-				e.statsCollector.RecordRequest(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					duration,
-					true,
-				)
-				metrics.RequestsTotal.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					metrics.StatusLabel(statusCode),
-				).Inc()
-				metrics.RequestDurationSeconds.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-				).Observe(duration.Seconds())
-				if matchedRoute.spec.Tracing {
-					e.tracingService.RecordTrace(&models.Trace{
-						SpecID:         matchedRoute.spec.ID,
-						SpecName:       matchedRoute.spec.Name,
-						OperationID:    matchedRoute.operation.ID,
-						OperationPath:  matchedRoute.operation.Path,
-						Timestamp:      startTime,
-						Duration:       duration.Nanoseconds(),
-						Mode:           specMode,
-						ResponseSource: models.TraceResponseSourceAI,
-						Signature:      signature,
-						Request: models.TraceRequest{
-							Method:  r.Method,
-							URL:     r.URL.String(),
-							Path:    r.URL.Path,
-							Query:   r.URL.Query(),
-							Headers: r.Header,
-							Body:    requestBody,
-						},
-						Response: models.TraceResponse{
-							StatusCode: statusCode,
-							Headers:    headersToMap(w.Header()),
-							Body:       respBody,
-						},
-					})
-				}
-				return
-			}
-
 			opCtx := e.buildAIOperationContext(matchedRoute.operation)
 			aiResp, aiErr := e.aiGenerator.GenerateRuntimeResponse(r.Context(), opCtx, ai.RuntimeRequestContext{
 				PathParams:  pathParams,
@@ -431,15 +290,18 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				).Observe(duration.Seconds())
 				if matchedRoute.spec.Tracing {
 					e.tracingService.RecordTrace(&models.Trace{
-						SpecID:         matchedRoute.spec.ID,
-						SpecName:       matchedRoute.spec.Name,
-						OperationID:    matchedRoute.operation.ID,
-						OperationPath:  matchedRoute.operation.Path,
-						Timestamp:      startTime,
-						Duration:       duration.Nanoseconds(),
-						Mode:           specMode,
-						ResponseSource: models.TraceResponseSourceAI,
-						Signature:      signature,
+						SpecID:             matchedRoute.spec.ID,
+						SpecName:           matchedRoute.spec.Name,
+						OperationID:        matchedRoute.operation.ID,
+						OperationPath:      matchedRoute.operation.Path,
+						Timestamp:          startTime,
+						Duration:           duration.Nanoseconds(),
+						Mode:               specMode,
+						ResponseSource:     models.TraceResponseSourceAI,
+						ResponseTier:       models.TraceResponseTierFallback,
+						Signature:          signature,
+						AISkippedReason:    modeSelection.AISkippedReason,
+						ProxySkippedReason: modeSelection.ProxySkippedReason,
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -496,16 +358,19 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			).Observe(duration.Seconds())
 			if matchedRoute.spec.Tracing {
 				e.tracingService.RecordTrace(&models.Trace{
-					SpecID:         matchedRoute.spec.ID,
-					SpecName:       matchedRoute.spec.Name,
-					OperationID:    matchedRoute.operation.ID,
-					OperationPath:  matchedRoute.operation.Path,
-					Timestamp:      startTime,
-					Duration:       duration.Nanoseconds(),
-					MatchedConfig:  "[ai-generated]",
-					Mode:           specMode,
-					ResponseSource: models.TraceResponseSourceAI,
-					Signature:      signature,
+					SpecID:             matchedRoute.spec.ID,
+					SpecName:           matchedRoute.spec.Name,
+					OperationID:        matchedRoute.operation.ID,
+					OperationPath:      matchedRoute.operation.Path,
+					Timestamp:          startTime,
+					Duration:           duration.Nanoseconds(),
+					MatchedConfig:      "[ai-generated]",
+					Mode:               specMode,
+					ResponseSource:     models.TraceResponseSourceAI,
+					ResponseTier:       models.TraceResponseTierFallback,
+					Signature:          signature,
+					AISkippedReason:    modeSelection.AISkippedReason,
+					ProxySkippedReason: modeSelection.ProxySkippedReason,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -520,6 +385,88 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						Body:       aiResp.Body,
 					},
 				})
+			}
+			return
+		case models.SpecModeProxy:
+			statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
+				r.Method,
+				r.URL.Path,
+				r.URL.RawQuery,
+				r.Header,
+				requestBody,
+				matchedRoute.operation,
+				matchedRoute.spec,
+				signature,
+			)
+			if proxyErr != nil {
+				statusCode = http.StatusBadGateway
+				respBody = `{"error":"proxy backend unavailable: ` + proxyErr.Error() + `"}`
+				http.Error(w, respBody, statusCode)
+			} else {
+				for key, val := range respHeaders {
+					w.Header().Set(key, val)
+				}
+				w.WriteHeader(statusCode)
+				_, _ = w.Write([]byte(respBody))
+			}
+
+			duration := time.Since(startTime)
+			isError := statusCode >= 400
+			e.statsCollector.RecordRequest(
+				matchedRoute.spec.ID,
+				matchedRoute.operation.ID,
+				matchedRoute.operation.Method,
+				matchedRoute.operation.Path,
+				duration,
+				isError,
+			)
+			metrics.RequestsTotal.WithLabelValues(
+				matchedRoute.spec.ID,
+				matchedRoute.operation.Method,
+				matchedRoute.operation.Path,
+				metrics.StatusLabel(statusCode),
+			).Inc()
+			metrics.RequestDurationSeconds.WithLabelValues(
+				matchedRoute.spec.ID,
+				matchedRoute.operation.Method,
+				matchedRoute.operation.Path,
+			).Observe(duration.Seconds())
+			metrics.ProxyRequestsTotal.WithLabelValues(
+				matchedRoute.spec.ID,
+				matchedRoute.spec.BackendURI,
+			).Inc()
+			if matchedRoute.spec.Tracing {
+				trace := &models.Trace{
+					SpecID:             matchedRoute.spec.ID,
+					SpecName:           matchedRoute.spec.Name,
+					OperationID:        matchedRoute.operation.ID,
+					OperationPath:      matchedRoute.operation.Path,
+					Timestamp:          startTime,
+					Duration:           duration.Nanoseconds(),
+					MatchedConfig:      "[proxy-recorded]",
+					Mode:               specMode,
+					ResponseSource:     models.TraceResponseSourceProxy,
+					ResponseTier:       models.TraceResponseTierFallback,
+					ProxyMode:          proxyErr == nil,
+					Signature:          signature,
+					BackendURI:         matchedRoute.spec.BackendURI,
+					AISkippedReason:    modeSelection.AISkippedReason,
+					ProxySkippedReason: modeSelection.ProxySkippedReason,
+					Request: models.TraceRequest{
+						Method:  r.Method,
+						URL:     r.URL.String(),
+						Path:    r.URL.Path,
+						Query:   r.URL.Query(),
+						Headers: r.Header,
+						Body:    requestBody,
+					},
+					Response: models.TraceResponse{
+						StatusCode: statusCode,
+						Headers:    headersToMap(w.Header()),
+						Body:       respBody,
+					},
+				}
+				e.tracingService.RecordTrace(trace)
 			}
 			return
 		}
@@ -572,15 +519,18 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Record trace if enabled
 		if matchedRoute.spec.Tracing {
 			trace := &models.Trace{
-				SpecID:         matchedRoute.spec.ID,
-				SpecName:       matchedRoute.spec.Name,
-				OperationID:    matchedRoute.operation.ID,
-				OperationPath:  matchedRoute.operation.Path,
-				Timestamp:      startTime,
-				Duration:       duration.Nanoseconds(),
-				MatchedConfig:  "spec-example",
-				Mode:           specMode,
-				ResponseSource: models.TraceResponseSourceExample,
+				SpecID:             matchedRoute.spec.ID,
+				SpecName:           matchedRoute.spec.Name,
+				OperationID:        matchedRoute.operation.ID,
+				OperationPath:      matchedRoute.operation.Path,
+				Timestamp:          startTime,
+				Duration:           duration.Nanoseconds(),
+				MatchedConfig:      "spec-example",
+				Mode:               specMode,
+				ResponseSource:     models.TraceResponseSourceExample,
+				ResponseTier:       models.TraceResponseTierFallback,
+				AISkippedReason:    modeSelection.AISkippedReason,
+				ProxySkippedReason: modeSelection.ProxySkippedReason,
 				Request: models.TraceRequest{
 					Method:  r.Method,
 					URL:     r.URL.String(),
@@ -712,7 +662,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			MatchedConfigOrigin: matchedConfig.EffectiveOrigin(),
 			Mode:                specMode,
 			ResponseSource:      models.TraceResponseSourceConfig,
+			ResponseTier:        responseTier,
 			Signature:           signature,
+			AISkippedReason:     modeSelection.AISkippedReason,
+			ProxySkippedReason:  modeSelection.ProxySkippedReason,
 			Scripts:             scriptTraces,
 			Session:             sessionTrace,
 			Request: models.TraceRequest{
@@ -731,6 +684,62 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		e.tracingService.RecordTrace(trace)
 	}
+}
+
+type modeSelection struct {
+	Mode               string
+	AISkippedReason    string
+	ProxySkippedReason string
+}
+
+func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, reqData *condition.RequestData, enabledTags map[string]struct{}, recorded bool) *models.ResponseConfig {
+	for _, cfg := range configs {
+		if !cfg.Enabled || cfg.Recorded != recorded {
+			continue
+		}
+		tag := cfg.Tag
+		if tag == "" {
+			tag = models.DefaultTagName
+		}
+		if _, ok := enabledTags[tag]; !ok {
+			continue
+		}
+		if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
+			return cfg
+		}
+	}
+	return nil
+}
+
+func (e *Engine) selectMode(spec *models.Spec, reqData *condition.RequestData) modeSelection {
+	selection := modeSelection{Mode: models.SpecModeStandard}
+	policy := spec.EffectiveModePolicy()
+
+	if !policy.AI.Enabled {
+		selection.AISkippedReason = "disabled"
+	} else if e.aiGenerator == nil || !e.aiGenerator.IsConfigured() {
+		selection.AISkippedReason = "not-configured"
+	} else if e.condEvaluator.EvaluateAll(policy.AI.Conditions, reqData) {
+		selection.Mode = models.SpecModeAI
+		return selection
+	} else {
+		selection.AISkippedReason = "conditions-not-matched"
+	}
+
+	if !policy.Proxy.Enabled {
+		selection.ProxySkippedReason = "disabled"
+		return selection
+	}
+	if spec == nil || spec.BackendURI == "" {
+		selection.ProxySkippedReason = "no-backend"
+		return selection
+	}
+	if e.condEvaluator.EvaluateAll(policy.Proxy.Conditions, reqData) {
+		selection.Mode = models.SpecModeProxy
+		return selection
+	}
+	selection.ProxySkippedReason = "conditions-not-matched"
+	return selection
 }
 
 func (e *Engine) buildAIOperationContext(op *models.Operation) ai.OperationContext {

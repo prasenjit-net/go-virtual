@@ -213,6 +213,7 @@ func (m *MemoryStorage) CreateOperation(op *models.Operation) error {
 		return fmt.Errorf("operation with ID %s already exists", op.ID)
 	}
 
+	op.NormalizeModePolicy()
 	m.operations[op.ID] = op
 	return nil
 }
@@ -275,6 +276,7 @@ func (m *MemoryStorage) UpdateOperation(op *models.Operation) error {
 		return fmt.Errorf("operation not found: %s", op.ID)
 	}
 
+	op.NormalizeModePolicy()
 	m.operations[op.ID] = op
 	return nil
 }

@@ -70,8 +70,16 @@ func (r *ResponseConfig) NormalizeOrigin() {
 	if r == nil {
 		return
 	}
+	wasRecorded := r.Recorded
 	r.Origin = r.EffectiveOrigin()
-	r.Recorded = r.Origin != ResponseOriginManual
+	switch r.Origin {
+	case ResponseOriginManual:
+		r.Recorded = false
+	case ResponseOriginProxy:
+		r.Recorded = true
+	case ResponseOriginAI:
+		r.Recorded = wasRecorded
+	}
 }
 
 func (r *ResponseConfig) EffectiveOrigin() string {

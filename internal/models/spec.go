@@ -12,22 +12,23 @@ const (
 
 // Spec represents an uploaded OpenAPI specification
 type Spec struct {
-	ID                 string      `json:"id"`
-	Name               string      `json:"name"`
-	Version            string      `json:"version"`
-	Description        string      `json:"description"`
-	Content            string      `json:"content"`  // Raw OpenAPI spec (YAML or JSON)
-	BasePath           string      `json:"basePath"` // Mounted path prefix for this spec
-	Enabled            bool        `json:"enabled"`
-	Tracing            bool        `json:"tracing"`            // Enable request tracing
-	UseExampleFallback bool        `json:"useExampleFallback"` // Use spec examples as fallback responses
-	EnabledTags        []string    `json:"enabledTags"`
-	Mode               string      `json:"mode"`
-	BackendURI         string      `json:"backendUri"` // Upstream backend URI for proxy recording mode
-	ProxyMode          bool        `json:"proxyMode"`  // Forward requests to backend and record responses
-	CreatedAt          time.Time   `json:"createdAt"`
-	UpdatedAt          time.Time   `json:"updatedAt"`
-	Operations         []Operation `json:"operations,omitempty"`
+	ID                 string              `json:"id"`
+	Name               string              `json:"name"`
+	Version            string              `json:"version"`
+	Description        string              `json:"description"`
+	Content            string              `json:"content"`  // Raw OpenAPI spec (YAML or JSON)
+	BasePath           string              `json:"basePath"` // Mounted path prefix for this spec
+	Enabled            bool                `json:"enabled"`
+	Tracing            bool                `json:"tracing"`            // Enable request tracing
+	UseExampleFallback bool                `json:"useExampleFallback"` // Use spec examples as fallback responses
+	EnabledTags        []string            `json:"enabledTags"`
+	Mode               string              `json:"mode"`
+	BackendURI         string              `json:"backendUri"` // Upstream backend URI for proxy recording mode
+	ProxyMode          bool                `json:"proxyMode"`  // Forward requests to backend and record responses
+	ModePolicy         OperationModePolicy `json:"modePolicy"`
+	CreatedAt          time.Time           `json:"createdAt"`
+	UpdatedAt          time.Time           `json:"updatedAt"`
+	Operations         []Operation         `json:"operations,omitempty"`
 }
 
 // SpecInput represents input for creating/updating a spec
@@ -40,15 +41,16 @@ type SpecInput struct {
 
 // SpecUpdate represents input for updating spec settings
 type SpecUpdate struct {
-	Name               *string `json:"name,omitempty"`
-	BasePath           *string `json:"basePath,omitempty"`
-	Description        *string `json:"description,omitempty"`
-	Enabled            *bool   `json:"enabled,omitempty"`
-	Tracing            *bool   `json:"tracing,omitempty"`
-	UseExampleFallback *bool   `json:"useExampleFallback,omitempty"`
-	Mode               *string `json:"mode,omitempty"`
-	BackendURI         *string `json:"backendUri,omitempty"`
-	ProxyMode          *bool   `json:"proxyMode,omitempty"`
+	Name               *string              `json:"name,omitempty"`
+	BasePath           *string              `json:"basePath,omitempty"`
+	Description        *string              `json:"description,omitempty"`
+	Enabled            *bool                `json:"enabled,omitempty"`
+	Tracing            *bool                `json:"tracing,omitempty"`
+	UseExampleFallback *bool                `json:"useExampleFallback,omitempty"`
+	Mode               *string              `json:"mode,omitempty"`
+	BackendURI         *string              `json:"backendUri,omitempty"`
+	ProxyMode          *bool                `json:"proxyMode,omitempty"`
+	ModePolicy         *OperationModePolicy `json:"modePolicy,omitempty"`
 }
 
 func NormalizeSpecMode(mode string) string {
@@ -64,6 +66,7 @@ func (s *Spec) NormalizeMode() {
 	if s == nil {
 		return
 	}
+	s.ModePolicy = s.EffectiveModePolicy()
 	s.Mode = s.EffectiveMode()
 	s.ProxyMode = s.Mode == SpecModeProxy
 }
@@ -80,6 +83,13 @@ func (s *Spec) EffectiveMode() string {
 	if s == nil {
 		return SpecModeStandard
 	}
+	policy := s.EffectiveModePolicy()
+	if policy.AI.Enabled && !policy.Proxy.Enabled {
+		return SpecModeAI
+	}
+	if policy.Proxy.Enabled && !policy.AI.Enabled {
+		return SpecModeProxy
+	}
 	if s.Mode == "" {
 		if s.ProxyMode {
 			return SpecModeProxy
@@ -87,4 +97,16 @@ func (s *Spec) EffectiveMode() string {
 		return SpecModeStandard
 	}
 	return NormalizeSpecMode(s.Mode)
+}
+
+func (s *Spec) EffectiveModePolicy() OperationModePolicy {
+	if s == nil {
+		return DefaultOperationModePolicy()
+	}
+	policy := s.ModePolicy
+	if !policy.Configured {
+		policy = LegacyOperationModePolicy(s)
+	}
+	policy.Normalize()
+	return policy
 }

@@ -1,6 +1,7 @@
 // Spec types
 export type SpecMode = 'standard' | 'ai' | 'proxy';
 export type ResponseOrigin = 'manual' | 'proxy' | 'ai';
+export type ResponseTier = 'configured' | 'recorded' | 'fallback';
 
 export interface Spec {
     id: string;
@@ -16,6 +17,7 @@ export interface Spec {
     mode: SpecMode;
     backendUri: string;
     proxyMode: boolean;
+    modePolicy: OperationModePolicy;
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -42,6 +44,18 @@ export interface Operation {
     responses?: ResponseConfig[];
     exampleResponse?: ExampleResponse;
     signatureConfig?: SignatureConfig | null;
+    modePolicy: OperationModePolicy;
+}
+
+export interface ConditionalModeConfig {
+    enabled: boolean;
+    conditions: Condition[];
+}
+
+export interface OperationModePolicy {
+    configured?: boolean;
+    ai: ConditionalModeConfig;
+    proxy: ConditionalModeConfig;
 }
 
 // SignatureConfig controls which request parts contribute to the signature hash
@@ -74,6 +88,7 @@ export interface OperationSummary {
     summary: string;
     responseCount: number;
     hasExampleResponse: boolean;
+    modePolicy: OperationModePolicy;
 }
 
 // Response config types
@@ -144,6 +159,9 @@ export interface Trace {
     matchedConfigOrigin?: ResponseOrigin;
     mode?: SpecMode;
     responseSource?: 'config' | 'example' | 'ai' | 'proxy';
+    responseTier?: ResponseTier;
+    aiSkippedReason?: string;
+    proxySkippedReason?: string;
     // Proxy recording fields
     proxyMode?: boolean;
     signature?: string;

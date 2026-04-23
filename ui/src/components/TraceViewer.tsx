@@ -30,6 +30,19 @@ const methodColors: Record<string, string> = {
     PATCH: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
 }
 
+const responseTierLabels: Record<string, string> = {
+    configured: 'Configured',
+    recorded: 'Recorded',
+    fallback: 'Fallback',
+}
+
+const skipReasonLabels: Record<string, string> = {
+    disabled: 'disabled',
+    'not-configured': 'not configured',
+    'no-backend': 'no upstream',
+    'conditions-not-matched': 'conditions not matched',
+}
+
 export default function TraceViewer() {
     const [isLive, setIsLive] = useState(false)
     const [liveTraces, setLiveTraces] = useState<Trace[]>([])
@@ -257,6 +270,11 @@ export default function TraceViewer() {
                                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 shrink-0">
                                                     <Bot className="w-2.5 h-2.5" />
                                                     AI
+                                                </span>
+                                            )}
+                                            {trace.responseTier && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 shrink-0">
+                                                    {responseTierLabels[trace.responseTier] || trace.responseTier}
                                                 </span>
                                             )}
                                         <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
@@ -536,6 +554,40 @@ function TraceDetail({
                                         This hash uniquely identifies the request and is used to match replayed responses.
                                     </p>
                                 </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {(trace.aiSkippedReason || trace.proxySkippedReason || trace.mode || trace.responseTier) && (
+                <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3">
+                        Fallback decision
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        {trace.mode && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Selected mode</span>
+                                <div className="text-gray-700 dark:text-slate-200 capitalize">{trace.mode}</div>
+                            </div>
+                        )}
+                        {trace.responseTier && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Response tier</span>
+                                <div className="text-gray-700 dark:text-slate-200">{responseTierLabels[trace.responseTier] || trace.responseTier}</div>
+                            </div>
+                        )}
+                        {trace.aiSkippedReason && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">AI skip reason</span>
+                                <div className="text-gray-700 dark:text-slate-200">{skipReasonLabels[trace.aiSkippedReason] || trace.aiSkippedReason}</div>
+                            </div>
+                        )}
+                        {trace.proxySkippedReason && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Proxy skip reason</span>
+                                <div className="text-gray-700 dark:text-slate-200">{skipReasonLabels[trace.proxySkippedReason] || trace.proxySkippedReason}</div>
                             </div>
                         )}
                     </div>

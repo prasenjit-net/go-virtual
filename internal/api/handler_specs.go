@@ -35,6 +35,7 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 			"mode":               spec.Mode,
 			"backendUri":         spec.BackendURI,
 			"proxyMode":          spec.ProxyMode,
+			"modePolicy":         spec.EffectiveModePolicy(),
 			"createdAt":          spec.CreatedAt,
 			"updatedAt":          spec.UpdatedAt,
 			"operationCount":     len(ops),
@@ -151,8 +152,13 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	}
 	if update.BackendURI != nil {
 		spec.BackendURI = *update.BackendURI
-		if spec.BackendURI == "" && spec.EffectiveMode() == models.SpecModeProxy {
-			spec.SetMode(models.SpecModeStandard)
+		if spec.BackendURI == "" {
+			if spec.EffectiveMode() == models.SpecModeProxy {
+				spec.SetMode(models.SpecModeStandard)
+			}
+			spec.ModePolicy = spec.EffectiveModePolicy()
+			spec.ModePolicy.Proxy.Enabled = false
+			spec.ModePolicy.Configured = true
 		}
 	}
 	if update.Mode != nil {
@@ -172,6 +178,15 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	if update.ModePolicy != nil {
+		update.ModePolicy.Normalize()
+		if err := h.validateModePolicy(spec, *update.ModePolicy); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		spec.ModePolicy = *update.ModePolicy
+		spec.ModePolicy.Configured = true
 	}
 
 	spec.UpdatedAt = time.Now()
@@ -345,8 +360,13 @@ func (h *Handler) SetBackendURI(c *gin.Context) {
 	}
 
 	spec.BackendURI = input.BackendURI
-	if spec.BackendURI == "" && spec.EffectiveMode() == models.SpecModeProxy {
-		spec.SetMode(models.SpecModeStandard)
+	if spec.BackendURI == "" {
+		if spec.EffectiveMode() == models.SpecModeProxy {
+			spec.SetMode(models.SpecModeStandard)
+		}
+		spec.ModePolicy = spec.EffectiveModePolicy()
+		spec.ModePolicy.Proxy.Enabled = false
+		spec.ModePolicy.Configured = true
 	}
 	spec.UpdatedAt = time.Now()
 
@@ -436,18 +456,80 @@ func (h *Handler) ToggleProxyMode(c *gin.Context) {
 
 func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
 	mode = models.NormalizeSpecMode(mode)
+	policy := spec.EffectiveModePolicy()
 	switch mode {
 	case models.SpecModeProxy:
 		if spec.BackendURI == "" {
 			return fmt.Errorf("backendUri must be set before enabling proxy mode")
 		}
+		policy.Configured = true
+		policy.AI.Enabled = false
+		policy.Proxy.Enabled = true
 	case models.SpecModeAI:
 		if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
 			return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
 		}
+		policy.Configured = true
+		policy.AI.Enabled = true
+		policy.Proxy.Enabled = false
+	default:
+		policy.Configured = true
+		policy.AI.Enabled = false
+		policy.Proxy.Enabled = false
 	}
+	spec.ModePolicy = policy
 	spec.SetMode(mode)
 	return nil
+}
+
+// GetSpecModePolicy returns the spec-scoped fallback mode policy.
+func (h *Handler) GetSpecModePolicy(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"modePolicy": spec.EffectiveModePolicy()})
+}
+
+// UpdateSpecModePolicy updates the spec-scoped fallback mode policy.
+func (h *Handler) UpdateSpecModePolicy(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		ModePolicy models.OperationModePolicy `json:"modePolicy"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	input.ModePolicy.Normalize()
+	if err := h.validateModePolicy(spec, input.ModePolicy); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spec.ModePolicy = input.ModePolicy
+	spec.ModePolicy.Configured = true
+	spec.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.proxyEngine.ReloadRoutes()
+	c.JSON(http.StatusOK, gin.H{"modePolicy": spec.ModePolicy})
 }
 
 // GetSpecTags returns enabled tags for a spec

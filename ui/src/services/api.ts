@@ -95,6 +95,20 @@ export const specsApi = {
         return handleResponse<any>(response);
     },
 
+    getModePolicy: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode-policy`);
+        return handleResponse<{ modePolicy: import('../types').OperationModePolicy }>(response);
+    },
+
+    updateModePolicy: async (id: string, modePolicy: import('../types').OperationModePolicy) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode-policy`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modePolicy }),
+        });
+        return handleResponse<{ modePolicy: import('../types').OperationModePolicy }>(response);
+    },
+
     toggleProxyMode: async (id: string, enabled: boolean) => {
         const response = await fetch(`${API_BASE}/specs/${id}/proxy-mode`, {
             method: 'PUT',
@@ -176,6 +190,20 @@ export const operationsApi = {
             body: JSON.stringify({ signatureConfig }),
         });
         return handleResponse<any>(response);
+    },
+
+    getModePolicy: async (id: string) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/mode-policy`);
+        return handleResponse<{ modePolicy: import('../types').OperationModePolicy }>(response);
+    },
+
+    updateModePolicy: async (id: string, modePolicy: import('../types').OperationModePolicy) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/mode-policy`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modePolicy }),
+        });
+        return handleResponse<{ modePolicy: import('../types').OperationModePolicy }>(response);
     },
 };
 

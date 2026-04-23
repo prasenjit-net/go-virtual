@@ -9,6 +9,10 @@ const (
 	TraceResponseSourceExample = "example"
 	TraceResponseSourceAI      = "ai"
 	TraceResponseSourceProxy   = "proxy"
+
+	TraceResponseTierConfigured = "configured"
+	TraceResponseTierRecorded   = "recorded"
+	TraceResponseTierFallback   = "fallback"
 )
 
 // Trace represents a captured request/response trace
@@ -27,6 +31,9 @@ type Trace struct {
 	MatchedConfigOrigin string        `json:"matchedConfigOrigin,omitempty"`
 	Mode                string        `json:"mode,omitempty"`
 	ResponseSource      string        `json:"responseSource,omitempty"`
+	ResponseTier        string        `json:"responseTier,omitempty"`
+	AISkippedReason     string        `json:"aiSkippedReason,omitempty"`
+	ProxySkippedReason  string        `json:"proxySkippedReason,omitempty"`
 
 	// Proxy recording fields – populated when the trace is recorded in proxy mode
 	ProxyMode  bool   `json:"proxyMode,omitempty"`  // true when the request was forwarded to a real backend
