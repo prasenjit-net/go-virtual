@@ -1,5 +1,11 @@
 package models
 
+const (
+	ResponseOriginManual = "manual"
+	ResponseOriginProxy  = "proxy"
+	ResponseOriginAI     = "ai"
+)
+
 // ResponseConfig represents a configured response for an operation
 type ResponseConfig struct {
 	ID          string            `json:"id"`
@@ -15,6 +21,7 @@ type ResponseConfig struct {
 	Delay       int               `json:"delay"`   // Response delay in milliseconds
 	Enabled     bool              `json:"enabled"`
 	Recorded    bool              `json:"recorded"` // True if auto-recorded in proxy mode
+	Origin      string            `json:"origin"`
 }
 
 // ResponseConfigInput represents input for creating/updating a response config
@@ -43,4 +50,33 @@ type ResponseConfigUpdate struct {
 	Body        *string            `json:"body,omitempty"`
 	Delay       *int               `json:"delay,omitempty"`
 	Enabled     *bool              `json:"enabled,omitempty"`
+}
+
+func NormalizeResponseOrigin(origin string, recorded bool) string {
+	switch origin {
+	case ResponseOriginProxy, ResponseOriginAI:
+		return origin
+	case ResponseOriginManual:
+		return origin
+	default:
+		if recorded {
+			return ResponseOriginProxy
+		}
+		return ResponseOriginManual
+	}
+}
+
+func (r *ResponseConfig) NormalizeOrigin() {
+	if r == nil {
+		return
+	}
+	r.Origin = r.EffectiveOrigin()
+	r.Recorded = r.Origin != ResponseOriginManual
+}
+
+func (r *ResponseConfig) EffectiveOrigin() string {
+	if r == nil {
+		return ResponseOriginManual
+	}
+	return NormalizeResponseOrigin(r.Origin, r.Recorded)
 }

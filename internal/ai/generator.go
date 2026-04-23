@@ -17,8 +17,8 @@ const openAIEndpoint = "https://api.openai.com/v1/chat/completions"
 
 // Config holds the AI generator configuration.
 type Config struct {
-	APIKey   string
-	Model    string
+	APIKey string
+	Model  string
 	// Endpoint overrides the OpenAI API URL. Used in tests to point at a
 	// local mock server. Defaults to openAIEndpoint when empty.
 	Endpoint string
@@ -96,6 +96,22 @@ type BodyFieldDef struct {
 	GjsonPath   string // dot-notation gjson path, e.g. "user.id"
 	Type        string
 	Description string
+}
+
+// RuntimeRequestContext captures the live request data used for runtime AI generation.
+type RuntimeRequestContext struct {
+	PathParams  map[string]string
+	QueryParams map[string][]string
+	Headers     map[string][]string
+	Body        string
+	Signature   string
+}
+
+// RuntimeResponse is the concrete HTTP response shape returned by runtime AI generation.
+type RuntimeResponse struct {
+	StatusCode int
+	Headers    map[string]string
+	Body       string
 }
 
 // GenerateResponse calls the OpenAI API and returns a ResponseConfigInput
@@ -185,6 +201,99 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 	input.Enabled = true
 
 	return &input, nil
+}
+
+// GenerateRuntimeResponse calls the OpenAI API to generate a concrete response
+// for a live request. The response is not a reusable config template; it is the
+// final HTTP payload that should be returned to the caller and optionally saved
+// for replay.
+func (g *Generator) GenerateRuntimeResponse(ctx context.Context, op OperationContext, reqCtx RuntimeRequestContext) (*RuntimeResponse, error) {
+	if !g.IsConfigured() {
+		return nil, fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
+	}
+
+	systemPrompt := buildRuntimeSystemPrompt(op)
+	userMsg := buildRuntimeUserMessage(op, reqCtx)
+
+	reqBody := map[string]any{
+		"model": g.cfg.Model,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": userMsg},
+		},
+		"temperature":     0.3,
+		"response_format": map[string]string{"type": "json_object"},
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
+
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var apiResp struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+		Error *struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, fmt.Errorf("failed to decode OpenAI response: %w", err)
+	}
+	if apiResp.Error != nil {
+		return nil, fmt.Errorf("OpenAI error: %s", apiResp.Error.Message)
+	}
+	if len(apiResp.Choices) == 0 {
+		return nil, fmt.Errorf("OpenAI returned no choices")
+	}
+
+	content := apiResp.Choices[0].Message.Content
+
+	var wrapper struct {
+		StatusCode int               `json:"statusCode"`
+		Headers    map[string]string `json:"headers"`
+		Body       any               `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(content), &wrapper); err != nil {
+		return nil, fmt.Errorf("model returned invalid JSON: %w — raw: %s", err, content)
+	}
+
+	body, err := stringifyRuntimeBody(wrapper.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if wrapper.StatusCode == 0 {
+		wrapper.StatusCode = defaultRuntimeStatusCode(op)
+	}
+	if wrapper.Headers == nil {
+		wrapper.Headers = map[string]string{}
+	}
+	if strings.TrimSpace(body) != "" && wrapper.Headers["Content-Type"] == "" {
+		wrapper.Headers["Content-Type"] = "application/json"
+	}
+
+	return &RuntimeResponse{
+		StatusCode: wrapper.StatusCode,
+		Headers:    wrapper.Headers,
+		Body:       body,
+	}, nil
 }
 
 // ChatMessage represents a single turn in a conversation with the model.
@@ -641,6 +750,112 @@ func buildUserMessage(op OperationContext, userPrompt string) string {
 		sb.WriteString("\nGenerate a successful response with realistic fake data.")
 	}
 	return sb.String()
+}
+
+func buildRuntimeSystemPrompt(op OperationContext) string {
+	var sb strings.Builder
+	sb.WriteString(`You are an expert runtime response generator for go-virtual, an API virtualization service.
+
+You are generating the final HTTP response for a live incoming request.
+
+Return ONLY a JSON object with EXACTLY these fields:
+{
+  "statusCode": number,
+  "headers": object,
+  "body": object | array | string
+}
+
+Rules:
+- Prefer a successful status code unless the request context clearly implies an error response.
+- The body MUST match the spec-defined response schema or example for the chosen status code.
+- Use the incoming request as context so the response feels consistent with the request inputs.
+- When a JSON response is appropriate, return "body" as a JSON object/array, not a stringified JSON blob.
+- Keep headers minimal; include Content-Type: application/json for JSON responses.
+- Return raw JSON only. No markdown. No explanations.`)
+
+	if len(op.SpecResponses) > 0 {
+		sb.WriteString("\n\nSpec-defined responses:")
+		for _, r := range op.SpecResponses {
+			label := fmt.Sprintf("%d", r.StatusCode)
+			if r.StatusCode == 0 {
+				label = "default"
+			}
+			fmt.Fprintf(&sb, "\n  [%s]", label)
+			if r.Description != "" {
+				fmt.Fprintf(&sb, " — %s", r.Description)
+			}
+			if r.BodyExample != "" {
+				fmt.Fprintf(&sb, "\n    Example body: %s", r.BodyExample)
+			} else if r.SchemaHint != "" {
+				fmt.Fprintf(&sb, "\n    Schema: %s", r.SchemaHint)
+			}
+		}
+	} else if op.ExampleResponse != nil && strings.TrimSpace(op.ExampleResponse.Body) != "" {
+		sb.WriteString("\n\nFallback example response body:\n")
+		sb.WriteString(op.ExampleResponse.Body)
+	}
+
+	return sb.String()
+}
+
+func buildRuntimeUserMessage(op OperationContext, reqCtx RuntimeRequestContext) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "API operation:\n  Method: %s\n  Path:   %s\n", op.Method, op.Path)
+	if op.Summary != "" {
+		fmt.Fprintf(&sb, "  Summary: %s\n", op.Summary)
+	}
+	if op.Description != "" {
+		fmt.Fprintf(&sb, "  Description: %s\n", op.Description)
+	}
+	if reqCtx.Signature != "" {
+		fmt.Fprintf(&sb, "\nRequest signature: %s\n", reqCtx.Signature)
+	}
+	fmt.Fprintf(&sb, "\nIncoming request context:\n  Path params:  %#v\n  Query params: %#v\n  Headers:      %#v\n", reqCtx.PathParams, reqCtx.QueryParams, reqCtx.Headers)
+	if strings.TrimSpace(reqCtx.Body) != "" {
+		fmt.Fprintf(&sb, "  Body:         %s\n", reqCtx.Body)
+	} else {
+		sb.WriteString("  Body:         <empty>\n")
+	}
+	if op.Inputs != nil {
+		sb.WriteString("\nKnown request inputs from spec:")
+		for _, p := range op.Inputs.PathParams {
+			fmt.Fprintf(&sb, "\n  path   %s (%s)", p.Name, p.Type)
+		}
+		for _, p := range op.Inputs.QueryParams {
+			fmt.Fprintf(&sb, "\n  query  %s (%s)", p.Name, p.Type)
+		}
+		for _, f := range op.Inputs.BodyFields {
+			fmt.Fprintf(&sb, "\n  body   %s (%s)", f.GjsonPath, f.Type)
+		}
+	}
+	return sb.String()
+}
+
+func stringifyRuntimeBody(body any) (string, error) {
+	switch v := body.(type) {
+	case nil:
+		return "", nil
+	case string:
+		return v, nil
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return "", fmt.Errorf("model returned an invalid body: %w", err)
+		}
+		return string(data), nil
+	}
+}
+
+func defaultRuntimeStatusCode(op OperationContext) int {
+	for _, resp := range op.SpecResponses {
+		if resp.StatusCode > 0 {
+			return resp.StatusCode
+		}
+	}
+	if op.ExampleResponse != nil && op.ExampleResponse.StatusCode > 0 {
+		return op.ExampleResponse.StatusCode
+	}
+	return 200
 }
 
 var validSources = map[string]bool{

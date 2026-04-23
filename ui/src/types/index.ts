@@ -1,4 +1,7 @@
 // Spec types
+export type SpecMode = 'standard' | 'ai' | 'proxy';
+export type ResponseOrigin = 'manual' | 'proxy' | 'ai';
+
 export interface Spec {
     id: string;
     name: string;
@@ -10,6 +13,7 @@ export interface Spec {
     tracing: boolean;
     useExampleFallback: boolean;
     enabledTags?: string[];
+    mode: SpecMode;
     backendUri: string;
     proxyMode: boolean;
     createdAt: string;
@@ -87,6 +91,7 @@ export interface ResponseConfig {
     delay: number;
     enabled: boolean;
     recorded: boolean;
+    origin: ResponseOrigin;
 }
 
 export interface ResponseConfigInput {
@@ -136,6 +141,9 @@ export interface Trace {
     response: TraceResponse;
     matchedConfigId?: string;
     matchedConfig?: string;
+    matchedConfigOrigin?: ResponseOrigin;
+    mode?: SpecMode;
+    responseSource?: 'config' | 'example' | 'ai' | 'proxy';
     // Proxy recording fields
     proxyMode?: boolean;
     signature?: string;

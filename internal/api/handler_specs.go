@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
@@ -31,6 +32,9 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 			"tracing":            spec.Tracing,
 			"useExampleFallback": spec.UseExampleFallback,
 			"enabledTags":        spec.EnabledTags,
+			"mode":               spec.Mode,
+			"backendUri":         spec.BackendURI,
+			"proxyMode":          spec.ProxyMode,
 			"createdAt":          spec.CreatedAt,
 			"updatedAt":          spec.UpdatedAt,
 			"operationCount":     len(ops),
@@ -147,18 +151,27 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	}
 	if update.BackendURI != nil {
 		spec.BackendURI = *update.BackendURI
-		// Disabling backend URI also disables proxy mode
-		if spec.BackendURI == "" {
-			spec.ProxyMode = false
+		if spec.BackendURI == "" && spec.EffectiveMode() == models.SpecModeProxy {
+			spec.SetMode(models.SpecModeStandard)
+		}
+	}
+	if update.Mode != nil {
+		if err := h.applySpecMode(spec, *update.Mode); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 	}
 	if update.ProxyMode != nil {
-		// Proxy mode requires a backend URI
-		if *update.ProxyMode && spec.BackendURI == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "backendUri must be set before enabling proxyMode"})
+		targetMode := spec.EffectiveMode()
+		if *update.ProxyMode {
+			targetMode = models.SpecModeProxy
+		} else if spec.EffectiveMode() == models.SpecModeProxy {
+			targetMode = models.SpecModeStandard
+		}
+		if err := h.applySpecMode(spec, targetMode); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		spec.ProxyMode = *update.ProxyMode
 	}
 
 	spec.UpdatedAt = time.Now()
@@ -332,8 +345,8 @@ func (h *Handler) SetBackendURI(c *gin.Context) {
 	}
 
 	spec.BackendURI = input.BackendURI
-	if spec.BackendURI == "" {
-		spec.ProxyMode = false
+	if spec.BackendURI == "" && spec.EffectiveMode() == models.SpecModeProxy {
+		spec.SetMode(models.SpecModeStandard)
 	}
 	spec.UpdatedAt = time.Now()
 
@@ -345,6 +358,40 @@ func (h *Handler) SetBackendURI(c *gin.Context) {
 	h.proxyEngine.ReloadRoutes()
 
 	c.JSON(http.StatusOK, gin.H{"backendUri": spec.BackendURI, "proxyMode": spec.ProxyMode})
+}
+
+// SetSpecMode sets the execution mode for a spec.
+func (h *Handler) SetSpecMode(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Mode string `json:"mode"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.applySpecMode(spec, input.Mode); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	spec.UpdatedAt = time.Now()
+
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	h.proxyEngine.ReloadRoutes()
+
+	c.JSON(http.StatusOK, gin.H{"mode": spec.Mode, "proxyMode": spec.ProxyMode})
 }
 
 // ToggleProxyMode enables or disables proxy recording mode for a spec
@@ -365,12 +412,16 @@ func (h *Handler) ToggleProxyMode(c *gin.Context) {
 		input.Enabled = !spec.ProxyMode
 	}
 
-	if input.Enabled && spec.BackendURI == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "backendUri must be set before enabling proxy mode"})
+	targetMode := spec.EffectiveMode()
+	if input.Enabled {
+		targetMode = models.SpecModeProxy
+	} else if spec.EffectiveMode() == models.SpecModeProxy {
+		targetMode = models.SpecModeStandard
+	}
+	if err := h.applySpecMode(spec, targetMode); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	spec.ProxyMode = input.Enabled
 	spec.UpdatedAt = time.Now()
 
 	if err := h.store.UpdateSpec(spec); err != nil {
@@ -381,6 +432,22 @@ func (h *Handler) ToggleProxyMode(c *gin.Context) {
 	h.proxyEngine.ReloadRoutes()
 
 	c.JSON(http.StatusOK, gin.H{"proxyMode": spec.ProxyMode})
+}
+
+func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
+	mode = models.NormalizeSpecMode(mode)
+	switch mode {
+	case models.SpecModeProxy:
+		if spec.BackendURI == "" {
+			return fmt.Errorf("backendUri must be set before enabling proxy mode")
+		}
+	case models.SpecModeAI:
+		if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
+			return fmt.Errorf("AI generation must be configured before enabling AI mode")
+		}
+	}
+	spec.SetMode(mode)
+	return nil
 }
 
 // GetSpecTags returns enabled tags for a spec

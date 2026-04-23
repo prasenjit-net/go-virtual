@@ -50,6 +50,7 @@ func (m *MemoryStorage) CreateSpec(spec *models.Spec) error {
 		return fmt.Errorf("spec with ID %s already exists", spec.ID)
 	}
 
+	spec.NormalizeMode()
 	m.specs[spec.ID] = spec
 	return nil
 }
@@ -109,6 +110,7 @@ func (m *MemoryStorage) UpdateSpec(spec *models.Spec) error {
 		return fmt.Errorf("spec not found: %s", spec.ID)
 	}
 
+	spec.NormalizeMode()
 	m.specs[spec.ID] = spec
 	return nil
 }
@@ -313,6 +315,7 @@ func (m *MemoryStorage) CreateResponseConfig(cfg *models.ResponseConfig) error {
 		return fmt.Errorf("response config with ID %s already exists", cfg.ID)
 	}
 
+	cfg.NormalizeOrigin()
 	m.responseConfigs[cfg.ID] = cfg
 	return nil
 }
@@ -359,6 +362,7 @@ func (m *MemoryStorage) UpdateResponseConfig(cfg *models.ResponseConfig) error {
 		return fmt.Errorf("response config not found: %s", cfg.ID)
 	}
 
+	cfg.NormalizeOrigin()
 	m.responseConfigs[cfg.ID] = cfg
 	return nil
 }

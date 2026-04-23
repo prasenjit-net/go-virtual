@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
 import { operationsApi, responsesApi } from '../../services/api'
@@ -8,6 +8,7 @@ import ResponseConfigEditor from './ResponseConfigEditor'
 
 export default function ResponseConfigPage() {
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
     const { operationId, responseId } = useParams<{ operationId?: string; responseId?: string }>()
 
     const { data: responseConfig, isLoading: respLoading } = useQuery<ResponseConfig>({
@@ -30,6 +31,12 @@ export default function ResponseConfigPage() {
     })
 
     const isLoading = opLoading || respLoading
+    const source = searchParams.get('source')
+    const backToRecorded = source === 'recorded'
+    const backPath = backToRecorded
+        ? `/operations/${effectiveOperationId}/recorded-responses`
+        : `/operations/${effectiveOperationId}`
+    const backLabel = backToRecorded ? 'Back to Generated Responses' : 'Back to Operation'
 
     if (isLoading) {
         return (
@@ -57,11 +64,11 @@ export default function ResponseConfigPage() {
             <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="space-y-2">
                     <Link
-                        to={`/operations/${effectiveOperationId}`}
+                        to={backPath}
                         className="inline-flex items-center text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
                     >
                         <ArrowLeft className="w-4 h-4 mr-1" />
-                        Back to Operation
+                        {backLabel}
                     </Link>
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">
@@ -83,7 +90,7 @@ export default function ResponseConfigPage() {
             <ResponseConfigEditor
                 operationId={effectiveOperationId}
                 config={responseConfig || null}
-                onClose={() => navigate(`/operations/${effectiveOperationId}`)}
+                onClose={() => navigate(backPath)}
                 variant="page"
             />
         </div>

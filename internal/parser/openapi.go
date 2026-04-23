@@ -67,6 +67,7 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 		Enabled:            true,
 		Tracing:            false,
 		UseExampleFallback: true, // Enable example fallback by default
+		Mode:               models.SpecModeStandard,
 		BackendURI:         defaultBackendURI,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -159,7 +160,7 @@ func extractExampleResponseFromOp(op *openapi3.Operation) *models.ExampleRespons
 
 	// Try success status codes in order of preference
 	successCodes := []int{200, 201, 202, 204}
-	
+
 	for _, statusCode := range successCodes {
 		response := op.Responses.Status(statusCode)
 		if response == nil || response.Value == nil {
@@ -182,7 +183,7 @@ func extractExampleResponseFromOp(op *openapi3.Operation) *models.ExampleRespons
 		for mediaType, content := range response.Value.Content {
 			if strings.Contains(mediaType, "json") {
 				example.Headers["Content-Type"] = mediaType
-				
+
 				if content.Example != nil {
 					// Direct example
 					example.Body = formatExample(content.Example)
@@ -198,7 +199,7 @@ func extractExampleResponseFromOp(op *openapi3.Operation) *models.ExampleRespons
 					// Generate from schema
 					example.Body = generateExampleFromSchema(content.Schema.Value)
 				}
-				
+
 				if example.Body != "" {
 					return example
 				}

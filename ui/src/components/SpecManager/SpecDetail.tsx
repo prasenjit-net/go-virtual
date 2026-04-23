@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     ArrowLeft,
+    Bot,
     FileCode2,
     ChevronRight,
     Sparkles,
@@ -11,8 +12,8 @@ import {
     Globe
 } from 'lucide-react'
 import clsx from 'clsx'
-import { specsApi, operationsApi, tagsApi } from '../../services/api'
-import type { Spec, OperationSummary } from '../../types'
+import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
+import type { Spec, OperationSummary, SpecMode } from '../../types'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -61,8 +62,14 @@ export default function SpecDetail() {
         },
     })
 
-    const toggleProxyMutation = useMutation({
-        mutationFn: (enabled: boolean) => specsApi.toggleProxyMode(specId!, enabled),
+    const { data: aiConfigured = true } = useQuery<boolean>({
+        queryKey: ['ai-configured'],
+        queryFn: () => aiApi.isConfigured(),
+        staleTime: 60_000,
+    })
+
+    const setModeMutation = useMutation({
+        mutationFn: (mode: SpecMode) => specsApi.setMode(specId!, mode),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['spec', specId] })
         },
@@ -208,7 +215,7 @@ export default function SpecDetail() {
                 )}
             </div>
 
-            {/* Backend Configuration */}
+            {/* Execution Mode & Backend Configuration */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -216,42 +223,74 @@ export default function SpecDetail() {
                             <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                         </div>
                         <div>
-                            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Backend Configuration</h2>
+                            <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Execution Mode</h2>
                             <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-                                Set a real backend to enable proxy recording mode
+                                Existing saved responses are always tried first; mode controls what happens when none match.
                             </p>
                         </div>
                     </div>
-                    {spec.backendUri && (
-                        <div className="flex items-center gap-2">
-                            <span className="text-sm text-gray-500 dark:text-slate-400">Proxy Mode</span>
-                            <button
-                                onClick={() => toggleProxyMutation.mutate(!spec.proxyMode)}
-                                disabled={toggleProxyMutation.isPending}
-                                className={clsx(
-                                    'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none',
-                                    spec.proxyMode
-                                        ? 'bg-violet-600'
-                                        : 'bg-gray-300 dark:bg-slate-600'
-                                )}
-                                title={spec.proxyMode ? 'Disable proxy mode' : 'Enable proxy mode'}
-                            >
-                                <span className={clsx(
-                                    'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                                    spec.proxyMode ? 'translate-x-6' : 'translate-x-1'
-                                )} />
-                            </button>
-                            {spec.proxyMode && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-                                    <Radio className="w-3 h-3 animate-pulse" />
-                                    Recording
-                                </span>
-                            )}
-                        </div>
-                    )}
                 </div>
 
-                <div className="p-6">
+                <div className="p-6 space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button
+                            onClick={() => setModeMutation.mutate('standard')}
+                            disabled={setModeMutation.isPending}
+                            className={clsx(
+                                'rounded-xl border px-4 py-3 text-left transition-colors',
+                                spec.mode === 'standard'
+                                    ? 'border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-200'
+                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
+                            )}
+                        >
+                            <div className="font-semibold">Standard</div>
+                            <p className="text-xs mt-1 opacity-80">
+                                Fall back to the spec example/default response when no saved response matches.
+                            </p>
+                        </button>
+                        <button
+                            onClick={() => setModeMutation.mutate('ai')}
+                            disabled={setModeMutation.isPending || !aiConfigured}
+                            className={clsx(
+                                'rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                                spec.mode === 'ai'
+                                    ? 'border-fuchsia-300 bg-fuchsia-50 text-fuchsia-800 dark:border-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-200'
+                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
+                            )}
+                        >
+                            <div className="font-semibold flex items-center gap-2">
+                                <Bot className="w-4 h-4" />
+                                AI
+                            </div>
+                            <p className="text-xs mt-1 opacity-80">
+                                Generate a structured response with AI on misses, then save it for replay.
+                            </p>
+                        </button>
+                        <button
+                            onClick={() => setModeMutation.mutate('proxy')}
+                            disabled={setModeMutation.isPending || !spec.backendUri}
+                            className={clsx(
+                                'rounded-xl border px-4 py-3 text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                                spec.mode === 'proxy'
+                                    ? 'border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-700 dark:bg-violet-900/30 dark:text-violet-200'
+                                    : 'border-gray-200 hover:bg-gray-50 dark:border-slate-700 dark:hover:bg-slate-800 text-gray-700 dark:text-slate-300'
+                            )}
+                        >
+                            <div className="font-semibold flex items-center gap-2">
+                                <Radio className="w-4 h-4" />
+                                Proxy
+                            </div>
+                            <p className="text-xs mt-1 opacity-80">
+                                Forward misses to the upstream backend and save the returned response for replay.
+                            </p>
+                        </button>
+                    </div>
+
+                    <div className="rounded-xl border border-gray-200 dark:border-slate-800 px-4 py-3 bg-gray-50 dark:bg-slate-950 text-sm text-gray-600 dark:text-slate-300">
+                        <span className="font-medium text-gray-900 dark:text-slate-100 mr-2">Active mode:</span>
+                        <span className="capitalize">{spec.mode}</span>
+                    </div>
+
                     <div className="flex items-center gap-3">
                         <input
                             type="url"
@@ -269,15 +308,31 @@ export default function SpecDetail() {
                             Save
                         </button>
                     </div>
-                    {spec.backendUri && !spec.proxyMode && (
-                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
-                            Backend configured. Toggle <strong>Proxy Mode</strong> above to start recording responses from the backend.
+                    {!aiConfigured && (
+                        <p className="mt-2 text-xs text-fuchsia-600 dark:text-fuchsia-400">
+                            AI mode is unavailable until an OpenAI API key is configured.
                         </p>
                     )}
-                    {spec.proxyMode && (
+                    {spec.backendUri && spec.mode !== 'proxy' && (
+                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+                            Backend configured. Switch to <strong>Proxy</strong> mode to use upstream fallback after saved responses miss.
+                        </p>
+                    )}
+                    {spec.mode === 'proxy' && (
                         <p className="mt-2 text-xs text-violet-600 dark:text-violet-400">
                             <Radio className="w-3 h-3 inline mr-1 animate-pulse" />
-                            Proxy mode active — all incoming requests are forwarded to <strong>{spec.backendUri}</strong> and responses are automatically recorded.
+                            Proxy mode active — saved responses are checked first, then unmatched requests are forwarded to <strong>{spec.backendUri}</strong> and recorded.
+                        </p>
+                    )}
+                    {spec.mode === 'ai' && (
+                        <p className="mt-2 text-xs text-fuchsia-600 dark:text-fuchsia-400">
+                            <Bot className="w-3 h-3 inline mr-1" />
+                            AI mode active — saved responses are checked first, then unmatched requests are generated with AI and saved for replay.
+                        </p>
+                    )}
+                    {spec.mode === 'standard' && (
+                        <p className="mt-2 text-xs text-gray-500 dark:text-slate-400">
+                            Standard mode active — saved responses are checked first, then the spec example/default response is used when enabled.
                         </p>
                     )}
                 </div>

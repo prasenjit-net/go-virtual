@@ -4,6 +4,7 @@ import Dashboard from './components/Dashboard'
 import SpecList from './components/SpecManager/SpecList'
 import SpecDetail from './components/SpecManager/SpecDetail'
 import OperationDetail from './components/OperationDetail'
+import OperationRecordedResponsesPage from './components/OperationRecordedResponsesPage'
 import ResponseConfigPage from './components/ResponseDesigner/ResponseConfigPage'
 import TraceViewer from './components/TraceViewer'
 import TagManager from './components/TagManager'
@@ -23,6 +24,7 @@ function App() {
                 <Route path="specs" element={<SpecList />} />
                 <Route path="specs/:specId" element={<SpecDetail />} />
                 <Route path="operations/:operationId" element={<OperationDetail />} />
+                <Route path="operations/:operationId/recorded-responses" element={<OperationRecordedResponsesPage />} />
                 <Route path="operations/:operationId/responses/new" element={<ResponseConfigPage />} />
                 <Route path="responses/:responseId/edit" element={<ResponseConfigPage />} />
                 <Route path="traces" element={<TraceViewer />} />

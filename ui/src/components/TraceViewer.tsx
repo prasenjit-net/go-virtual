@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Activity,
+    Bot,
     Trash2,
     Search,
     ChevronRight,
@@ -246,15 +247,21 @@ export default function TraceViewer() {
                                             )}>
                                                 {trace.request.method}
                                             </span>
-                                            {trace.proxyMode && (
+                                            {trace.responseSource === 'proxy' && (
                                                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 shrink-0">
                                                     <Radio className="w-2.5 h-2.5" />
                                                     Proxy
                                                 </span>
                                             )}
-                                            <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
-                                                {trace.request.path}
-                                            </span>
+                                            {trace.responseSource === 'ai' && (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900/40 dark:text-fuchsia-300 shrink-0">
+                                                    <Bot className="w-2.5 h-2.5" />
+                                                    AI
+                                                </span>
+                                            )}
+                                        <span className="font-mono text-sm text-gray-900 dark:text-slate-100 truncate">
+                                            {trace.request.path}
+                                        </span>
                                         </div>
                                         <span className={clsx(
                                             'px-2 py-0.5 rounded text-xs font-medium shrink-0 ml-2',
@@ -482,20 +489,23 @@ function TraceDetail({
 }) {
     return (
         <div className="p-6 space-y-6">
-            {/* Proxy Recording Banner */}
-            {trace.proxyMode && (
+            {/* Generated/Proxy Banner */}
+            {(trace.responseSource === 'proxy' || trace.responseSource === 'ai') && (
                 <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-900/20 p-4">
                     <div className="flex items-center gap-2 mb-3">
-                        <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                        {trace.responseSource === 'proxy' ? (
+                            <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                        ) : (
+                            <Bot className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400 shrink-0" />
+                        )}
                         <span className="text-sm font-semibold text-violet-800 dark:text-violet-200">
-                            Proxy Recording
+                            {trace.responseSource === 'proxy' ? 'Proxy Recording' : 'AI Generation'}
                         </span>
                         <span className="ml-auto text-xs text-violet-500 dark:text-violet-400">
                             {formatDuration(trace.duration)}
                         </span>
                     </div>
                     <div className="space-y-2 text-sm">
-                        {/* Backend URI */}
                         {trace.backendUri && (
                             <div className="flex items-start gap-2">
                                 <Globe className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400 mt-0.5 shrink-0" />
@@ -586,9 +596,11 @@ function TraceDetail({
                             )}>
                                 {trace.response.statusCode}
                             </span>
-                            {trace.proxyMode && (
+                            {(trace.responseSource === 'proxy' || trace.responseSource === 'ai') && (
                                 <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">
-                                    Recorded &amp; saved for replay
+                                    {trace.responseSource === 'proxy'
+                                        ? 'Recorded & saved for replay'
+                                        : 'AI-generated & saved for replay'}
                                 </span>
                             )}
                         </div>
@@ -602,9 +614,14 @@ function TraceDetail({
             </div>
 
             {/* Matched Config (virtual mode) */}
-            {!trace.proxyMode && trace.matchedConfig && (
+            {trace.matchedConfig && trace.responseSource === 'config' && (
                 <div className="text-sm text-gray-500 dark:text-slate-400 bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
                     Matched config: <span className="font-medium text-gray-700 dark:text-slate-200">{trace.matchedConfig}</span>
+                    {trace.matchedConfigOrigin && (
+                        <span className="ml-2 text-xs uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                            ({trace.matchedConfigOrigin})
+                        </span>
+                    )}
                 </div>
             )}
 

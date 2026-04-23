@@ -86,6 +86,15 @@ export const specsApi = {
         return handleResponse<any>(response);
     },
 
+    setMode: async (id: string, mode: import('../types').SpecMode) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/mode`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode }),
+        });
+        return handleResponse<any>(response);
+    },
+
     toggleProxyMode: async (id: string, enabled: boolean) => {
         const response = await fetch(`${API_BASE}/specs/${id}/proxy-mode`, {
             method: 'PUT',

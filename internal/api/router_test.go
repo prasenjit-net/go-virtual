@@ -6,13 +6,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/tracing"
-	"testing/fstest"
 )
 
 func setupTestRouter() *Router {
@@ -111,6 +112,24 @@ func TestServeEmbeddedUI(t *testing.T) {
 	router.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusMovedPermanently {
 		t.Fatalf("expected status 301, got %d", w.Code)
+	}
+}
+
+func TestServeEmbeddedUI_DoesNotHijackProxyRoutes(t *testing.T) {
+	router := setupTestRouter()
+
+	uiFS := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html>embedded</html>")},
+	}
+
+	router.ServeEmbeddedUI(uiFS)
+
+	req := httptest.NewRequest("GET", "/pets", nil)
+	w := httptest.NewRecorder()
+	router.Handler().ServeHTTP(w, req)
+
+	if w.Code == http.StatusOK && strings.Contains(w.Body.String(), "embedded") {
+		t.Fatalf("expected non-UI routes to bypass the SPA handler")
 	}
 }
 

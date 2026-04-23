@@ -101,6 +101,7 @@ func (f *FileStorage) loadAll() error {
 
 		// Reset tracing to disabled on load - tracing should not persist across restarts
 		spec.Tracing = false
+		spec.NormalizeMode()
 
 		f.memory.specs[spec.ID] = &spec
 
@@ -146,6 +147,7 @@ func (f *FileStorage) loadAll() error {
 		if cfg.Tag == "" {
 			cfg.Tag = models.DefaultTagName
 		}
+		cfg.NormalizeOrigin()
 
 		// Load response body from separate file if it exists
 		cfgID := strings.TrimSuffix(entry.Name(), ".json")
@@ -301,17 +303,17 @@ func (f *FileStorage) saveSpec(spec *models.Spec) error {
 // deleteSpecFile deletes a spec file and its content file from disk
 func (f *FileStorage) deleteSpecFile(id string) error {
 	specsDir := filepath.Join(f.basePath, "specs")
-	
+
 	// Delete metadata JSON
 	jsonPath := filepath.Join(specsDir, id+".json")
 	os.Remove(jsonPath) // Ignore error if doesn't exist
-	
+
 	// Delete content files (try all extensions)
 	extensions := []string{".yaml", ".yml", ".spec.json"}
 	for _, ext := range extensions {
 		os.Remove(filepath.Join(specsDir, id+ext))
 	}
-	
+
 	return nil
 }
 
@@ -378,15 +380,15 @@ func (f *FileStorage) DeleteTag(name string) error {
 // deleteResponseConfigFile deletes a response config file and its body file from disk
 func (f *FileStorage) deleteResponseConfigFile(id string) error {
 	respDir := filepath.Join(f.basePath, "responses")
-	
+
 	// Delete metadata JSON
 	jsonPath := filepath.Join(respDir, id+".json")
 	os.Remove(jsonPath)
-	
+
 	// Delete body file
 	bodyPath := filepath.Join(respDir, id+".body")
 	os.Remove(bodyPath)
-	
+
 	return nil
 }
 
