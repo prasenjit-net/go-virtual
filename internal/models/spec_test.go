@@ -55,6 +55,11 @@ func TestNormalizeSpecModeAndSetMode(t *testing.T) {
 	if spec.Mode != SpecModeProxy || !spec.ProxyMode {
 		t.Fatalf("SetMode did not set proxy mode correctly: %+v", spec)
 	}
+
+	spec.SetMode("invalid")
+	if spec.Mode != SpecModeStandard || spec.ProxyMode {
+		t.Fatalf("SetMode should normalize to standard and clear proxy mode: %+v", spec)
+	}
 }
 
 func TestSpecNormalizeModeAndEffectiveModePolicy(t *testing.T) {

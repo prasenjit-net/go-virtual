@@ -11,6 +11,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -258,6 +259,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	modeSelection := e.selectMode(matchedRoute.spec, reqData)
 	specMode := modeSelection.Mode
+	requestedScenarioName := strings.TrimSpace(r.Header.Get("X-Virtual-AI-Scenario"))
+	appliedScenario := e.resolveAIScenario(matchedRoute.spec, requestedScenarioName)
 
 	if matchedConfig == nil {
 		switch specMode {
@@ -269,6 +272,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Headers:     headersToMap(r.Header),
 				Body:        requestBody,
 				Signature:   signature,
+				Scenario:    appliedScenario,
 			})
 			if aiErr != nil {
 				statusCode := http.StatusBadGateway
@@ -296,18 +300,20 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				).Observe(duration.Seconds())
 				if matchedRoute.spec.Tracing {
 					e.tracingService.RecordTrace(&models.Trace{
-						SpecID:             matchedRoute.spec.ID,
-						SpecName:           matchedRoute.spec.Name,
-						OperationID:        matchedRoute.operation.ID,
-						OperationPath:      matchedRoute.operation.Path,
-						Timestamp:          startTime,
-						Duration:           duration.Nanoseconds(),
-						Mode:               specMode,
-						ResponseSource:     models.TraceResponseSourceAI,
-						ResponseTier:       models.TraceResponseTierFallback,
-						Signature:          signature,
-						AISkippedReason:    modeSelection.AISkippedReason,
-						ProxySkippedReason: modeSelection.ProxySkippedReason,
+						SpecID:              matchedRoute.spec.ID,
+						SpecName:            matchedRoute.spec.Name,
+						OperationID:         matchedRoute.operation.ID,
+						OperationPath:       matchedRoute.operation.Path,
+						Timestamp:           startTime,
+						Duration:            duration.Nanoseconds(),
+						Mode:                specMode,
+						ResponseSource:      models.TraceResponseSourceAI,
+						ResponseTier:        models.TraceResponseTierFallback,
+						Signature:           signature,
+						AISkippedReason:     modeSelection.AISkippedReason,
+						ProxySkippedReason:  modeSelection.ProxySkippedReason,
+						AIScenarioRequested: requestedScenarioName,
+						AIScenarioApplied:   aiScenarioName(appliedScenario),
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -364,19 +370,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			).Observe(duration.Seconds())
 			if matchedRoute.spec.Tracing {
 				e.tracingService.RecordTrace(&models.Trace{
-					SpecID:             matchedRoute.spec.ID,
-					SpecName:           matchedRoute.spec.Name,
-					OperationID:        matchedRoute.operation.ID,
-					OperationPath:      matchedRoute.operation.Path,
-					Timestamp:          startTime,
-					Duration:           duration.Nanoseconds(),
-					MatchedConfig:      "[ai-generated]",
-					Mode:               specMode,
-					ResponseSource:     models.TraceResponseSourceAI,
-					ResponseTier:       models.TraceResponseTierFallback,
-					Signature:          signature,
-					AISkippedReason:    modeSelection.AISkippedReason,
-					ProxySkippedReason: modeSelection.ProxySkippedReason,
+					SpecID:              matchedRoute.spec.ID,
+					SpecName:            matchedRoute.spec.Name,
+					OperationID:         matchedRoute.operation.ID,
+					OperationPath:       matchedRoute.operation.Path,
+					Timestamp:           startTime,
+					Duration:            duration.Nanoseconds(),
+					MatchedConfig:       "[ai-generated]",
+					Mode:                specMode,
+					ResponseSource:      models.TraceResponseSourceAI,
+					ResponseTier:        models.TraceResponseTierFallback,
+					Signature:           signature,
+					AISkippedReason:     modeSelection.AISkippedReason,
+					ProxySkippedReason:  modeSelection.ProxySkippedReason,
+					AIScenarioRequested: requestedScenarioName,
+					AIScenarioApplied:   aiScenarioName(appliedScenario),
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -771,6 +779,32 @@ func (e *Engine) resetRuntimeWarnings() {
 	e.warningMu.Lock()
 	defer e.warningMu.Unlock()
 	e.runtimeWarnings = make(map[string]struct{})
+}
+
+func (e *Engine) resolveAIScenario(spec *models.Spec, requested string) *ai.RuntimeScenario {
+	if spec == nil {
+		return nil
+	}
+	scenario := spec.FindAIScenario(requested)
+	if scenario == nil || !scenario.Enabled {
+		return nil
+	}
+	return &ai.RuntimeScenario{
+		Name:                    scenario.Name,
+		Description:             scenario.Description,
+		ResponseKind:            scenario.ResponseKind,
+		StatusCode:              scenario.StatusCode,
+		Count:                   scenario.Count,
+		Instructions:            scenario.Instructions,
+		UseDefaultSuccessStatus: scenario.ResponseKind == models.AIScenarioKindSuccess && scenario.StatusCode == 0,
+	}
+}
+
+func aiScenarioName(scenario *ai.RuntimeScenario) string {
+	if scenario == nil {
+		return ""
+	}
+	return scenario.Name
 }
 
 func (e *Engine) buildAIOperationContext(op *models.Operation) ai.OperationContext {

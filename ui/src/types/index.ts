@@ -18,6 +18,7 @@ export interface Spec {
     backendUri: string;
     proxyMode: boolean;
     modePolicy: ModePolicy;
+    aiScenarios?: AIScenario[];
     createdAt: string;
     updatedAt: string;
     operationCount?: number;
@@ -55,6 +56,21 @@ export interface ModePolicy {
     configured?: boolean;
     ai: ConditionalModeConfig;
     proxy: ConditionalModeConfig;
+}
+
+export type AIScenarioKind = 'success' | 'error';
+
+export interface AIScenario {
+    id: string;
+    name: string;
+    description: string;
+    responseKind: AIScenarioKind;
+    statusCode: number;
+    count: number;
+    instructions: string;
+    enabled: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 // SignatureConfig controls which request parts contribute to the signature hash
@@ -160,6 +176,8 @@ export interface Trace {
     responseTier?: ResponseTier;
     aiSkippedReason?: string;
     proxySkippedReason?: string;
+    aiScenarioRequested?: string;
+    aiScenarioApplied?: string;
     // Proxy recording fields
     proxyMode?: boolean;
     signature?: string;

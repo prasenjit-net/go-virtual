@@ -269,12 +269,30 @@ func TestBuildRuntimeSystemPrompt(t *testing.T) {
 		},
 	}
 
-	prompt := buildRuntimeSystemPrompt(op)
+	prompt := buildRuntimeSystemPrompt(op, nil)
 	if !strings.Contains(prompt, "Spec-defined responses") {
 		t.Fatal("expected spec-defined responses section")
 	}
 	if !strings.Contains(prompt, `{"id":"1"}`) || !strings.Contains(prompt, "Schema: object with fields: error") {
 		t.Fatalf("unexpected runtime system prompt: %s", prompt)
+	}
+}
+
+func TestBuildRuntimeSystemPrompt_WithScenario(t *testing.T) {
+	op := OperationContext{Method: "GET", Path: "/pets"}
+
+	prompt := buildRuntimeSystemPrompt(op, &RuntimeScenario{
+		Name:         "client_error",
+		ResponseKind: "error",
+		StatusCode:   400,
+		Count:        5,
+		Instructions: "Return validation details",
+	})
+
+	for _, want := range []string{"Scenario name: client_error", "Status code: 400", "Item count: return exactly 5", "Return validation details"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("runtime system prompt missing %q: %s", want, prompt)
+		}
 	}
 }
 
@@ -371,6 +389,30 @@ func TestGenerateRuntimeResponse(t *testing.T) {
 	}
 	if resp.Body != `{"id":"pet-1"}` {
 		t.Fatalf("unexpected body %q", resp.Body)
+	}
+}
+
+func TestGenerateRuntimeResponse_UsesScenarioStatusCode(t *testing.T) {
+	srv, endpoint := mockOpenAI(t, 200, openAISuccessResponse(`{"statusCode":0,"headers":{},"body":{"error":"unauthorized"}}`))
+	_ = srv
+
+	g := NewGenerator(Config{APIKey: "sk-test", Endpoint: endpoint})
+	resp, err := g.GenerateRuntimeResponse(context.Background(), OperationContext{
+		Method:        "GET",
+		Path:          "/pets/{id}",
+		SpecResponses: []SpecResponseDef{{StatusCode: 200}},
+	}, RuntimeRequestContext{
+		Scenario: &RuntimeScenario{
+			Name:         "unauthorized",
+			ResponseKind: "error",
+			StatusCode:   401,
+		},
+	})
+	if err != nil {
+		t.Fatalf("GenerateRuntimeResponse returned error: %v", err)
+	}
+	if resp.StatusCode != 401 {
+		t.Fatalf("expected scenario status 401, got %d", resp.StatusCode)
 	}
 }
 

@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
@@ -36,6 +38,7 @@ func (h *Handler) ListSpecs(c *gin.Context) {
 			"backendUri":         spec.BackendURI,
 			"proxyMode":          spec.ProxyMode,
 			"modePolicy":         spec.EffectiveModePolicy(),
+			"aiScenarios":        spec.AIScenarios,
 			"createdAt":          spec.CreatedAt,
 			"updatedAt":          spec.UpdatedAt,
 			"operationCount":     len(ops),
@@ -89,10 +92,23 @@ func (h *Handler) CreateSpec(c *gin.Context) {
 	h.proxyEngine.ReloadRoutes()
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":             parseResult.Spec.ID,
-		"name":           parseResult.Spec.Name,
-		"version":        parseResult.Spec.Version,
-		"operationCount": len(parseResult.Operations),
+		"id":                 parseResult.Spec.ID,
+		"name":               parseResult.Spec.Name,
+		"version":            parseResult.Spec.Version,
+		"description":        parseResult.Spec.Description,
+		"basePath":           parseResult.Spec.BasePath,
+		"enabled":            parseResult.Spec.Enabled,
+		"tracing":            parseResult.Spec.Tracing,
+		"useExampleFallback": parseResult.Spec.UseExampleFallback,
+		"enabledTags":        parseResult.Spec.EnabledTags,
+		"mode":               parseResult.Spec.EffectiveMode(),
+		"backendUri":         parseResult.Spec.BackendURI,
+		"proxyMode":          parseResult.Spec.ProxyMode,
+		"modePolicy":         parseResult.Spec.EffectiveModePolicy(),
+		"aiScenarios":        parseResult.Spec.AIScenarios,
+		"createdAt":          parseResult.Spec.CreatedAt,
+		"updatedAt":          parseResult.Spec.UpdatedAt,
+		"operationCount":     len(parseResult.Operations),
 	})
 }
 
@@ -184,6 +200,14 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+	}
+	if update.AIScenarios != nil {
+		if err := validateAIScenarios(*update.AIScenarios); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		spec.AIScenarios = *update.AIScenarios
+		spec.NormalizeAIScenarios()
 	}
 
 	spec.UpdatedAt = time.Now()
@@ -534,6 +558,135 @@ func (h *Handler) UpdateSpecModePolicy(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"modePolicy": spec.ModePolicy})
 }
 
+// ListAIScenarios returns all AI scenarios for a spec.
+func (h *Handler) ListAIScenarios(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"scenarios": spec.AIScenarios})
+}
+
+// CreateAIScenario adds a new AI scenario to a spec.
+func (h *Handler) CreateAIScenario(c *gin.Context) {
+	id := c.Param("id")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Scenario models.AIScenario `json:"scenario"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	now := time.Now()
+	input.Scenario.ID = uuid.NewString()
+	input.Scenario.CreatedAt = now
+	input.Scenario.UpdatedAt = now
+
+	next := append(append([]models.AIScenario{}, spec.AIScenarios...), input.Scenario)
+	if err := validateAIScenarios(next); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spec.AIScenarios = next
+	spec.NormalizeAIScenarios()
+	spec.UpdatedAt = now
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"scenario": scenarioByID(spec.AIScenarios, input.Scenario.ID)})
+}
+
+// UpdateAIScenario updates an existing AI scenario on a spec.
+func (h *Handler) UpdateAIScenario(c *gin.Context) {
+	id := c.Param("id")
+	scenarioID := c.Param("scenarioId")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	var input struct {
+		Scenario models.AIScenario `json:"scenario"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	index := scenarioIndexByID(spec.AIScenarios, scenarioID)
+	if index < 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scenario not found"})
+		return
+	}
+
+	current := spec.AIScenarios[index]
+	updated := input.Scenario
+	updated.ID = current.ID
+	updated.CreatedAt = current.CreatedAt
+	updated.UpdatedAt = time.Now()
+
+	next := append([]models.AIScenario{}, spec.AIScenarios...)
+	next[index] = updated
+	if err := validateAIScenarios(next); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	spec.AIScenarios = next
+	spec.NormalizeAIScenarios()
+	spec.UpdatedAt = time.Now()
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"scenario": scenarioByID(spec.AIScenarios, scenarioID)})
+}
+
+// DeleteAIScenario removes an AI scenario from a spec.
+func (h *Handler) DeleteAIScenario(c *gin.Context) {
+	id := c.Param("id")
+	scenarioID := c.Param("scenarioId")
+
+	spec, err := h.store.GetSpec(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	index := scenarioIndexByID(spec.AIScenarios, scenarioID)
+	if index < 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scenario not found"})
+		return
+	}
+
+	spec.AIScenarios = append(spec.AIScenarios[:index], spec.AIScenarios[index+1:]...)
+	spec.UpdatedAt = time.Now()
+	if err := h.store.UpdateSpec(spec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Scenario deleted"})
+}
+
 // GetSpecTags returns enabled tags for a spec
 func (h *Handler) GetSpecTags(c *gin.Context) {
 	id := c.Param("id")
@@ -619,6 +772,48 @@ func (h *Handler) ensureTagExists(tag string) error {
 	}
 	_, err := h.store.GetTag(tag)
 	return err
+}
+
+func validateAIScenarios(scenarios []models.AIScenario) error {
+	seenNames := make(map[string]struct{}, len(scenarios))
+	for i := range scenarios {
+		scenario := scenarios[i]
+		name := strings.TrimSpace(scenario.Name)
+		if name == "" {
+			return fmt.Errorf("scenario %d name is required", i)
+		}
+		key := strings.ToLower(name)
+		if _, exists := seenNames[key]; exists {
+			return fmt.Errorf("scenario name %q already exists", name)
+		}
+		seenNames[key] = struct{}{}
+
+		if scenario.StatusCode < 0 || scenario.StatusCode > 999 {
+			return fmt.Errorf("scenario %q has invalid status code %d", name, scenario.StatusCode)
+		}
+		if scenario.Count < 0 {
+			return fmt.Errorf("scenario %q count must be zero or greater", name)
+		}
+	}
+	return nil
+}
+
+func scenarioIndexByID(scenarios []models.AIScenario, scenarioID string) int {
+	for i := range scenarios {
+		if scenarios[i].ID == scenarioID {
+			return i
+		}
+	}
+	return -1
+}
+
+func scenarioByID(scenarios []models.AIScenario, scenarioID string) *models.AIScenario {
+	for i := range scenarios {
+		if scenarios[i].ID == scenarioID {
+			return &scenarios[i]
+		}
+	}
+	return nil
 }
 
 func (h *Handler) replaceTagWithDefault(tag string) {

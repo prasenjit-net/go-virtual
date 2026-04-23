@@ -560,7 +560,7 @@ function TraceDetail({
                 </div>
             )}
 
-            {(trace.aiSkippedReason || trace.proxySkippedReason || trace.mode || trace.responseTier) && (
+            {(trace.aiSkippedReason || trace.proxySkippedReason || trace.mode || trace.responseTier || trace.aiScenarioRequested || trace.aiScenarioApplied) && (
                 <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3">
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3">
                         Fallback decision
@@ -588,6 +588,18 @@ function TraceDetail({
                             <div>
                                 <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Proxy skip reason</span>
                                 <div className="text-gray-700 dark:text-slate-200">{skipReasonLabels[trace.proxySkippedReason] || trace.proxySkippedReason}</div>
+                            </div>
+                        )}
+                        {trace.aiScenarioRequested && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Requested AI scenario</span>
+                                <div className="text-gray-700 dark:text-slate-200">{trace.aiScenarioRequested}</div>
+                            </div>
+                        )}
+                        {trace.aiScenarioApplied && (
+                            <div>
+                                <span className="text-xs font-medium text-gray-400 dark:text-slate-500 uppercase">Applied AI scenario</span>
+                                <div className="text-gray-700 dark:text-slate-200">{trace.aiScenarioApplied}</div>
                             </div>
                         )}
                     </div>

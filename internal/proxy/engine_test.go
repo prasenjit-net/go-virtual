@@ -121,6 +121,29 @@ func TestSelectMode_LogsMissingBackendOnce(t *testing.T) {
 	}
 }
 
+func TestResolveAIScenario(t *testing.T) {
+	engine, _ := setupTestEngine(t)
+	spec := &models.Spec{
+		AIScenarios: []models.AIScenario{
+			{Name: "success", ResponseKind: models.AIScenarioKindSuccess, Enabled: true},
+			{Name: "client_error", ResponseKind: models.AIScenarioKindError, StatusCode: 400, Enabled: true},
+			{Name: "disabled", ResponseKind: models.AIScenarioKindError, StatusCode: 500, Enabled: false},
+		},
+	}
+
+	scenario := engine.resolveAIScenario(spec, "client_error")
+	if scenario == nil || scenario.Name != "client_error" || scenario.StatusCode != 400 {
+		t.Fatalf("expected enabled scenario to resolve, got %#v", scenario)
+	}
+	if engine.resolveAIScenario(spec, "disabled") != nil {
+		t.Fatal("expected disabled scenario to be ignored")
+	}
+	success := engine.resolveAIScenario(spec, "success")
+	if success == nil || !success.UseDefaultSuccessStatus {
+		t.Fatalf("expected success scenario to use default success status, got %#v", success)
+	}
+}
+
 func TestBuildPathPattern(t *testing.T) {
 	tests := []struct {
 		name           string

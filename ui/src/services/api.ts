@@ -118,6 +118,36 @@ export const specsApi = {
         return handleResponse<any>(response);
     },
 
+    listAIScenarios: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios`);
+        return handleResponse<{ scenarios: import('../types').AIScenario[] }>(response);
+    },
+
+    createAIScenario: async (id: string, scenario: Partial<import('../types').AIScenario>) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario }),
+        });
+        return handleResponse<{ scenario: import('../types').AIScenario }>(response);
+    },
+
+    updateAIScenario: async (id: string, scenarioId: string, scenario: Partial<import('../types').AIScenario>) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios/${scenarioId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenario }),
+        });
+        return handleResponse<{ scenario: import('../types').AIScenario }>(response);
+    },
+
+    deleteAIScenario: async (id: string, scenarioId: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/ai-scenarios/${scenarioId}`, {
+            method: 'DELETE',
+        });
+        return handleResponse<{ deleted: boolean }>(response);
+    },
+
     getTags: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}/tags`);
         return handleResponse<any>(response);

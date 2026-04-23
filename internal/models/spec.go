@@ -26,6 +26,7 @@ type Spec struct {
 	BackendURI         string      `json:"backendUri"` // Upstream backend URI for proxy recording mode
 	ProxyMode          bool        `json:"proxyMode"`  // Forward requests to backend and record responses
 	ModePolicy         ModePolicy  `json:"modePolicy"`
+	AIScenarios        []AIScenario `json:"aiScenarios,omitempty"`
 	CreatedAt          time.Time   `json:"createdAt"`
 	UpdatedAt          time.Time   `json:"updatedAt"`
 	Operations         []Operation `json:"operations,omitempty"`
@@ -51,6 +52,7 @@ type SpecUpdate struct {
 	BackendURI         *string     `json:"backendUri,omitempty"`
 	ProxyMode          *bool       `json:"proxyMode,omitempty"`
 	ModePolicy         *ModePolicy `json:"modePolicy,omitempty"`
+	AIScenarios        *[]AIScenario `json:"aiScenarios,omitempty"`
 }
 
 func NormalizeSpecMode(mode string) string {
@@ -67,6 +69,7 @@ func (s *Spec) NormalizeMode() {
 		return
 	}
 	s.ModePolicy = s.EffectiveModePolicy()
+	s.NormalizeAIScenarios()
 	s.Mode = s.EffectiveMode()
 	s.ProxyMode = s.Mode == SpecModeProxy
 }

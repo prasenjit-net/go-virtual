@@ -34,6 +34,8 @@ type Trace struct {
 	ResponseTier        string        `json:"responseTier,omitempty"`
 	AISkippedReason     string        `json:"aiSkippedReason,omitempty"`
 	ProxySkippedReason  string        `json:"proxySkippedReason,omitempty"`
+	AIScenarioRequested string        `json:"aiScenarioRequested,omitempty"`
+	AIScenarioApplied   string        `json:"aiScenarioApplied,omitempty"`
 
 	// Proxy recording fields – populated when the trace is recorded in proxy mode
 	ProxyMode  bool   `json:"proxyMode,omitempty"`  // true when the request was forwarded to a real backend

@@ -105,6 +105,7 @@ type RuntimeRequestContext struct {
 	Headers     map[string][]string
 	Body        string
 	Signature   string
+	Scenario    *RuntimeScenario
 }
 
 // RuntimeResponse is the concrete HTTP response shape returned by runtime AI generation.
@@ -112,6 +113,17 @@ type RuntimeResponse struct {
 	StatusCode int
 	Headers    map[string]string
 	Body       string
+}
+
+// RuntimeScenario carries structured scenario hints for runtime generation.
+type RuntimeScenario struct {
+	Name                    string
+	Description             string
+	ResponseKind            string
+	StatusCode              int
+	Count                   int
+	Instructions            string
+	UseDefaultSuccessStatus bool
 }
 
 // GenerateResponse calls the OpenAI API and returns a ResponseConfigInput
@@ -212,7 +224,7 @@ func (g *Generator) GenerateRuntimeResponse(ctx context.Context, op OperationCon
 		return nil, fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
 	}
 
-	systemPrompt := buildRuntimeSystemPrompt(op)
+	systemPrompt := buildRuntimeSystemPrompt(op, reqCtx.Scenario)
 	userMsg := buildRuntimeUserMessage(op, reqCtx)
 
 	reqBody := map[string]any{
@@ -279,7 +291,9 @@ func (g *Generator) GenerateRuntimeResponse(ctx context.Context, op OperationCon
 		return nil, err
 	}
 
-	if wrapper.StatusCode == 0 {
+	if reqCtx.Scenario != nil && reqCtx.Scenario.StatusCode > 0 {
+		wrapper.StatusCode = reqCtx.Scenario.StatusCode
+	} else if wrapper.StatusCode == 0 {
 		wrapper.StatusCode = defaultRuntimeStatusCode(op)
 	}
 	if wrapper.Headers == nil {
@@ -752,7 +766,7 @@ func buildUserMessage(op OperationContext, userPrompt string) string {
 	return sb.String()
 }
 
-func buildRuntimeSystemPrompt(op OperationContext) string {
+func buildRuntimeSystemPrompt(op OperationContext, scenario *RuntimeScenario) string {
 	var sb strings.Builder
 	sb.WriteString(`You are an expert runtime response generator for go-virtual, an API virtualization service.
 
@@ -772,6 +786,23 @@ Rules:
 - When a JSON response is appropriate, return "body" as a JSON object/array, not a stringified JSON blob.
 - Keep headers minimal; include Content-Type: application/json for JSON responses.
 - Return raw JSON only. No markdown. No explanations.`)
+
+	if scenario != nil {
+		sb.WriteString("\n\nRuntime scenario requirements:")
+		fmt.Fprintf(&sb, "\n- Scenario name: %s", scenario.Name)
+		fmt.Fprintf(&sb, "\n- Response kind: %s", scenario.ResponseKind)
+		if scenario.UseDefaultSuccessStatus {
+			sb.WriteString("\n- Status code: use the operation's default success status")
+		} else if scenario.StatusCode > 0 {
+			fmt.Fprintf(&sb, "\n- Status code: %d", scenario.StatusCode)
+		}
+		if scenario.Count > 0 {
+			fmt.Fprintf(&sb, "\n- Item count: return exactly %d top-level entries when generating a list response", scenario.Count)
+		}
+		if scenario.Instructions != "" {
+			fmt.Fprintf(&sb, "\n- Additional instructions: %s", scenario.Instructions)
+		}
+	}
 
 	if len(op.SpecResponses) > 0 {
 		sb.WriteString("\n\nSpec-defined responses:")
@@ -809,6 +840,24 @@ func buildRuntimeUserMessage(op OperationContext, reqCtx RuntimeRequestContext) 
 	}
 	if reqCtx.Signature != "" {
 		fmt.Fprintf(&sb, "\nRequest signature: %s\n", reqCtx.Signature)
+	}
+	if reqCtx.Scenario != nil {
+		fmt.Fprintf(&sb, "\nRequested AI scenario: %s\n", reqCtx.Scenario.Name)
+		if reqCtx.Scenario.Description != "" {
+			fmt.Fprintf(&sb, "  Description: %s\n", reqCtx.Scenario.Description)
+		}
+		fmt.Fprintf(&sb, "  Response kind: %s\n", reqCtx.Scenario.ResponseKind)
+		if reqCtx.Scenario.UseDefaultSuccessStatus {
+			sb.WriteString("  Status code: use default success status\n")
+		} else if reqCtx.Scenario.StatusCode > 0 {
+			fmt.Fprintf(&sb, "  Status code: %d\n", reqCtx.Scenario.StatusCode)
+		}
+		if reqCtx.Scenario.Count > 0 {
+			fmt.Fprintf(&sb, "  Count: %d\n", reqCtx.Scenario.Count)
+		}
+		if reqCtx.Scenario.Instructions != "" {
+			fmt.Fprintf(&sb, "  Instructions: %s\n", reqCtx.Scenario.Instructions)
+		}
 	}
 	fmt.Fprintf(&sb, "\nIncoming request context:\n  Path params:  %#v\n  Query params: %#v\n  Headers:      %#v\n", reqCtx.PathParams, reqCtx.QueryParams, reqCtx.Headers)
 	if strings.TrimSpace(reqCtx.Body) != "" {

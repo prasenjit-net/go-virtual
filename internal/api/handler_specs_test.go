@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/prasenjit/go-virtual/internal/models"
@@ -917,6 +918,148 @@ func TestUpdateSpecTags_InvalidJSON(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestCreateSpec_SeedsDefaultAIScenarios(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.POST("/specs", handler.CreateSpec)
+
+	specContent := `
+openapi: "3.0.0"
+info:
+  title: Scenario API
+  version: "1.0.0"
+paths:
+  /users:
+    get:
+      responses:
+        "200":
+          description: Success
+`
+	req := httptest.NewRequest("POST", "/specs", bytes.NewReader([]byte(`{"content":`+strconv.Quote(specContent)+`,"basePath":"/"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var created struct {
+		AIScenarios []models.AIScenario `json:"aiScenarios"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(created.AIScenarios) != 3 {
+		t.Fatalf("expected 3 seeded scenarios, got %d", len(created.AIScenarios))
+	}
+}
+
+func TestListAIScenarios(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.GET("/specs/:id/ai-scenarios", handler.ListAIScenarios)
+
+	req := httptest.NewRequest("GET", "/specs/spec-1/ai-scenarios", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+
+	var resp struct {
+		Scenarios []models.AIScenario `json:"scenarios"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(resp.Scenarios) != 3 {
+		t.Fatalf("expected 3 scenarios, got %d", len(resp.Scenarios))
+	}
+}
+
+func TestCreateUpdateDeleteAIScenario(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.POST("/specs/:id/ai-scenarios", handler.CreateAIScenario)
+	r.PUT("/specs/:id/ai-scenarios/:scenarioId", handler.UpdateAIScenario)
+	r.DELETE("/specs/:id/ai-scenarios/:scenarioId", handler.DeleteAIScenario)
+
+	createReq := httptest.NewRequest("POST", "/specs/spec-1/ai-scenarios", bytes.NewReader([]byte(`{"scenario":{"name":"unauthorized","responseKind":"error","statusCode":401,"instructions":"Return auth error","enabled":true}}`)))
+	createReq.Header.Set("Content-Type", "application/json")
+	createW := httptest.NewRecorder()
+	r.ServeHTTP(createW, createReq)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", createW.Code, createW.Body.String())
+	}
+
+	var created struct {
+		Scenario models.AIScenario `json:"scenario"`
+	}
+	if err := json.Unmarshal(createW.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal create response: %v", err)
+	}
+	if created.Scenario.Name != "unauthorized" {
+		t.Fatalf("unexpected scenario name %q", created.Scenario.Name)
+	}
+
+	updateReq := httptest.NewRequest("PUT", "/specs/spec-1/ai-scenarios/"+created.Scenario.ID, bytes.NewReader([]byte(`{"scenario":{"name":"unauthorized","responseKind":"error","statusCode":403,"count":2,"enabled":false}}`)))
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateW := httptest.NewRecorder()
+	r.ServeHTTP(updateW, updateReq)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", updateW.Code, updateW.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest("DELETE", "/specs/spec-1/ai-scenarios/"+created.Scenario.ID, nil)
+	deleteW := httptest.NewRecorder()
+	r.ServeHTTP(deleteW, deleteReq)
+	if deleteW.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", deleteW.Code, deleteW.Body.String())
+	}
+}
+
+func TestCreateAIScenario_RejectsDuplicateName(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{
+		ID:          "spec-1",
+		Name:        "API",
+		AIScenarios: models.DefaultAIScenarios(),
+	})
+	r.POST("/specs/:id/ai-scenarios", handler.CreateAIScenario)
+
+	req := httptest.NewRequest("POST", "/specs/spec-1/ai-scenarios", bytes.NewReader([]byte(`{"scenario":{"name":"success","responseKind":"success","enabled":true}}`)))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestDeleteAIScenario_NotFound(t *testing.T) {
+	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", AIScenarios: models.DefaultAIScenarios()})
+	r.DELETE("/specs/:id/ai-scenarios/:scenarioId", handler.DeleteAIScenario)
+
+	req := httptest.NewRequest("DELETE", "/specs/spec-1/ai-scenarios/missing", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
 	}
 }
 

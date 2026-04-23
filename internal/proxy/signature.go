@@ -13,6 +13,8 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const virtualControlHeaderPrefix = "x-virtual-"
+
 // ComputeSignature generates a deterministic hash of the request that can be
 // used to uniquely identify a request for the purpose of proxy recording.
 //
@@ -88,7 +90,13 @@ func ComputeSignature(
 	_, _ = io.WriteString(h, "headers:")
 	headerKeys := sortedCopy(headerFilter)
 	for _, key := range headerKeys {
+		if isIgnoredSignatureHeader(key) {
+			continue
+		}
 		for k, vals := range headers {
+			if isIgnoredSignatureHeader(k) {
+				continue
+			}
 			if strings.EqualFold(k, key) {
 				sortedVals := sortedCopy(vals)
 				for _, val := range sortedVals {
@@ -158,4 +166,8 @@ func sortedCopy(s []string) []string {
 	copy(c, s)
 	sort.Strings(c)
 	return c
+}
+
+func isIgnoredSignatureHeader(name string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), virtualControlHeaderPrefix)
 }
