@@ -62,6 +62,9 @@
     <marker id="arr-green" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
       <path d="M0,0 L0,7 L9,3.5 z" fill="#16A34A"/>
     </marker>
+    <marker id="arr-purple" markerWidth="9" markerHeight="9" refX="7" refY="3.5" orient="auto">
+      <path d="M0,0 L0,7 L9,3.5 z" fill="#7C3AED"/>
+    </marker>
     <marker id="arr-slate-rev" markerWidth="9" markerHeight="9" refX="2" refY="3.5" orient="auto">
       <path d="M9,0 L9,7 L0,3.5 z" fill="#94A3B8"/>
     </marker>
@@ -84,8 +87,8 @@
 
   <!-- Subtitle right side -->
   <text x="1175" y="28" text-anchor="end" font-size="11" fill="#93C5FD">v1.0.0</text>
-  <text x="1175" y="46" text-anchor="end" font-size="11" fill="#64748B">OpenAPI 3 · Mock · Proxy · Record</text>
-  <text x="1175" y="62" text-anchor="end" font-size="11" fill="#64748B">Starlark Scripting · Prometheus Metrics</text>
+  <text x="1175" y="46" text-anchor="end" font-size="11" fill="#64748B">OpenAPI 3 · Saved Responses · AI · Proxy</text>
+  <text x="1175" y="62" text-anchor="end" font-size="11" fill="#64748B">AI Scenarios · Starlark · Prometheus Metrics</text>
 
   <!-- ═══════════════════════ LAYOUT PANELS ═══════════════════════ -->
   <!-- Left Panel: Clients -->
@@ -179,9 +182,9 @@
   <rect x="630" y="177" width="82" height="22" rx="5" fill="#DBEAFE"/>
   <text x="671" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Trace Viewer</text>
   <rect x="718" y="177" width="100" height="22" rx="5" fill="#DBEAFE"/>
-  <text x="768" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Store Inspector</text>
+  <text x="768" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">AI Scenarios</text>
   <rect x="824" y="177" width="90" height="22" rx="5" fill="#DBEAFE"/>
-  <text x="869" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Session Viewer</text>
+  <text x="869" y="192" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Mode Policy</text>
 
   <!-- ═══════════════════════ API GATEWAY ROW ═══════════════════════ -->
   <rect x="240" y="214" width="720" height="40" rx="10" fill="url(#gateway-bg)"/>
@@ -189,54 +192,54 @@
   <text x="600" y="247" text-anchor="middle" font-size="10" fill="#93C5FD">Gin Router · TLS Mux (HTTP + HTTPS on same port) · CORS Middleware · Route Dispatch</text>
 
   <!-- ═══════════════════════ SECTION LABEL: MODES ═══════════════════════ -->
-  <text x="252" y="277" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">OPERATION MODES</text>
+  <text x="252" y="277" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">SPEC FALLBACK MODES</text>
   <!-- divider -->
   <line x1="340" y1="272" x2="956" y2="272" stroke="#E2E8F0" stroke-width="1"/>
 
-  <!-- ─── MOCK MODE ─── -->
+  <!-- ─── STANDARD MODE ─── -->
   <rect x="240" y="283" width="228" height="130" rx="11" fill="#F0FDF7" stroke="#6EE7B7" stroke-width="2" filter="url(#shadow-sm)"/>
   <rect x="240" y="283" width="228" height="40" rx="11" fill="url(#mock-hdr)"/>
   <rect x="240" y="306" width="228" height="17" fill="#059669"/>
-  <text x="354" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🎭  MOCK MODE</text>
-  <text x="354" y="340" text-anchor="middle" font-size="10" fill="#065F46">Return pre-configured responses</text>
-  <text x="354" y="356" text-anchor="middle" font-size="10" fill="#065F46">without calling any backend</text>
+  <text x="354" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">✅  STANDARD MODE</text>
+  <text x="354" y="340" text-anchor="middle" font-size="10" fill="#065F46">Always available as the last</text>
+  <text x="354" y="356" text-anchor="middle" font-size="10" fill="#065F46">fallback using spec examples/defaults</text>
   <!-- Chips -->
   <rect x="254" y="368" width="94" height="18" rx="4" fill="#D1FAE5"/>
-  <text x="301" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Condition Rules</text>
+  <text x="301" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Default Safe Path</text>
   <rect x="355" y="368" width="100" height="18" rx="4" fill="#D1FAE5"/>
-  <text x="405" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Script Bindings</text>
+  <text x="405" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">No External Call</text>
   <rect x="254" y="391" width="200" height="18" rx="4" fill="#D1FAE5"/>
-  <text x="354" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Priority-ordered Matching</text>
+  <text x="354" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#065F46">Example/default response</text>
 
-  <!-- ─── PROXY MODE ─── -->
+  <!-- ─── AI MODE ─── -->
   <rect x="486" y="283" width="228" height="130" rx="11" fill="#FFFBEB" stroke="#FCD34D" stroke-width="2" filter="url(#shadow-sm)"/>
   <rect x="486" y="283" width="228" height="40" rx="11" fill="url(#proxy-hdr)"/>
   <rect x="486" y="306" width="228" height="17" fill="#D97706"/>
-  <text x="600" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🔁  PROXY MODE</text>
-  <text x="600" y="340" text-anchor="middle" font-size="10" fill="#78350F">Transparently forward requests</text>
-  <text x="600" y="356" text-anchor="middle" font-size="10" fill="#78350F">to real upstream API servers</text>
+  <text x="600" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🤖  AI MODE</text>
+  <text x="600" y="340" text-anchor="middle" font-size="10" fill="#78350F">Conditional spec-level fallback</text>
+  <text x="600" y="356" text-anchor="middle" font-size="10" fill="#78350F">that can use named AI scenarios</text>
   <!-- Chips -->
   <rect x="500" y="368" width="90" height="18" rx="4" fill="#FEF3C7"/>
-  <text x="545" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">HTTP Client</text>
+  <text x="545" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">OpenAI Key</text>
   <rect x="597" y="368" width="104" height="18" rx="4" fill="#FEF3C7"/>
-  <text x="649" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">mTLS Support</text>
+  <text x="649" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">AI Scenarios</text>
   <rect x="500" y="391" width="200" height="18" rx="4" fill="#FEF3C7"/>
-  <text x="600" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">Header Passthrough</text>
+  <text x="600" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#78350F">Evaluated before proxy fallback</text>
 
-  <!-- ─── RECORD MODE ─── -->
+  <!-- ─── PROXY MODE ─── -->
   <rect x="732" y="283" width="228" height="130" rx="11" fill="#F6F2FF" stroke="#C4B5FD" stroke-width="2" filter="url(#shadow-sm)"/>
   <rect x="732" y="283" width="228" height="40" rx="11" fill="url(#record-hdr)"/>
   <rect x="732" y="306" width="228" height="17" fill="#7C3AED"/>
-  <text x="846" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">⏺  RECORD MODE</text>
-  <text x="846" y="340" text-anchor="middle" font-size="10" fill="#3B0764">Proxy and capture real responses</text>
-  <text x="846" y="356" text-anchor="middle" font-size="10" fill="#3B0764">auto-saved as mock configs</text>
+  <text x="846" y="309" text-anchor="middle" font-size="13" font-weight="700" fill="white">🔁  PROXY MODE</text>
+  <text x="846" y="340" text-anchor="middle" font-size="10" fill="#3B0764">Conditional spec-level fallback</text>
+  <text x="846" y="356" text-anchor="middle" font-size="10" fill="#3B0764">to upstream APIs with recording</text>
   <!-- Chips -->
   <rect x="746" y="368" width="90" height="18" rx="4" fill="#EDE9FE"/>
-  <text x="791" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Proxy + Save</text>
+  <text x="791" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Upstream URL</text>
   <rect x="843" y="368" width="104" height="18" rx="4" fill="#EDE9FE"/>
-  <text x="895" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">No Code Needed</text>
+  <text x="895" y="380" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Response Recording</text>
   <rect x="746" y="391" width="200" height="18" rx="4" fill="#EDE9FE"/>
-  <text x="846" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Record-once, Mock-forever</text>
+  <text x="846" y="403" text-anchor="middle" font-size="9" font-weight="600" fill="#3B0764">Evaluated after AI fallback</text>
 
   <!-- ═══════════════════════ SECTION LABEL: CORE ENGINE ═══════════════════════ -->
   <text x="252" y="433" font-size="9" font-weight="700" fill="#94A3B8" letter-spacing="2">CORE ENGINE</text>
@@ -274,7 +277,7 @@
   <rect x="240" y="560" width="228" height="100" rx="10" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1.5"/>
   <text x="354" y="581" text-anchor="middle" font-size="12" font-weight="700" fill="#3730A3">🗄  Storage</text>
   <text x="354" y="598" text-anchor="middle" font-size="10" fill="#4338CA">Pluggable: Memory or File-based</text>
-  <text x="354" y="614" text-anchor="middle" font-size="10" fill="#4338CA">Specs · Operations · Responses</text>
+  <text x="354" y="614" text-anchor="middle" font-size="10" fill="#4338CA">Specs · Operations · Responses · Scenarios</text>
   <text x="354" y="630" text-anchor="middle" font-size="10" fill="#4338CA">Scripts · Archive (zip import/export)</text>
   <text x="354" y="646" text-anchor="middle" font-size="9" fill="#818CF8" font-style="italic">./data/*.json  |  in-memory</text>
 
@@ -303,7 +306,7 @@
   <text x="1100" y="176" text-anchor="middle" font-size="12" font-weight="700" fill="#92400E">Upstream API</text>
   <text x="1100" y="193" text-anchor="middle" font-size="10" fill="#D97706">Real backend server</text>
   <text x="1100" y="208" text-anchor="middle" font-size="10" fill="#94A3B8">HTTP/HTTPS · mTLS</text>
-  <text x="1100" y="222" text-anchor="middle" font-size="9" fill="#94A3B8">(Proxy &amp; Record modes)</text>
+  <text x="1100" y="222" text-anchor="middle" font-size="9" fill="#94A3B8">(Proxy fallback + recording)</text>
 
   <!-- Prometheus / Grafana -->
   <rect x="1002" y="244" width="164" height="80" rx="10" fill="#FFF1F2" stroke="#FECDD3" stroke-width="1.5"/>
@@ -319,8 +322,8 @@
   <rect x="1161" y="340" width="5" height="80" rx="3" fill="#16A34A"/>
   <text x="1030" y="374" text-anchor="middle" font-size="24">🤖</text>
   <text x="1100" y="360" text-anchor="middle" font-size="12" font-weight="700" fill="#166534">OpenAI API</text>
-  <text x="1100" y="377" text-anchor="middle" font-size="10" fill="#16A34A">AI-generated responses</text>
-  <text x="1100" y="394" text-anchor="middle" font-size="10" fill="#94A3B8">and Starlark scripts</text>
+  <text x="1100" y="377" text-anchor="middle" font-size="10" fill="#16A34A">Runtime fallback + admin generation</text>
+  <text x="1100" y="394" text-anchor="middle" font-size="10" fill="#94A3B8">AI scenarios and Starlark scripts</text>
   <text x="1100" y="411" text-anchor="middle" font-size="9" fill="#94A3B8">(gpt-4o-mini)</text>
 
   <!-- TLS / Config -->
@@ -333,17 +336,17 @@
   <text x="1100" y="500" text-anchor="middle" font-size="9" fill="#94A3B8">(Optional external cert)</text>
 
   <!-- ═══════════════════════ CONNECTION ARROWS (Center → Right) ═══════════════════════ -->
-  <!-- Proxy Mode → Upstream API: diagonal from proxy mode box right edge to upstream card -->
-  <path d="M 714 348 Q 860 348 972 188" stroke="#D97706" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-amber)"/>
-  <text x="828" y="338" font-size="9" fill="#D97706" font-weight="600">proxy / record</text>
+  <!-- Proxy Mode → Upstream API -->
+  <path d="M 960 348 Q 985 300 1002 188" stroke="#7C3AED" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-purple)"/>
+  <text x="972" y="286" font-size="9" fill="#7C3AED" font-weight="600" transform="rotate(-73, 972, 286)">proxy fallback</text>
 
   <!-- Observability → Prometheus -->
   <path d="M 972 610 Q 985 610 985 284 Q 985 284 1002 284" stroke="#E11D48" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-rose)"/>
   <text x="978" y="548" font-size="9" fill="#E11D48" font-weight="600" transform="rotate(-90, 978, 548)">metrics</text>
 
-  <!-- Admin AI → OpenAI -->
-  <path d="M 972 186 Q 985 186 985 380 Q 985 380 1002 380" stroke="#16A34A" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-green)"/>
-  <text x="978" y="280" font-size="9" fill="#16A34A" font-weight="600" transform="rotate(90, 978, 280)">AI gen</text>
+  <!-- AI Mode → OpenAI -->
+  <path d="M 714 348 Q 850 348 1002 380" stroke="#D97706" stroke-width="2" stroke-dasharray="5,3" fill="none" marker-end="url(#arr-amber)"/>
+  <text x="842" y="338" font-size="9" fill="#D97706" font-weight="600">AI fallback / generation</text>
 
   <!-- ═══════════════════════ FOOTER ═══════════════════════ -->
   <rect x="0" y="700" width="1200" height="60" fill="#0F2045" opacity="0.95"/>
@@ -372,7 +375,7 @@
   <text x="934" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Session-aware Store</text>
 
   <rect x="1014" y="716" width="150" height="22" rx="5" fill="#1E3A7A"/>
-  <text x="1089" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Zero External Dependencies</text>
+  <text x="1089" y="731" text-anchor="middle" font-size="10" fill="#93C5FD">Spec AI Scenarios</text>
 
   <text x="600" y="752" text-anchor="middle" font-size="10" fill="#475569">Go-Virtual — API Virtualization Platform · Built with Go 1.21+ · github.com/prasenjit-net/go-virtual</text>
 
