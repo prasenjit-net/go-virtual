@@ -260,7 +260,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	modeSelection := e.selectMode(matchedRoute.spec, reqData)
 	specMode := modeSelection.Mode
 	requestedScenarioName := strings.TrimSpace(r.Header.Get("X-Virtual-AI-Scenario"))
-	appliedScenario := e.resolveAIScenario(matchedRoute.spec, requestedScenarioName)
+	appliedScenario := e.resolveAIScenario(requestedScenarioName)
 
 	if matchedConfig == nil {
 		switch specMode {
@@ -781,11 +781,20 @@ func (e *Engine) resetRuntimeWarnings() {
 	e.runtimeWarnings = make(map[string]struct{})
 }
 
-func (e *Engine) resolveAIScenario(spec *models.Spec, requested string) *ai.RuntimeScenario {
-	if spec == nil {
+func (e *Engine) resolveAIScenario(requested string) *ai.RuntimeScenario {
+	scenarios, err := e.store.ListAIScenarios()
+	if err != nil || len(scenarios) == 0 {
 		return nil
 	}
-	scenario := spec.FindAIScenario(requested)
+
+	normalized := make([]models.AIScenario, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		if scenario != nil {
+			normalized = append(normalized, *scenario)
+		}
+	}
+
+	scenario := models.FindAIScenario(normalized, requested)
 	if scenario == nil || !scenario.Enabled {
 		return nil
 	}

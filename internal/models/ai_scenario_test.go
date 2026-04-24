@@ -12,24 +12,22 @@ func TestNormalizeAIScenarioKind(t *testing.T) {
 }
 
 func TestNormalizeAIScenariosAndFindAIScenario(t *testing.T) {
-	spec := &Spec{
-		AIScenarios: []AIScenario{
-			{
-				Name:         "  unauthorized  ",
-				Description:  "  auth failure  ",
-				ResponseKind: "unknown",
-				Instructions: "  return details  ",
-			},
+	scenarios := []AIScenario{
+		{
+			Name:         "  unauthorized  ",
+			Description:  "  auth failure  ",
+			ResponseKind: "unknown",
+			Instructions: "  return details  ",
 		},
 	}
 
-	spec.NormalizeAIScenarios()
+	scenarios = NormalizeAIScenarios(scenarios)
 
-	if len(spec.AIScenarios) != 1 {
-		t.Fatalf("expected 1 scenario, got %d", len(spec.AIScenarios))
+	if len(scenarios) != 1 {
+		t.Fatalf("expected 1 scenario, got %d", len(scenarios))
 	}
 
-	scenario := spec.AIScenarios[0]
+	scenario := scenarios[0]
 	if scenario.Name != "unauthorized" {
 		t.Fatalf("expected trimmed name, got %q", scenario.Name)
 	}
@@ -49,27 +47,25 @@ func TestNormalizeAIScenariosAndFindAIScenario(t *testing.T) {
 		t.Fatal("expected timestamps to be populated")
 	}
 
-	found := spec.FindAIScenario("UNAUTHORIZED")
+	found := FindAIScenario(scenarios, "UNAUTHORIZED")
 	if found == nil || found.Name != "unauthorized" {
 		t.Fatalf("expected case-insensitive scenario lookup, got %#v", found)
 	}
-	if spec.FindAIScenario(" ") != nil {
+	if FindAIScenario(scenarios, " ") != nil {
 		t.Fatal("expected blank lookup to return nil")
 	}
-	if spec.FindAIScenario("missing") != nil {
+	if FindAIScenario(scenarios, "missing") != nil {
 		t.Fatal("expected missing scenario lookup to return nil")
 	}
 }
 
 func TestNormalizeAIScenariosSeedsDefaults(t *testing.T) {
-	spec := &Spec{}
+	scenarios := NormalizeAIScenarios(nil)
 
-	spec.NormalizeAIScenarios()
-
-	if len(spec.AIScenarios) != 3 {
-		t.Fatalf("expected default scenarios to be seeded, got %d", len(spec.AIScenarios))
+	if len(scenarios) != 3 {
+		t.Fatalf("expected default scenarios to be seeded, got %d", len(scenarios))
 	}
-	if spec.FindAIScenario(DefaultAIScenarioSuccess) == nil {
+	if FindAIScenario(scenarios, DefaultAIScenarioSuccess) == nil {
 		t.Fatal("expected success scenario to be present")
 	}
 }

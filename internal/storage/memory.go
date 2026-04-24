@@ -3,6 +3,7 @@ package storage
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type MemoryStorage struct {
 	responseConfigs map[string]*models.ResponseConfig
 	tags            map[string]*models.Tag
 	scripts         map[string]*models.Script
+	aiScenarios     map[string]*models.AIScenario
 	scriptBindings  map[string]*models.ScriptBinding
 }
 
@@ -28,6 +30,7 @@ func NewMemoryStorage() *MemoryStorage {
 		responseConfigs: make(map[string]*models.ResponseConfig),
 		tags:            make(map[string]*models.Tag),
 		scripts:         make(map[string]*models.Script),
+		aiScenarios:     make(map[string]*models.AIScenario),
 		scriptBindings:  make(map[string]*models.ScriptBinding),
 	}
 
@@ -36,6 +39,10 @@ func NewMemoryStorage() *MemoryStorage {
 		Name:      models.DefaultTagName,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
+	}
+	for _, scenario := range models.DefaultAIScenarios() {
+		scenarioCopy := scenario
+		storage.aiScenarios[scenarioCopy.ID] = &scenarioCopy
 	}
 
 	return storage
@@ -462,6 +469,77 @@ func (m *MemoryStorage) DeleteScript(id string) error {
 	}
 
 	delete(m.scripts, id)
+	return nil
+}
+
+// ---- AI scenario operations ----
+
+// ListAIScenarios retrieves all AI scenarios sorted by name.
+func (m *MemoryStorage) ListAIScenarios() ([]*models.AIScenario, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	scenarios := make([]*models.AIScenario, 0, len(m.aiScenarios))
+	for _, scenario := range m.aiScenarios {
+		scenarios = append(scenarios, scenario)
+	}
+
+	sort.Slice(scenarios, func(i, j int) bool {
+		return strings.ToLower(scenarios[i].Name) < strings.ToLower(scenarios[j].Name)
+	})
+
+	return scenarios, nil
+}
+
+// GetAIScenario retrieves an AI scenario by ID.
+func (m *MemoryStorage) GetAIScenario(id string) (*models.AIScenario, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	scenario, exists := m.aiScenarios[id]
+	if !exists {
+		return nil, fmt.Errorf("ai scenario not found: %s", id)
+	}
+
+	return scenario, nil
+}
+
+// CreateAIScenario creates a new AI scenario.
+func (m *MemoryStorage) CreateAIScenario(scenario *models.AIScenario) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.aiScenarios[scenario.ID]; exists {
+		return fmt.Errorf("ai scenario with ID %s already exists", scenario.ID)
+	}
+
+	m.aiScenarios[scenario.ID] = scenario
+	return nil
+}
+
+// UpdateAIScenario updates an existing AI scenario.
+func (m *MemoryStorage) UpdateAIScenario(scenario *models.AIScenario) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.aiScenarios[scenario.ID]; !exists {
+		return fmt.Errorf("ai scenario not found: %s", scenario.ID)
+	}
+
+	m.aiScenarios[scenario.ID] = scenario
+	return nil
+}
+
+// DeleteAIScenario deletes an AI scenario.
+func (m *MemoryStorage) DeleteAIScenario(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.aiScenarios[id]; !exists {
+		return fmt.Errorf("ai scenario not found: %s", id)
+	}
+
+	delete(m.aiScenarios, id)
 	return nil
 }
 

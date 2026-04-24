@@ -206,7 +206,7 @@ paths:
 	}
 }
 
-func TestParse_DefaultBackendAndAIScenarios(t *testing.T) {
+func TestParse_DefaultBackend(t *testing.T) {
 	p := NewParser()
 
 	spec := `
@@ -231,9 +231,6 @@ paths:
 
 	if result.Spec.BackendURI != "https://api.example.com" {
 		t.Fatalf("expected trimmed backend URI, got %q", result.Spec.BackendURI)
-	}
-	if len(result.Spec.AIScenarios) != 3 {
-		t.Fatalf("expected default AI scenarios, got %d", len(result.Spec.AIScenarios))
 	}
 }
 

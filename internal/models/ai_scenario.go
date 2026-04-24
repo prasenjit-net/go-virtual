@@ -40,7 +40,7 @@ func NormalizeAIScenarioKind(kind string) string {
 }
 
 // DefaultAIScenarios returns the default seeded scenarios for a new or
-// previously unconfigured spec.
+// previously unconfigured application.
 func DefaultAIScenarios() []AIScenario {
 	now := time.Now()
 	return []AIScenario{
@@ -80,17 +80,14 @@ func normalizeAIScenarioName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-func (s *Spec) NormalizeAIScenarios() {
-	if s == nil {
-		return
-	}
-	if len(s.AIScenarios) == 0 {
-		s.AIScenarios = DefaultAIScenarios()
-		return
+func NormalizeAIScenarios(scenarios []AIScenario) []AIScenario {
+	if len(scenarios) == 0 {
+		return DefaultAIScenarios()
 	}
 
-	for i := range s.AIScenarios {
-		scenario := &s.AIScenarios[i]
+	normalized := append([]AIScenario{}, scenarios...)
+	for i := range normalized {
+		scenario := &normalized[i]
 		scenario.Name = normalizeAIScenarioName(scenario.Name)
 		scenario.Description = strings.TrimSpace(scenario.Description)
 		scenario.Instructions = strings.TrimSpace(scenario.Instructions)
@@ -105,20 +102,18 @@ func (s *Spec) NormalizeAIScenarios() {
 			scenario.UpdatedAt = scenario.CreatedAt
 		}
 	}
+	return normalized
 }
 
 // FindAIScenario resolves an enabled or disabled scenario by name.
-func (s *Spec) FindAIScenario(name string) *AIScenario {
-	if s == nil {
-		return nil
-	}
+func FindAIScenario(scenarios []AIScenario, name string) *AIScenario {
 	needle := strings.TrimSpace(name)
 	if needle == "" {
 		return nil
 	}
-	for i := range s.AIScenarios {
-		if strings.EqualFold(s.AIScenarios[i].Name, needle) {
-			return &s.AIScenarios[i]
+	for i := range scenarios {
+		if strings.EqualFold(scenarios[i].Name, needle) {
+			return &scenarios[i]
 		}
 	}
 	return nil
