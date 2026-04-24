@@ -12,24 +12,24 @@ const (
 
 // Spec represents an uploaded OpenAPI specification
 type Spec struct {
-	ID                 string      `json:"id"`
-	Name               string      `json:"name"`
-	Version            string      `json:"version"`
-	Description        string      `json:"description"`
-	Content            string      `json:"content"`  // Raw OpenAPI spec (YAML or JSON)
-	BasePath           string      `json:"basePath"` // Mounted path prefix for this spec
-	Enabled            bool        `json:"enabled"`
-	Tracing            bool        `json:"tracing"`            // Enable request tracing
-	UseExampleFallback bool        `json:"useExampleFallback"` // Use spec examples as fallback responses
-	EnabledTags        []string    `json:"enabledTags"`
-	Mode               string      `json:"mode"`
-	BackendURI         string      `json:"backendUri"` // Upstream backend URI for proxy recording mode
-	ProxyMode          bool        `json:"proxyMode"`  // Forward requests to backend and record responses
-	ModePolicy         ModePolicy  `json:"modePolicy"`
-	AIScenarios        []AIScenario `json:"aiScenarios,omitempty"`
-	CreatedAt          time.Time   `json:"createdAt"`
-	UpdatedAt          time.Time   `json:"updatedAt"`
-	Operations         []Operation `json:"operations,omitempty"`
+	ID                 string       `json:"id"`
+	Name               string       `json:"name"`
+	Version            string       `json:"version"`
+	Description        string       `json:"description"`
+	Content            string       `json:"content"`  // Raw OpenAPI spec (YAML or JSON)
+	BasePath           string       `json:"basePath"` // Mounted path prefix for this spec
+	Enabled            bool         `json:"enabled"`
+	Tracing            bool         `json:"tracing"`            // Enable request tracing
+	UseExampleFallback bool         `json:"useExampleFallback"` // Use spec examples as fallback responses
+	EnabledTags        []string     `json:"enabledTags"`
+	Mode               string       `json:"mode"`
+	BackendURI         string       `json:"backendUri"` // Upstream backend URI for proxy recording mode
+	ProxyMode          bool         `json:"proxyMode"`  // Forward requests to backend and record responses
+	ModePolicy         ModePolicy   `json:"modePolicy"`
+	AIScenarios        []AIScenario `json:"aiScenarios,omitempty"` // deprecated: retained only for migration from spec-scoped scenarios
+	CreatedAt          time.Time    `json:"createdAt"`
+	UpdatedAt          time.Time    `json:"updatedAt"`
+	Operations         []Operation  `json:"operations,omitempty"`
 }
 
 // SpecInput represents input for creating/updating a spec
@@ -52,7 +52,6 @@ type SpecUpdate struct {
 	BackendURI         *string     `json:"backendUri,omitempty"`
 	ProxyMode          *bool       `json:"proxyMode,omitempty"`
 	ModePolicy         *ModePolicy `json:"modePolicy,omitempty"`
-	AIScenarios        *[]AIScenario `json:"aiScenarios,omitempty"`
 }
 
 func NormalizeSpecMode(mode string) string {
@@ -69,7 +68,6 @@ func (s *Spec) NormalizeMode() {
 		return
 	}
 	s.ModePolicy = s.EffectiveModePolicy()
-	s.NormalizeAIScenarios()
 	s.Mode = s.EffectiveMode()
 	s.ProxyMode = s.Mode == SpecModeProxy
 }

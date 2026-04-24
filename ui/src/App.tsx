@@ -24,7 +24,8 @@ function App() {
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="specs" element={<SpecList />} />
                 <Route path="specs/:specId" element={<SpecDetail />} />
-                <Route path="specs/:specId/ai-scenarios" element={<AIScenariosPage />} />
+                <Route path="specs/:specId/ai-scenarios" element={<Navigate to="/ai-scenarios" replace />} />
+                <Route path="ai-scenarios" element={<AIScenariosPage />} />
                 <Route path="operations/:operationId" element={<OperationDetail />} />
                 <Route path="operations/:operationId/recorded-responses" element={<OperationRecordedResponsesPage />} />
                 <Route path="operations/:operationId/responses/new" element={<ResponseConfigPage />} />

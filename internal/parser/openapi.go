@@ -69,7 +69,6 @@ func (p *Parser) Parse(content string, basePath string) (*ParseResult, error) {
 		UseExampleFallback: true, // Enable example fallback by default
 		Mode:               models.SpecModeStandard,
 		BackendURI:         defaultBackendURI,
-		AIScenarios:        models.DefaultAIScenarios(),
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}

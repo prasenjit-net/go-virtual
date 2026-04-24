@@ -18,7 +18,6 @@ export interface Spec {
     backendUri: string;
     proxyMode: boolean;
     modePolicy: ModePolicy;
-    aiScenarios?: AIScenario[];
     createdAt: string;
     updatedAt: string;
     operationCount?: number;

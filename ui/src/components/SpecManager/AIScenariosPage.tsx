@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ArrowLeft, Bot, ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
-import { specsApi } from '../../services/api'
+import { aiScenariosApi } from '../../services/api'
 import type { AIScenario, AIScenarioKind } from '../../types'
 
 type ScenarioDraft = {
@@ -285,49 +285,38 @@ function ScenarioDetail({
 }
 
 export default function AIScenariosPage() {
-    const { specId } = useParams<{ specId: string }>()
     const queryClient = useQueryClient()
     const [newDraft, setNewDraft] = useState<ScenarioDraft>(emptyDraft)
     const [editDraft, setEditDraft] = useState<ScenarioDraft>(emptyDraft)
     const [selectedScenarioId, setSelectedScenarioId] = useState<string | 'new' | null>(null)
 
-    const specQuery = useQuery({
-        queryKey: ['spec', specId],
-        queryFn: () => specsApi.get(specId!),
-        enabled: !!specId,
-    })
-
     const scenariosQuery = useQuery({
-        queryKey: ['ai-scenarios', specId],
-        queryFn: () => specsApi.listAIScenarios(specId!),
-        enabled: !!specId,
+        queryKey: ['ai-scenarios'],
+        queryFn: () => aiScenariosApi.list(),
     })
 
     const createMutation = useMutation({
-        mutationFn: () => specsApi.createAIScenario(specId!, draftToPayload(newDraft)),
+        mutationFn: () => aiScenariosApi.create(draftToPayload(newDraft)),
         onSuccess: (result) => {
             setNewDraft(emptyDraft)
             setSelectedScenarioId(result.scenario.id)
-            queryClient.invalidateQueries({ queryKey: ['ai-scenarios', specId] })
-            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+            queryClient.invalidateQueries({ queryKey: ['ai-scenarios'] })
         },
     })
 
     const updateMutation = useMutation({
-        mutationFn: (scenarioId: string) => specsApi.updateAIScenario(specId!, scenarioId, draftToPayload(editDraft)),
+        mutationFn: (scenarioId: string) => aiScenariosApi.update(scenarioId, draftToPayload(editDraft)),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['ai-scenarios', specId] })
-            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+            queryClient.invalidateQueries({ queryKey: ['ai-scenarios'] })
         },
     })
 
     const deleteMutation = useMutation({
-        mutationFn: (scenarioId: string) => specsApi.deleteAIScenario(specId!, scenarioId),
+        mutationFn: (scenarioId: string) => aiScenariosApi.delete(scenarioId),
         onSuccess: (_, deletedId) => {
             const remaining = scenarios.filter((scenario) => scenario.id !== deletedId)
             setSelectedScenarioId(remaining[0]?.id ?? 'new')
-            queryClient.invalidateQueries({ queryKey: ['ai-scenarios', specId] })
-            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+            queryClient.invalidateQueries({ queryKey: ['ai-scenarios'] })
         },
     })
 
@@ -357,15 +346,11 @@ export default function AIScenariosPage() {
         }
     }, [selectedScenario])
 
-    if (!specId) {
-        return null
-    }
-
-    if (specQuery.isLoading || scenariosQuery.isLoading) {
+    if (scenariosQuery.isLoading) {
         return <div className="p-6 text-sm text-gray-500 dark:text-slate-400">Loading AI scenarios...</div>
     }
 
-    if (specQuery.error || scenariosQuery.error || !specQuery.data) {
+    if (scenariosQuery.error) {
         return (
             <div className="p-6">
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
@@ -380,11 +365,11 @@ export default function AIScenariosPage() {
             <div className="flex items-center justify-between gap-4">
                 <div>
                     <Link
-                        to={`/specs/${specId}`}
+                        to="/scripts"
                         className="inline-flex items-center text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
                     >
                         <ArrowLeft className="mr-1 h-4 w-4" />
-                        Back to specification
+                        Back to scripts
                     </Link>
                     <div className="mt-3 flex items-start gap-3">
                         <div className="rounded-lg bg-fuchsia-100 p-3 dark:bg-fuchsia-900/30">
@@ -393,7 +378,7 @@ export default function AIScenariosPage() {
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">AI Scenarios</h1>
                             <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                                {specQuery.data.name} uses these named scenarios when requests send{' '}
+                                All specs share these named scenarios when requests send{' '}
                                 <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-slate-800">X-Virtual-AI-Scenario</code>.
                             </p>
                         </div>

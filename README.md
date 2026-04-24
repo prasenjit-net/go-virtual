@@ -51,6 +51,7 @@ In **all modes**, existing response configs are checked first. Recorded/generate
 - **Manual response design** with conditions, priorities, delays, headers, and body templates
 - **Generated response management** with operation-scoped pages for recorded AI/proxy responses
 - **AI fallback mode** for runtime structured generation from the request and response schema
+- **Global AI scenarios** shared across specs and managed from a sidebar-linked admin page
 - **Proxy fallback mode** with upstream forwarding and response capture
 - **Tracing** with response source and mode awareness
 - **Starlark scripting** with per-operation ordered bindings
@@ -159,6 +160,24 @@ Tracing is enabled per spec. Trace records include:
 
 AI-generated and proxy-recorded responses are shown together on the operation’s generated responses page and remain editable like manual responses.
 
+## AI Scenarios
+
+AI runtime generation can be steered with the `X-Virtual-AI-Scenario` request header.
+
+- scenarios are **application-scoped** and shared across all specs
+- the admin UI manages them from the **AI Scenarios** page in the sidebar
+- default scenarios are seeded automatically:
+  - `success`
+  - `client_error`
+  - `server_error`
+
+When a request reaches AI fallback mode, the runtime looks up the named scenario and applies its
+kind, optional status code, optional count hint, and free-form instructions. If no enabled scenario
+matches, AI generation continues without scenario overrides.
+
+All `X-Virtual-*` headers are excluded from recorded-response signature hashing, so control headers
+like `X-Virtual-AI-Scenario` and `X-Virtual-Session-Id` do not fragment replayed recordings.
+
 ## Build and Development
 
 ### Common commands
@@ -249,6 +268,10 @@ Use environment variables or local config overrides for secrets and provider-spe
 ### AI, scripts, store, sessions, and archives
 
 - `GET /_api/ai/status`
+- `GET /_api/ai-scenarios`
+- `POST /_api/ai-scenarios`
+- `PUT /_api/ai-scenarios/:scenarioId`
+- `DELETE /_api/ai-scenarios/:scenarioId`
 - `POST /_api/scripts/ai-generate`
 - `GET/POST/PUT/DELETE /_api/scripts...`
 - `GET/PUT /_api/operations/:id/scripts...`

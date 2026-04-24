@@ -289,15 +289,6 @@ export default function SpecDetail() {
                     <div className="ml-4">
                         <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">{spec.name}</h1>
                         <p className="text-gray-500 dark:text-slate-400 mt-1">{spec.description || 'No description'}</p>
-                        <div className="mt-3">
-                            <Link
-                                to={`/specs/${spec.id}/ai-scenarios`}
-                                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-fuchsia-200 text-fuchsia-700 bg-fuchsia-50 hover:bg-fuchsia-100 dark:border-fuchsia-900/40 dark:bg-fuchsia-950/20 dark:text-fuchsia-300 dark:hover:bg-fuchsia-950/40 text-sm"
-                            >
-                                <Bot className="w-4 h-4" />
-                                Manage AI Scenarios
-                            </Link>
-                        </div>
                         <div className="flex items-center gap-4 mt-3 text-sm">
                             <span className={clsx(
                                 'px-2 py-1 rounded-full text-xs font-medium',

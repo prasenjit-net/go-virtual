@@ -64,6 +64,12 @@ func (f *FileStorage) loadAll() error {
 		return err
 	}
 
+	// Load global AI scenarios
+	aiScenariosLoaded, err := f.loadAIScenarios()
+	if err != nil {
+		return err
+	}
+
 	// Load specs
 	specsDir := filepath.Join(f.basePath, "specs")
 	entries, err := os.ReadDir(specsDir)
@@ -178,11 +184,23 @@ func (f *FileStorage) loadAll() error {
 		}
 	}
 
+	if !aiScenariosLoaded {
+		if migrated := f.migrateLegacyAIScenariosFromSpecs(); migrated {
+			if err := f.saveAIScenarios(); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
 func (f *FileStorage) tagsFilePath() string {
 	return filepath.Join(f.basePath, "tags.json")
+}
+
+func (f *FileStorage) aiScenariosFilePath() string {
+	return filepath.Join(f.basePath, "ai-scenarios.json")
 }
 
 func (f *FileStorage) loadTags() error {
@@ -240,6 +258,77 @@ func (f *FileStorage) saveTags() error {
 	}
 
 	return os.WriteFile(f.tagsFilePath(), data, 0644)
+}
+
+func (f *FileStorage) loadAIScenarios() (bool, error) {
+	path := f.aiScenariosFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	var scenarios []models.AIScenario
+	if err := json.Unmarshal(data, &scenarios); err != nil {
+		return false, err
+	}
+
+	f.memory.aiScenarios = make(map[string]*models.AIScenario)
+	for _, scenario := range models.NormalizeAIScenarios(scenarios) {
+		scenarioCopy := scenario
+		f.memory.aiScenarios[scenarioCopy.ID] = &scenarioCopy
+	}
+
+	return true, nil
+}
+
+func (f *FileStorage) saveAIScenarios() error {
+	scenarios, err := f.memory.ListAIScenarios()
+	if err != nil {
+		return err
+	}
+
+	serialized := make([]models.AIScenario, 0, len(scenarios))
+	for _, scenario := range scenarios {
+		if scenario != nil {
+			serialized = append(serialized, *scenario)
+		}
+	}
+
+	data, err := json.MarshalIndent(serialized, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(f.aiScenariosFilePath(), data, 0644)
+}
+
+func (f *FileStorage) migrateLegacyAIScenariosFromSpecs() bool {
+	changed := false
+	seenNames := make(map[string]struct{})
+	for _, scenario := range f.memory.aiScenarios {
+		seenNames[strings.ToLower(strings.TrimSpace(scenario.Name))] = struct{}{}
+	}
+
+	for _, spec := range f.memory.specs {
+		for _, scenario := range models.NormalizeAIScenarios(spec.AIScenarios) {
+			key := strings.ToLower(strings.TrimSpace(scenario.Name))
+			if key == "" {
+				continue
+			}
+			if _, exists := seenNames[key]; exists {
+				continue
+			}
+			scenarioCopy := scenario
+			f.memory.aiScenarios[scenarioCopy.ID] = &scenarioCopy
+			seenNames[key] = struct{}{}
+			changed = true
+		}
+	}
+
+	return changed
 }
 
 // loadSpecContent loads the OpenAPI spec content from a separate file
@@ -786,6 +875,49 @@ func (f *FileStorage) DeleteScript(id string) error {
 	}
 	f.deleteScriptFiles(id)
 	return nil
+}
+
+// ListAIScenarios retrieves all global AI scenarios.
+func (f *FileStorage) ListAIScenarios() ([]*models.AIScenario, error) {
+	return f.memory.ListAIScenarios()
+}
+
+// GetAIScenario retrieves a global AI scenario by ID.
+func (f *FileStorage) GetAIScenario(id string) (*models.AIScenario, error) {
+	return f.memory.GetAIScenario(id)
+}
+
+// CreateAIScenario creates and persists a global AI scenario.
+func (f *FileStorage) CreateAIScenario(scenario *models.AIScenario) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.CreateAIScenario(scenario); err != nil {
+		return err
+	}
+	return f.saveAIScenarios()
+}
+
+// UpdateAIScenario updates and persists a global AI scenario.
+func (f *FileStorage) UpdateAIScenario(scenario *models.AIScenario) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.UpdateAIScenario(scenario); err != nil {
+		return err
+	}
+	return f.saveAIScenarios()
+}
+
+// DeleteAIScenario deletes and persists global AI scenarios.
+func (f *FileStorage) DeleteAIScenario(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteAIScenario(id); err != nil {
+		return err
+	}
+	return f.saveAIScenarios()
 }
 
 // GetScriptBindings retrieves all bindings for an operation

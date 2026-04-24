@@ -45,6 +45,13 @@ type Storage interface {
 	UpdateScript(script *models.Script) error
 	DeleteScript(id string) error
 
+	// AI scenario operations
+	ListAIScenarios() ([]*models.AIScenario, error)
+	GetAIScenario(id string) (*models.AIScenario, error)
+	CreateAIScenario(scenario *models.AIScenario) error
+	UpdateAIScenario(scenario *models.AIScenario) error
+	DeleteAIScenario(id string) error
+
 	// ScriptBinding operations
 	GetScriptBindings(operationID string) ([]*models.ScriptBinding, error)
 	CreateScriptBinding(binding *models.ScriptBinding) error
