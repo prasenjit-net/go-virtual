@@ -1,8 +1,8 @@
 # Sequence Diagram: Incoming Request Resolution
 
 This diagram traces the current request lifecycle in Go-Virtual, including
-saved-response lookup, recorded-response replay, spec-scoped fallback policy,
-runtime AI scenarios, and proxy recording.
+saved-response lookup, recorded-response replay, spec-level fallback policy,
+global AI scenarios, and proxy recording.
 
 ```mermaid
 sequenceDiagram
@@ -74,10 +74,10 @@ sequenceDiagram
   configured `inactivityTimeout` (default 30 min).
 - **Saved response order**: configured/manual and pre-generated AI responses are tried first by
   priority, then recorded responses are matched by signature, then runtime fallback policy runs.
-- **Spec-scoped fallback policy**: AI and proxy are enabled or disabled at the spec level, with
+- **Spec fallback policy**: AI and proxy are enabled or disabled at the spec level, with
   optional per-request conditions evaluated in sequence. Standard fallback is always available last.
 - **AI scenarios**: callers can send `X-Virtual-AI-Scenario` to steer runtime AI output toward a
-  named spec scenario (for example `success`, `client_error`, `server_error`, or custom cases).
+  named global scenario (for example `success`, `client_error`, `server_error`, or custom cases).
 - **Script bindings**: executed in declaration order; each binding's return value is stored under
   `outputKey` and available in templates as `{{.script.<outputKey>.<field>}}`.
 - **Recorded response hashing**: all `X-Virtual-*` headers are ignored when computing the request

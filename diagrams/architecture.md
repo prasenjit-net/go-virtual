@@ -4,7 +4,7 @@
 
 **Go-Virtual** is a single-binary API proxy/mock service that virtualises OpenAPI 3 specifications.
 It follows a **layered monolith** architecture with an embedded React SPA, pluggable storage,
-Starlark scripting, session-aware KV store, spec-scoped AI/proxy fallback policy, AI scenarios,
+Starlark scripting, session-aware KV store, spec-scoped AI/proxy fallback policy, global AI scenarios,
 live tracing over WebSocket, Prometheus metrics, and optional TLS on a protocol-sniffing
 multiplexed listener.
 
@@ -176,7 +176,7 @@ flowchart TB
 | CLI | `cmd/server` | Entry point; `serve` and `version` cobra commands; flag/config binding via viper |
 | Gin Router | `internal/api/router` | HTTP routing, CORS, middleware, UI/docs file-serving |
 | Admin Handler | `internal/api/handler*` | CRUD for specs, operations, responses, scripts, store, sessions, archives, AI, stats, traces |
-| Proxy Engine | `internal/proxy/engine` | Resolves requests through configured responses, recorded replay, then spec-scoped AI/proxy/standard fallback |
+| Proxy Engine | `internal/proxy/engine` | Resolves requests through configured responses, recorded replay, then spec-scoped AI/proxy/standard fallback using shared global AI scenarios when requested |
 | OpenAPI Parser | `internal/parser` | Parses OpenAPI 3 YAML/JSON specs via kin-openapi |
 | Template Engine | `internal/template` | Renders response bodies/headers with `{{.path.*}}`, `{{.script.*}}`, `{{.random.*}}` etc. |
 | Condition Evaluator | `internal/condition` | Evaluates `eq`, `contains`, `regex`, `gt`, `in`, … operators against request fields |

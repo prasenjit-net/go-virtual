@@ -58,6 +58,13 @@ Go-Virtual is an API proxy service that virtualizes OpenAPI 3 APIs, allowing dev
 - Matches incoming requests to configured responses
 - Evaluates conditions in priority order
 - Supports fallback to default responses
+- Replays recorded AI/proxy responses by request signature
+
+### 3a. AI Scenario Control
+- AI fallback can be steered with the `X-Virtual-AI-Scenario` header
+- Scenarios are stored as **global application entries**, not per-spec data
+- Default scenarios include `success`, `client_error`, and `server_error`
+- All `X-Virtual-*` headers are ignored when computing recorded-response signatures
 
 ### 4. Template Engine
 - Supports variable substitution in response bodies and headers
@@ -205,6 +212,12 @@ Templates use `{{variable}}` syntax with the following available variables:
 - `DELETE /_api/responses/{id}` - Delete response config
 - `PUT /_api/responses/{id}/priority` - Update priority
 
+#### AI Scenarios
+- `GET /_api/ai-scenarios` - List global AI scenarios
+- `POST /_api/ai-scenarios` - Create global AI scenario
+- `PUT /_api/ai-scenarios/{scenarioId}` - Update global AI scenario
+- `DELETE /_api/ai-scenarios/{scenarioId}` - Delete global AI scenario
+
 #### Statistics
 - `GET /_api/stats` - Global statistics
 - `GET /_api/stats/specs/{id}` - Spec statistics
@@ -351,6 +364,11 @@ logging:
 - View spec details and operations
 - Delete specs
 - Configure base path
+
+### AI Scenario Manager
+- Manage shared runtime AI scenarios from a single admin page
+- Edit status code, count hint, instructions, and enabled state
+- Reuse the same scenario names across every spec in AI mode
 
 ### Response Designer
 - Select operation
