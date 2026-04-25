@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
@@ -40,6 +42,39 @@ func TestRouter_CORSOptions(t *testing.T) {
 	}
 	if w.Header().Get("Access-Control-Allow-Origin") == "" {
 		t.Fatalf("expected CORS headers to be set")
+	}
+}
+
+func TestRouter_StatsStreamRoute(t *testing.T) {
+	router := setupTestRouter()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/_api/stats/stream", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		router.Handler().ServeHTTP(w, req)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stats stream route did not exit after context cancellation")
+	}
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("expected SSE content type, got %q", got)
+	}
+	if !strings.Contains(w.Body.String(), "event: stats") {
+		t.Fatalf("expected stats SSE event, got %q", w.Body.String())
 	}
 }
 

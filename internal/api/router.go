@@ -149,6 +149,7 @@ func (r *Router) setupRoutes() {
 
 		// Statistics
 		api.GET("/stats", r.handler.GetGlobalStats)
+		api.GET("/stats/stream", r.handler.StreamGlobalStats)
 		api.GET("/stats/specs/:id", r.handler.GetSpecStats)
 		api.GET("/stats/operations/:id", r.handler.GetOperationStats)
 		api.POST("/stats/reset", r.handler.ResetStats)

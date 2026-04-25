@@ -298,6 +298,10 @@ export const statsApi = {
         return handleResponse<any>(response);
     },
 
+    createStream: () => {
+        return new EventSource(`${API_BASE}/stats/stream`);
+    },
+
     getBySpec: async (specId: string) => {
         const response = await fetch(`${API_BASE}/stats/specs/${specId}`);
         return handleResponse<any>(response);
