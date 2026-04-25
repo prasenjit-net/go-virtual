@@ -365,11 +365,13 @@ func TestFileStorage_OperationCustomization(t *testing.T) {
 	op := ops[0]
 
 	// Attach a SignatureConfig
+	includeBody := false
 	op.SignatureConfig = &models.SignatureConfig{
-		PathParams:  []string{"id"},
-		QueryParams: []string{"page"},
-		Headers:     []string{"X-Tenant"},
-		IncludeBody: false,
+		PathParams:        []string{"id"},
+		QueryParams:       []string{"page"},
+		HeadersConfigured: true,
+		Headers:           []string{"X-Tenant"},
+		IncludeBody:       &includeBody,
 	}
 
 	if err := fs.UpdateOperation(op); err != nil {
@@ -394,7 +396,7 @@ func TestFileStorage_OperationCustomization(t *testing.T) {
 	if len(ro.SignatureConfig.PathParams) != 1 || ro.SignatureConfig.PathParams[0] != "id" {
 		t.Errorf("unexpected PathParams after reload: %v", ro.SignatureConfig.PathParams)
 	}
-	if ro.SignatureConfig.IncludeBody {
+	if ro.SignatureConfig.IncludeBody == nil || *ro.SignatureConfig.IncludeBody {
 		t.Error("expected IncludeBody=false after reload")
 	}
 	if len(ro.SignatureConfig.Headers) != 1 || ro.SignatureConfig.Headers[0] != "X-Tenant" {

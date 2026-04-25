@@ -13,8 +13,6 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const virtualControlHeaderPrefix = "x-virtual-"
-
 // ComputeSignature generates a deterministic hash of the request that can be
 // used to uniquely identify a request for the purpose of proxy recording.
 //
@@ -51,7 +49,9 @@ func ComputeSignature(
 			queryParamFilter = cfg.QueryParams
 		}
 		headerFilter = cfg.Headers
-		includeBody = cfg.IncludeBody
+		if cfg.IncludeBody != nil {
+			includeBody = *cfg.IncludeBody
+		}
 		bodyJsonPaths = cfg.BodyJsonPaths
 	}
 
@@ -90,11 +90,11 @@ func ComputeSignature(
 	_, _ = io.WriteString(h, "headers:")
 	headerKeys := sortedCopy(headerFilter)
 	for _, key := range headerKeys {
-		if isIgnoredSignatureHeader(key) {
+		if models.IsIgnoredSignatureHeader(key) {
 			continue
 		}
 		for k, vals := range headers {
-			if isIgnoredSignatureHeader(k) {
+			if models.IsIgnoredSignatureHeader(k) {
 				continue
 			}
 			if strings.EqualFold(k, key) {
@@ -122,6 +122,55 @@ func ComputeSignature(
 	}
 
 	return fmt.Sprintf("%016x", h.Sum64())
+}
+
+// ResolveSignatureConfig derives the effective runtime signature configuration
+// for an operation by combining declared defaults from the spec/operation with
+// any persisted operation override.
+func ResolveSignatureConfig(spec *models.Spec, op *models.Operation) *models.SignatureConfig {
+	if op == nil {
+		return &models.SignatureConfig{}
+	}
+	specHeaders := []string(nil)
+	if spec != nil {
+		specHeaders = spec.SignatureHeaders
+	}
+	defaults := &models.SignatureConfig{
+		PathParams:  append([]string{}, op.DeclaredPathParams...),
+		QueryParams: append([]string{}, op.DeclaredQueryParams...),
+		Headers:     models.NormalizeSignatureHeaderNames(append(append([]string{}, op.DeclaredHeaderParams...), specHeaders...)),
+	}
+	includeBody := op.HasRequestBody
+	defaults.IncludeBody = &includeBody
+	if op.SignatureConfig == nil {
+		defaults.Normalize()
+		return defaults
+	}
+
+	effective := &models.SignatureConfig{
+		PathParams:  defaults.PathParams,
+		QueryParams: defaults.QueryParams,
+		Headers:     defaults.Headers,
+		IncludeBody: defaults.IncludeBody,
+	}
+	if len(op.SignatureConfig.PathParams) > 0 {
+		effective.PathParams = append([]string{}, op.SignatureConfig.PathParams...)
+	}
+	if len(op.SignatureConfig.QueryParams) > 0 {
+		effective.QueryParams = append([]string{}, op.SignatureConfig.QueryParams...)
+	}
+	if op.SignatureConfig.HeadersConfigured {
+		effective.Headers = append([]string{}, op.SignatureConfig.Headers...)
+	}
+	if op.SignatureConfig.IncludeBody != nil {
+		includeBody := *op.SignatureConfig.IncludeBody
+		effective.IncludeBody = &includeBody
+	}
+	if effective.IncludeBody != nil && *effective.IncludeBody && len(op.SignatureConfig.BodyJsonPaths) > 0 {
+		effective.BodyJsonPaths = append([]string{}, op.SignatureConfig.BodyJsonPaths...)
+	}
+	effective.Normalize()
+	return effective
 }
 
 // writeAllPathParams writes all path params sorted deterministically.
@@ -166,8 +215,4 @@ func sortedCopy(s []string) []string {
 	copy(c, s)
 	sort.Strings(c)
 	return c
-}
-
-func isIgnoredSignatureHeader(name string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), virtualControlHeaderPrefix)
 }

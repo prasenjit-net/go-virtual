@@ -1049,6 +1049,9 @@ func TestExtractOperationInputs_PathAndQueryParams(t *testing.T) {
 	if inputs.QueryParams[0].Name != "format" {
 		t.Errorf("expected query param 'format', got %q", inputs.QueryParams[0].Name)
 	}
+	if len(inputs.HeaderParams) != 0 {
+		t.Errorf("expected no header params, got %d", len(inputs.HeaderParams))
+	}
 }
 
 func TestExtractOperationInputs_BodyFields(t *testing.T) {
@@ -1059,6 +1062,9 @@ func TestExtractOperationInputs_BodyFields(t *testing.T) {
 	}
 	if inputs == nil {
 		t.Fatal("expected non-nil inputs")
+	}
+	if !inputs.HasBody {
+		t.Fatal("expected POST operation to report request body")
 	}
 
 	// Should have flattened body fields: name, category, tags, tags.0, owner.id, owner.email
@@ -1086,6 +1092,67 @@ func TestExtractOperationInputs_NoBody(t *testing.T) {
 	}
 	if len(inputs.BodyFields) != 0 {
 		t.Errorf("GET operation should have no body fields, got %d", len(inputs.BodyFields))
+	}
+	if inputs.HasBody {
+		t.Error("GET operation should not report request body")
+	}
+}
+
+func TestExtractOperationInputs_HeaderParamsAndBodyPresence(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Headers API
+  version: 1.0.0
+paths:
+  /orders/{id}:
+    parameters:
+      - name: X-Tenant
+        in: header
+        required: false
+        schema:
+          type: string
+    put:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: include
+          in: query
+          schema:
+            type: string
+        - name: X-Trace-Id
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: ok
+`
+	inputs, err := p.ExtractOperationInputs(spec, "PUT", "/orders/{id}")
+	if err != nil {
+		t.Fatalf("ExtractOperationInputs error: %v", err)
+	}
+	if len(inputs.HeaderParams) != 2 {
+		t.Fatalf("expected 2 header params, got %d", len(inputs.HeaderParams))
+	}
+	if inputs.HeaderParams[0].Name != "X-Tenant" && inputs.HeaderParams[1].Name != "X-Tenant" {
+		t.Fatalf("expected X-Tenant header param, got %#v", inputs.HeaderParams)
+	}
+	if !inputs.HasBody {
+		t.Fatal("expected request body to be detected even for non-JSON body")
+	}
+	if len(inputs.BodyFields) != 0 {
+		t.Fatalf("expected non-JSON body to produce no flattened fields, got %d", len(inputs.BodyFields))
 	}
 }
 

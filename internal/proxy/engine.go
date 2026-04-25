@@ -217,12 +217,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Compute the request signature (needed for both proxy recording and condition evaluation)
+	effectiveSignatureConfig := ResolveSignatureConfig(matchedRoute.spec, matchedRoute.operation)
 	signature := ComputeSignature(
 		pathParams,
 		r.URL.Query(),
 		r.Header,
 		requestBody,
-		matchedRoute.operation.SignatureConfig,
+		effectiveSignatureConfig,
 	)
 
 	// ---- Virtual response mode ----

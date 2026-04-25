@@ -61,18 +61,23 @@ func LegacyModePolicy(spec *Spec) ModePolicy {
 
 // Operation represents an API operation from an OpenAPI spec
 type Operation struct {
-	ID              string           `json:"id"`
-	SpecID          string           `json:"specId"`
-	Method          string           `json:"method"`      // GET, POST, PUT, DELETE, PATCH, etc.
-	Path            string           `json:"path"`        // Path pattern e.g., /users/{id}
-	FullPath        string           `json:"fullPath"`    // BasePath + Path
-	OperationID     string           `json:"operationId"` // From OpenAPI spec
-	Summary         string           `json:"summary"`
-	Description     string           `json:"description"`
-	Tags            []string         `json:"tags"`
-	Responses       []ResponseConfig `json:"responses,omitempty"`
-	ExampleResponse *ExampleResponse `json:"exampleResponse,omitempty"` // From OpenAPI spec
-	SignatureConfig *SignatureConfig `json:"signatureConfig,omitempty"` // Controls request signature generation
+	ID                   string           `json:"id"`
+	SpecID               string           `json:"specId"`
+	Method               string           `json:"method"`      // GET, POST, PUT, DELETE, PATCH, etc.
+	Path                 string           `json:"path"`        // Path pattern e.g., /users/{id}
+	FullPath             string           `json:"fullPath"`    // BasePath + Path
+	OperationID          string           `json:"operationId"` // From OpenAPI spec
+	Summary              string           `json:"summary"`
+	Description          string           `json:"description"`
+	Tags                 []string         `json:"tags"`
+	Responses            []ResponseConfig `json:"responses,omitempty"`
+	ExampleResponse      *ExampleResponse `json:"exampleResponse,omitempty"` // From OpenAPI spec
+	SignatureConfig      *SignatureConfig `json:"signatureConfig,omitempty"` // Controls request signature generation
+	DeclaredPathParams   []string         `json:"declaredPathParams,omitempty"`
+	DeclaredQueryParams  []string         `json:"declaredQueryParams,omitempty"`
+	DeclaredHeaderParams []string         `json:"declaredHeaderParams,omitempty"`
+	DeclaredBodyFields   []string         `json:"declaredBodyFields,omitempty"`
+	HasRequestBody       bool             `json:"hasRequestBody,omitempty"`
 }
 
 // ExampleResponse holds example response data from the OpenAPI spec

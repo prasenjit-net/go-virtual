@@ -78,7 +78,15 @@ func TestGetOperation_NotFound(t *testing.T) {
 func TestGetSignatureConfig_Default(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
 
-	store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", SignatureHeaders: []string{"X-Tenant"}})
+	store.CreateOperation(&models.Operation{
+		ID:                   "op-1",
+		SpecID:               "spec-1",
+		DeclaredPathParams:   []string{"id"},
+		DeclaredQueryParams:  []string{"status"},
+		DeclaredHeaderParams: []string{"X-Request-Id"},
+		HasRequestBody:       true,
+	})
 	r.GET("/operations/:id/signature", handler.GetSignatureConfig)
 
 	req := httptest.NewRequest("GET", "/operations/op-1/signature", nil)
@@ -88,16 +96,30 @@ func TestGetSignatureConfig_Default(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", w.Code)
 	}
+	var result map[string]any
+	json.Unmarshal(w.Body.Bytes(), &result)
+	if result["signatureConfig"] != nil {
+		t.Error("expected raw signatureConfig to be nil for defaults")
+	}
+	if result["effectiveSignatureConfig"] == nil {
+		t.Error("expected effective signature config to be present")
+	}
 }
 
 func TestGetSignatureConfig_WithConfig(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
+	includeBody := false
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API", SignatureHeaders: []string{"X-Tenant"}})
 	store.CreateOperation(&models.Operation{
-		ID:     "op-1",
-		SpecID: "spec-1",
+		ID:                   "op-1",
+		SpecID:               "spec-1",
+		DeclaredPathParams:   []string{"id"},
+		DeclaredHeaderParams: []string{"X-Request-Id"},
 		SignatureConfig: &models.SignatureConfig{
-			PathParams:  []string{"id"},
-			IncludeBody: true,
+			PathParams:        []string{"id"},
+			HeadersConfigured: true,
+			Headers:           []string{"X-Custom"},
+			IncludeBody:       &includeBody,
 		},
 	})
 	r.GET("/operations/:id/signature", handler.GetSignatureConfig)
@@ -113,6 +135,9 @@ func TestGetSignatureConfig_WithConfig(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result["signatureConfig"] == nil {
 		t.Error("expected signatureConfig to be present")
+	}
+	if result["effectiveSignatureConfig"] == nil {
+		t.Error("expected effectiveSignatureConfig to be present")
 	}
 }
 
@@ -134,16 +159,18 @@ func TestGetSignatureConfig_NotFound(t *testing.T) {
 func TestUpdateSignatureConfig(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
 
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
 	store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
 	r.PUT("/operations/:id/signature", handler.UpdateSignatureConfig)
 
 	body := map[string]interface{}{
 		"signatureConfig": map[string]interface{}{
-			"pathParams":    []string{"id"},
-			"queryParams":   []string{},
-			"headers":       []string{"X-Tenant"},
-			"includeBody":   false,
-			"bodyJsonPaths": []string{},
+			"pathParams":        []string{"id"},
+			"queryParams":       []string{},
+			"headersConfigured": true,
+			"headers":           []string{"X-Tenant"},
+			"includeBody":       false,
+			"bodyJsonPaths":     []string{},
 		},
 	}
 	jsonBody, _ := json.Marshal(body)
@@ -162,11 +189,15 @@ func TestUpdateSignatureConfig(t *testing.T) {
 	if len(updated.SignatureConfig.PathParams) != 1 || updated.SignatureConfig.PathParams[0] != "id" {
 		t.Errorf("unexpected PathParams: %v", updated.SignatureConfig.PathParams)
 	}
+	if !updated.SignatureConfig.HeadersConfigured {
+		t.Error("expected HeadersConfigured to be set")
+	}
 }
 
 func TestUpdateSignatureConfig_ClearConfig(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
 
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
 	store.CreateOperation(&models.Operation{
 		ID:     "op-1",
 		SpecID: "spec-1",
@@ -210,6 +241,7 @@ func TestUpdateSignatureConfig_NotFound(t *testing.T) {
 
 func TestUpdateSignatureConfig_InvalidJSON(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
+	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
 	store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1"})
 	r.PUT("/operations/:id/signature", handler.UpdateSignatureConfig)
 

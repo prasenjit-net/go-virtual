@@ -212,16 +212,16 @@ export const operationsApi = {
 
     getSignatureConfig: async (id: string) => {
         const response = await fetch(`${API_BASE}/operations/${id}/signature`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').SignatureConfigResponse>(response);
     },
 
-    updateSignatureConfig: async (id: string, signatureConfig: any) => {
+    updateSignatureConfig: async (id: string, signatureConfig: import('../types').SignatureConfig | null) => {
         const response = await fetch(`${API_BASE}/operations/${id}/signature`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ signatureConfig }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ signatureConfig: import('../types').SignatureConfig | null; effectiveSignatureConfig: import('../types').SignatureConfig }>(response);
     },
 
 };

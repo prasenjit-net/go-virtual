@@ -522,6 +522,9 @@ func (f *FileStorage) loadOperationCustomization(opID string) (*operationCustomi
 	if err := json.Unmarshal(data, &custom); err != nil {
 		return nil, err
 	}
+	if custom.SignatureConfig != nil {
+		custom.SignatureConfig.Normalize()
+	}
 
 	return &custom, nil
 }

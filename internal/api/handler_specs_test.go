@@ -164,7 +164,7 @@ func TestUpdateSpec(t *testing.T) {
 	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "Old Name", Version: "1.0", Enabled: true})
 	r.PUT("/specs/:id", handler.UpdateSpec)
 
-	update := map[string]interface{}{"name": "New Name", "enabled": false}
+	update := map[string]interface{}{"name": "New Name", "enabled": false, "signatureHeaders": []string{" x-tenant ", "X-Virtual-Test"}}
 	jsonBody, _ := json.Marshal(update)
 	req := httptest.NewRequest("PUT", "/specs/spec-1", bytes.NewReader(jsonBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -180,6 +180,9 @@ func TestUpdateSpec(t *testing.T) {
 	}
 	if updatedSpec.Enabled != false {
 		t.Error("Expected enabled to be false")
+	}
+	if len(updatedSpec.SignatureHeaders) != 1 || updatedSpec.SignatureHeaders[0] != "X-Tenant" {
+		t.Errorf("Expected normalized signature headers, got %#v", updatedSpec.SignatureHeaders)
 	}
 }
 
