@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/prasenjit/go-virtual/internal/config"
@@ -88,6 +89,54 @@ func TestRunInit(t *testing.T) {
 	configPath := filepath.Join(tempDir, "config.yaml")
 	if _, err := os.Stat(configPath); err != nil {
 		t.Fatalf("expected config.yaml to exist: %v", err)
+	}
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("expected generated config.yaml to be readable: %v", err)
+	}
+	generated := string(configData)
+	for _, want := range []string{
+		"# Tips:",
+		`# - Durations use Go duration syntax such as "30m", "24h", or "15s".`,
+		"headless: false",
+		"branding:",
+		"scripting:",
+		"session:",
+		"proxy:",
+		"ai:",
+		`provider: "openai"`,
+		`model: "gpt-4o-mini"`,
+		`model: "claude-sonnet-4-6"`,
+		`# Which provider powers AI features: "openai" or "claude".`,
+		`path: "./data"`,
+	} {
+		if !strings.Contains(generated, want) {
+			t.Fatalf("expected generated config to contain %q, got:\n%s", want, generated)
+		}
+	}
+	if strings.Contains(generated, "openaiApiKey:") || strings.Contains(generated, "openaiModel:") || strings.Contains(generated, "openaiBaseUrl:") {
+		t.Fatalf("expected generated config to omit legacy OpenAI aliases, got:\n%s", generated)
+	}
+
+	t.Chdir(tempDir)
+	loadedCfg, err := config.Load(configPath)
+	if err != nil {
+		t.Fatalf("expected generated config to load: %v", err)
+	}
+	if loadedCfg.Server.Host != "0.0.0.0" {
+		t.Fatalf("expected generated host default 0.0.0.0, got %q", loadedCfg.Server.Host)
+	}
+	if loadedCfg.Storage.Path != filepath.Join(tempDir, "data") {
+		t.Fatalf("expected generated storage path %q, got %q", filepath.Join(tempDir, "data"), loadedCfg.Storage.Path)
+	}
+	if loadedCfg.AI.Provider != config.AIProviderOpenAI {
+		t.Fatalf("expected generated AI provider %q, got %q", config.AIProviderOpenAI, loadedCfg.AI.Provider)
+	}
+	if loadedCfg.AI.OpenAI.Model != config.DefaultOpenAIModel {
+		t.Fatalf("expected generated OpenAI model %q, got %q", config.DefaultOpenAIModel, loadedCfg.AI.OpenAI.Model)
+	}
+	if loadedCfg.AI.Claude.Model != config.DefaultClaudeModel {
+		t.Fatalf("expected generated Claude model %q, got %q", config.DefaultClaudeModel, loadedCfg.AI.Claude.Model)
 	}
 
 	dirs := []string{
