@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -82,9 +82,9 @@ func TestSelectMode_LogsAIMisconfigurationOnce(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	origWriter := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(origWriter)
+	origLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(origLogger)
 
 	engine.selectMode(spec, nil)
 	engine.selectMode(spec, nil)
@@ -108,9 +108,9 @@ func TestSelectMode_LogsMissingBackendOnce(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	origWriter := log.Writer()
-	log.SetOutput(&buf)
-	defer log.SetOutput(origWriter)
+	origLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(origLogger)
 
 	engine.selectMode(spec, nil)
 	engine.selectMode(spec, nil)

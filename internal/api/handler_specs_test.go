@@ -282,7 +282,7 @@ func TestUpdateSpec_ProxyModeWithoutBackendURI(t *testing.T) {
 	}
 }
 
-func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
+func TestUpdateSpec_AIModeWithoutConfiguredProvider(t *testing.T) {
 	handler, store, r := setupTestHandler(t)
 
 	store.CreateSpec(&models.Spec{ID: "spec-1", Name: "API"})
@@ -296,10 +296,10 @@ func TestUpdateSpec_AIModeWithoutOpenAIKey(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 when enabling ai mode without OpenAI key, got %d: %s", w.Code, w.Body.String())
+		t.Fatalf("expected 400 when enabling ai mode without configured provider, got %d: %s", w.Code, w.Body.String())
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("OpenAI API key")) {
-		t.Fatalf("expected OpenAI API key error, got %s", w.Body.String())
+	if !bytes.Contains(w.Body.Bytes(), []byte("selected AI provider")) {
+		t.Fatalf("expected provider configuration error, got %s", w.Body.String())
 	}
 }
 

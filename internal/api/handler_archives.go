@@ -5,6 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/archive"
+	"github.com/prasenjit/go-virtual/internal/logging"
 )
 
 // ListArchives returns metadata for all stored archives.
@@ -129,8 +130,15 @@ func (h *Handler) RestoreArchive(c *gin.Context) {
 
 	resp, err := h.archiveManager.Restore(c.Param("id"), input)
 	if err != nil {
+		logging.Logger("api.archive").Error("Archive restore request failed",
+			"event", "archive_restore_request_failed",
+			"archive_id", c.Param("id"),
+			"wipe_first", input.WipeFirst,
+			"create_backup_first", input.CreateBackupFirst,
+			"error", err,
+		)
 		status := http.StatusInternalServerError
-		if resp != nil && len(resp.Result.Errors) > 0 {
+		if resp != nil && resp.Result != nil && len(resp.Result.Errors) > 0 {
 			status = http.StatusUnprocessableEntity
 		}
 		c.JSON(status, gin.H{"error": err.Error(), "result": resp})
@@ -138,7 +146,21 @@ func (h *Handler) RestoreArchive(c *gin.Context) {
 	}
 
 	// Reload proxy routes so the restored spec registrations take effect.
-	h.proxyEngine.ReloadRoutes()
+	if err := h.proxyEngine.ReloadRoutes(); err != nil {
+		logging.Logger("api.archive").Error("Archive restore succeeded but route reload failed",
+			"event", "archive_restore_route_reload_failed",
+			"archive_id", c.Param("id"),
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "result": resp})
+		return
+	}
+	logging.Logger("api.archive").Info("Archive restore request completed",
+		"event", "archive_restore_request_completed",
+		"archive_id", c.Param("id"),
+		"wipe_first", input.WipeFirst,
+		"create_backup_first", input.CreateBackupFirst,
+	)
 
 	c.JSON(http.StatusOK, resp)
 }

@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
-import type { Operation, ResponseConfig, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
+import type { AIStatus, Operation, ResponseConfig, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 import ResponseConfigList from './ResponseDesigner/ResponseConfigList'
@@ -100,11 +100,13 @@ export default function OperationDetail() {
         enabled: !!operationId,
     })
 
-    const { data: aiConfigured = true } = useQuery<boolean>({
-        queryKey: ['ai-configured'],
-        queryFn: () => aiApi.isConfigured(),
+    const { data: aiStatus = { configured: true, provider: 'openai' } } = useQuery<AIStatus>({
+        queryKey: ['ai-status'],
+        queryFn: () => aiApi.getStatus(),
         staleTime: 60_000,
     })
+    const aiConfigured = aiStatus.configured
+    const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
     const updateSignatureMutation = useMutation({
         mutationFn: (cfg: SignatureConfig | null) =>
@@ -239,7 +241,7 @@ export default function OperationDetail() {
                             </button>
                             {!aiConfigured && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 dark:bg-slate-700 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
-                                    OpenAI API key is not configured
+                                    {aiProviderLabel} is not configured
                                     <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-slate-700" />
                                 </div>
                             )}

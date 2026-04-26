@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/prasenjit/go-virtual/internal/config"
 )
 
 var (
@@ -59,6 +62,7 @@ func initConfig() {
 
 	// Read in environment variables that match
 	viper.SetEnvPrefix("GOVIRTUAL")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	// Set defaults
@@ -97,10 +101,19 @@ func setDefaults() {
 	viper.SetDefault("tracing.retention", "24h")
 
 	// Logging defaults
-	viper.SetDefault("logging.level", "info")
-	viper.SetDefault("logging.format", "json")
+	viper.SetDefault("logging.level", config.LogLevelInfo)
+	viper.SetDefault("logging.format", config.LogFormatJSON)
 
 	// AI defaults
+	viper.SetDefault("ai.provider", config.AIProviderOpenAI)
+	viper.SetDefault("ai.openai.apiKey", "")
+	viper.SetDefault("ai.openai.model", config.DefaultOpenAIModel)
+	viper.SetDefault("ai.openai.baseUrl", "")
+	viper.SetDefault("ai.claude.apiKey", "")
+	viper.SetDefault("ai.claude.model", config.DefaultClaudeModel)
+	viper.SetDefault("ai.claude.baseUrl", "")
+	viper.SetDefault("ai.claude.apiVersion", config.DefaultClaudeAPIVersion)
 	viper.SetDefault("ai.openaiApiKey", "")
-	viper.SetDefault("ai.openaiModel", "gpt-4o-mini")
+	viper.SetDefault("ai.openaiModel", config.DefaultOpenAIModel)
+	viper.SetDefault("ai.openaiBaseUrl", "")
 }

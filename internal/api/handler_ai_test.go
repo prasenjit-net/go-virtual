@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
@@ -223,20 +224,55 @@ paths:
 // ── GetAIStatus ───────────────────────────────────────────────────────────────
 
 func TestGetAIStatus_NotConfigured(t *testing.T) {
-handler, _ := setupAITest(t)
-r := gin.New()
-r.GET("/ai/status", handler.GetAIStatus)
+	handler, _ := setupAITest(t)
+	r := gin.New()
+	r.GET("/ai/status", handler.GetAIStatus)
 
-req := httptest.NewRequest("GET", "/ai/status", nil)
-w := httptest.NewRecorder()
-r.ServeHTTP(w, req)
+	req := httptest.NewRequest("GET", "/ai/status", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
 
-if w.Code != http.StatusOK {
-t.Fatalf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp map[string]any
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["configured"] != false {
+		t.Errorf("expected configured=false when aiGenerator is nil, got %v", resp["configured"])
+	}
+	if resp["provider"] != "openai" {
+		t.Errorf("expected default provider=openai, got %v", resp["provider"])
+	}
 }
-var resp map[string]any
-json.Unmarshal(w.Body.Bytes(), &resp)
-if resp["configured"] != false {
-t.Errorf("expected configured=false when aiGenerator is nil, got %v", resp["configured"])
-}
+
+func TestGetAIStatus_ClaudeConfigured(t *testing.T) {
+	handler, _ := setupAITest(t)
+	handler.aiGenerator = ai.NewGenerator(ai.Config{
+		Provider: "claude",
+		Claude: ai.ClaudeProviderConfig{
+			APIKey: "claude-test-key",
+			Model:  "claude-3-7-sonnet-latest",
+		},
+	})
+	r := gin.New()
+	r.GET("/ai/status", handler.GetAIStatus)
+
+	req := httptest.NewRequest("GET", "/ai/status", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var resp struct {
+		Configured bool   `json:"configured"`
+		Provider   string `json:"provider"`
+		Model      string `json:"model"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if !resp.Configured || resp.Provider != "claude" || resp.Model != "claude-3-7-sonnet-latest" {
+		t.Fatalf("unexpected AI status: %+v", resp)
+	}
 }

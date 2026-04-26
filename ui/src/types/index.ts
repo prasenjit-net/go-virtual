@@ -3,6 +3,12 @@ export type SpecMode = 'standard' | 'ai' | 'proxy';
 export type ResponseOrigin = 'manual' | 'proxy' | 'ai';
 export type ResponseTier = 'configured' | 'recorded' | 'fallback';
 
+export interface AIStatus {
+    configured: boolean;
+    provider: string;
+    model?: string;
+}
+
 export interface Spec {
     id: string;
     name: string;

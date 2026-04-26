@@ -11,6 +11,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -69,9 +70,9 @@ func NewRouter(cfg RouterConfig) *Router {
 	})
 
 	// Setup middleware
-	r.engine.Use(gin.Recovery())
+	r.engine.Use(logging.RecoveryMiddleware())
 	r.engine.Use(corsMiddleware())
-	r.engine.Use(gin.Logger())
+	r.engine.Use(logging.AccessMiddleware())
 
 	// Setup routes
 	r.setupRoutes()

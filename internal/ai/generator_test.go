@@ -36,6 +36,28 @@ func openAISuccessResponse(content string) string {
 	return string(data)
 }
 
+func mockClaude(t *testing.T, statusCode int, respBody string) (*httptest.Server, string) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if statusCode != 0 {
+			w.WriteHeader(statusCode)
+		}
+		w.Write([]byte(respBody))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, srv.URL
+}
+
+func claudeSuccessResponse(content string) string {
+	data, _ := json.Marshal(map[string]any{
+		"content": []map[string]string{
+			{"type": "text", "text": content},
+		},
+	})
+	return string(data)
+}
+
 // ── NewGenerator / IsConfigured ───────────────────────────────────────────────
 
 func TestNewGenerator_Defaults(t *testing.T) {
@@ -539,8 +561,8 @@ func TestGenerateResponse_NotConfigured(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when not configured")
 	}
-	if !strings.Contains(err.Error(), "API key") {
-		t.Errorf("error should mention API key, got: %v", err)
+	if !strings.Contains(err.Error(), "ai.openai.apiKey") {
+		t.Errorf("error should mention provider config key, got: %v", err)
 	}
 }
 
@@ -550,8 +572,8 @@ func TestGenerateScript_NotConfigured(t *testing.T) {
 	if err == nil {
 		t.Error("expected error when not configured")
 	}
-	if !strings.Contains(err.Error(), "API key") {
-		t.Errorf("error should mention API key, got: %v", err)
+	if !strings.Contains(err.Error(), "ai.openai.apiKey") {
+		t.Errorf("error should mention provider config key, got: %v", err)
 	}
 }
 
@@ -671,6 +693,40 @@ func TestGenerateResponse_DefaultsApplied(t *testing.T) {
 	}
 }
 
+func TestGenerateResponse_ClaudeProvider(t *testing.T) {
+	responseBody := `{
+"statusCode": 201,
+"name": "Created",
+"description": "Creates a pet",
+"headers": {"Content-Type": "application/json"},
+"body": "{\"id\":\"pet-2\"}",
+"priority": 10,
+"enabled": true,
+"conditions": [],
+"delay": 0
+}`
+	_, url := mockClaude(t, 200, claudeSuccessResponse(responseBody))
+
+	g := NewGenerator(Config{
+		Provider: "claude",
+		Claude: ClaudeProviderConfig{
+			APIKey:   "claude-test-key",
+			Model:    "claude-3-7-sonnet-latest",
+			Endpoint: url,
+		},
+	})
+	result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "POST", Path: "/pets"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.StatusCode != 201 {
+		t.Errorf("expected StatusCode 201, got %d", result.StatusCode)
+	}
+	if got := g.Status(); got.Provider != "claude" || !got.Configured {
+		t.Fatalf("expected configured Claude status, got %+v", got)
+	}
+}
+
 // ── GenerateScript — mock OpenAI server ──────────────────────────────────────
 
 func TestGenerateScript_Success(t *testing.T) {
@@ -725,5 +781,47 @@ func TestGenerateScript_OpenAIError(t *testing.T) {
 	_, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "something")
 	if err == nil {
 		t.Error("expected error from OpenAI error response")
+	}
+}
+
+func TestGenerateScript_ClaudeProvider(t *testing.T) {
+	scriptSrc := "# Echo request\n#\n# Inputs:  req[\"query\"][\"name\"] — optional name\n# Store:   none\n# Returns: {\"hello\"}\n\ndef run(req):\n    return {\"hello\": req[\"query\"].get(\"name\", \"world\")}\n"
+	wrapper, _ := json.Marshal(map[string]string{"source": scriptSrc})
+	_, url := mockClaude(t, 200, claudeSuccessResponse(string(wrapper)))
+
+	g := NewGenerator(Config{
+		Provider: "claude",
+		Claude: ClaudeProviderConfig{
+			APIKey:   "claude-test-key",
+			Model:    "claude-3-7-sonnet-latest",
+			Endpoint: url,
+		},
+	})
+	source, err := g.GenerateScript(context.Background(), ScriptContext{}, nil, "", "echo the name query param")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(source, "def run(req):") {
+		t.Fatalf("expected Claude-generated script source, got %q", source)
+	}
+}
+
+func TestGenerateResponse_ClaudeModelErrorIncludesConfigHint(t *testing.T) {
+	_, url := mockClaude(t, 400, `{"error":{"type":"invalid_request_error","message":"model: invalid-model"}}`)
+
+	g := NewGenerator(Config{
+		Provider: "claude",
+		Claude: ClaudeProviderConfig{
+			APIKey:   "claude-test-key",
+			Model:    "invalid-model",
+			Endpoint: url,
+		},
+	})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
+	if err == nil {
+		t.Fatal("expected Claude model error")
+	}
+	if !strings.Contains(err.Error(), "ai.claude.model") || !strings.Contains(err.Error(), "invalid-model") {
+		t.Fatalf("expected Claude model hint in error, got %v", err)
 	}
 }

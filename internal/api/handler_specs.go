@@ -471,7 +471,7 @@ func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
 		policy.Proxy.Enabled = true
 	case models.SpecModeAI:
 		if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
-			return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
+			return h.aiModeConfigurationError()
 		}
 		policy.Configured = true
 		policy.AI.Enabled = true

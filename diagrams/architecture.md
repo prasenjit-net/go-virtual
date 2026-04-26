@@ -86,7 +86,7 @@ flowchart TB
     end
 
     subgraph EXTERNAL["External Systems"]
-        OpenAI["OpenAI API\n(runtime + admin generation)"]
+        AIProviders["OpenAI / Claude\n(runtime + admin generation)"]
         Upstream["Upstream Backend\n(real API server)"]
         PromServer["Prometheus / Grafana"]
     end
@@ -141,7 +141,7 @@ flowchart TB
     SessionMgr -->|"snapshot seed"| GlobalStore
 
     %% AI wiring
-    AIGen -->|"runtime + admin prompts"| OpenAI
+    AIGen -->|"runtime + admin prompts"| AIProviders
 
     %% Observability wiring
     PROXY_ENGINE --> TracingSvc
@@ -190,5 +190,5 @@ flowchart TB
 | Prometheus Metrics | `internal/metrics` | Exposes metrics at `/_prometheus` in Prometheus exposition format |
 | TLS Util | `internal/tlsutil` | Protocol-sniffing mux listener; auto-generates self-signed cert if none configured |
 | Archive Manager | `internal/archive` | Exports/imports full state (specs + store) as zip archives |
-| AI Generator | `internal/ai` | Calls OpenAI for admin generation and runtime AI fallback, including named AI scenarios |
+| AI Generator | `internal/ai` | Calls the configured AI provider (OpenAI or Claude) for admin generation and runtime AI fallback, including named AI scenarios |
 | React SPA | `ui/` | Admin dashboard — spec manager, AI scenarios, recorded responses, response designer, script editor, trace viewer, store/session inspector |

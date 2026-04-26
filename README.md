@@ -212,6 +212,10 @@ storage:
   type: "file"
   path: "./data"
 
+logging:
+  level: "info"   # debug, info, warn, error
+  format: "json"  # json or text
+
 session:
   headerName: "X-Virtual-Session-Id"
   inactivityTimeout: "30m"
@@ -225,12 +229,21 @@ scripting:
   defaultTimeoutMs: 100
 
 ai:
-  openaiApiKey: ""
-  openaiModel: ""
-  openaiBaseUrl: ""
+  provider: "openai"  # or "claude"
+  openai:
+    apiKey: ""
+    model: "gpt-4o-mini"
+    baseUrl: ""
+  claude:
+    apiKey: ""
+    model: "claude-sonnet-4-6"
+    baseUrl: ""
+    apiVersion: "2023-06-01"
 ```
 
-Use environment variables or local config overrides for secrets and provider-specific AI settings.
+Legacy OpenAI aliases (`ai.openaiApiKey`, `ai.openaiModel`, `ai.openaiBaseUrl`) are still supported for backward compatibility. Use environment variables or local config overrides for secrets and provider-specific AI settings.
+
+Use `logging.level: "debug"` during troubleshooting to include debug-level request noise such as health, metrics, and static asset access logs. For production, `info` with `json` is the recommended default.
 
 ## API Surface
 
@@ -267,7 +280,7 @@ Use environment variables or local config overrides for secrets and provider-spe
 
 ### AI, scripts, store, sessions, and archives
 
-- `GET /_api/ai/status`
+- `GET /_api/ai/status` — returns the selected provider plus whether AI generation is configured
 - `GET /_api/ai-scenarios`
 - `POST /_api/ai-scenarios`
 - `PUT /_api/ai-scenarios/:scenarioId`

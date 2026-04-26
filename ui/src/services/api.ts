@@ -643,10 +643,16 @@ export const aiApi = {
         return handleResponse<{ source: string }>(response);
     },
 
-    isConfigured: async (): Promise<boolean> => {
+    getStatus: async (): Promise<import('../types').AIStatus> => {
         const response = await fetch(`${API_BASE}/ai/status`);
-        if (!response.ok) return false;
-        const data = await response.json();
+        if (!response.ok) {
+            return { configured: false, provider: 'openai' };
+        }
+        return handleResponse<import('../types').AIStatus>(response);
+    },
+
+    isConfigured: async (): Promise<boolean> => {
+        const data = await aiApi.getStatus();
         return data.configured === true;
     },
 };

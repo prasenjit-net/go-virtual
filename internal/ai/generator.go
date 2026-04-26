@@ -1,55 +1,58 @@
 package ai
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
-const defaultModel = "gpt-4o-mini"
-const openAIEndpoint = "https://api.openai.com/v1/chat/completions"
-
-// Config holds the AI generator configuration.
-type Config struct {
-	APIKey string
-	Model  string
-	// Endpoint overrides the OpenAI API URL. Used in tests to point at a
-	// local mock server. Defaults to openAIEndpoint when empty.
-	Endpoint string
-}
-
-// Generator uses OpenAI to generate mock response configurations.
+// Generator uses the configured AI provider to generate mock response configurations.
 type Generator struct {
 	cfg      Config
-	client   *http.Client
-	endpoint string
+	provider completionProvider
 }
 
 // NewGenerator creates a new Generator with the given config.
 func NewGenerator(cfg Config) *Generator {
-	if cfg.Model == "" {
-		cfg.Model = defaultModel
-	}
-	ep := cfg.Endpoint
-	if ep == "" {
-		ep = openAIEndpoint
-	}
+	cfg = cfg.Normalize()
+	client := newHTTPClient()
 	return &Generator{
 		cfg:      cfg,
-		client:   &http.Client{Timeout: 30 * time.Second},
-		endpoint: ep,
+		provider: newCompletionProvider(cfg, client),
 	}
 }
 
 // IsConfigured returns true if the generator has a valid API key.
 func (g *Generator) IsConfigured() bool {
-	return strings.TrimSpace(g.cfg.APIKey) != ""
+	return g.provider != nil && g.provider.IsConfigured()
+}
+
+// Status returns the selected provider and whether it is configured.
+func (g *Generator) Status() Status {
+	if g == nil || g.provider == nil {
+		return Status{Configured: false, Provider: openAIProviderName}
+	}
+	return Status{
+		Configured: g.provider.IsConfigured(),
+		Provider:   g.provider.Name(),
+		Model:      g.provider.Model(),
+	}
+}
+
+// MissingConfigMessage reports how to configure the currently selected provider.
+func (g *Generator) MissingConfigMessage() string {
+	if g == nil || g.provider == nil {
+		return `AI generation is not configured — set ai.provider and the selected provider credentials in config.yaml`
+	}
+	return g.provider.MissingConfigMessage()
+}
+
+// ProviderDisplayName returns the selected provider name for UI and validation messages.
+func (g *Generator) ProviderDisplayName() string {
+	return titleProvider(g.Status().Provider)
 }
 
 // OperationContext provides the operation metadata used to build the prompt.
@@ -126,65 +129,23 @@ type RuntimeScenario struct {
 	UseDefaultSuccessStatus bool
 }
 
-// GenerateResponse calls the OpenAI API and returns a ResponseConfigInput
+// GenerateResponse calls the configured AI provider and returns a ResponseConfigInput
 // populated with realistic fake data. userPrompt may be empty.
 func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, userPrompt string) (*models.ResponseConfigInput, error) {
 	if !g.IsConfigured() {
-		return nil, fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
+		return nil, fmt.Errorf("%s", g.MissingConfigMessage())
 	}
 
 	systemPrompt := buildSystemPrompt(op)
 	userMsg := buildUserMessage(op, userPrompt)
-
-	reqBody := map[string]any{
-		"model": g.cfg.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userMsg},
-		},
-		"temperature":     0.7,
-		"response_format": map[string]string{"type": "json_object"},
-	}
-
-	data, err := json.Marshal(reqBody)
+	content, err := g.provider.Complete(ctx, providerRequest{
+		SystemPrompt: systemPrompt,
+		Messages:     []ChatMessage{{Role: "user", Content: userMsg}},
+		Temperature:  0.7,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
-
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("OpenAI request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode OpenAI response: %w", err)
-	}
-	if apiResp.Error != nil {
-		return nil, fmt.Errorf("OpenAI error: %s", apiResp.Error.Message)
-	}
-	if len(apiResp.Choices) == 0 {
-		return nil, fmt.Errorf("OpenAI returned no choices")
-	}
-
-	content := apiResp.Choices[0].Message.Content
 
 	// Parse the JSON returned by the model into a ResponseConfigInput.
 	var input models.ResponseConfigInput
@@ -215,67 +176,25 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 	return &input, nil
 }
 
-// GenerateRuntimeResponse calls the OpenAI API to generate a concrete response
+// GenerateRuntimeResponse calls the configured AI provider to generate a concrete response
 // for a live request. The response is not a reusable config template; it is the
 // final HTTP payload that should be returned to the caller and optionally saved
 // for replay.
 func (g *Generator) GenerateRuntimeResponse(ctx context.Context, op OperationContext, reqCtx RuntimeRequestContext) (*RuntimeResponse, error) {
 	if !g.IsConfigured() {
-		return nil, fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
+		return nil, fmt.Errorf("%s", g.MissingConfigMessage())
 	}
 
 	systemPrompt := buildRuntimeSystemPrompt(op, reqCtx.Scenario)
 	userMsg := buildRuntimeUserMessage(op, reqCtx)
-
-	reqBody := map[string]any{
-		"model": g.cfg.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt},
-			{"role": "user", "content": userMsg},
-		},
-		"temperature":     0.3,
-		"response_format": map[string]string{"type": "json_object"},
-	}
-
-	data, err := json.Marshal(reqBody)
+	content, err := g.provider.Complete(ctx, providerRequest{
+		SystemPrompt: systemPrompt,
+		Messages:     []ChatMessage{{Role: "user", Content: userMsg}},
+		Temperature:  0.3,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
-
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("OpenAI request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return nil, fmt.Errorf("failed to decode OpenAI response: %w", err)
-	}
-	if apiResp.Error != nil {
-		return nil, fmt.Errorf("OpenAI error: %s", apiResp.Error.Message)
-	}
-	if len(apiResp.Choices) == 0 {
-		return nil, fmt.Errorf("OpenAI returned no choices")
-	}
-
-	content := apiResp.Choices[0].Message.Content
 
 	var wrapper struct {
 		StatusCode int               `json:"statusCode"`
@@ -326,74 +245,28 @@ type ScriptContext struct {
 	Inputs *OperationInputs
 }
 
-// GenerateScript calls the OpenAI API and returns Starlark source code for a
+// GenerateScript calls the configured AI provider and returns Starlark source code for a
 // script. priorMessages is the conversation history from previous turns (may be
 // nil for the first call). currentSource is the script that is currently in the
 // editor (empty on the first call); the model uses it as a starting point for
 // modifications. userPrompt describes what the script should do.
 func (g *Generator) GenerateScript(ctx context.Context, sctx ScriptContext, priorMessages []ChatMessage, currentSource, userPrompt string) (string, error) {
 	if !g.IsConfigured() {
-		return "", fmt.Errorf("OpenAI API key not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable")
+		return "", fmt.Errorf("%s", g.MissingConfigMessage())
 	}
 
 	systemPrompt := buildScriptSystemPrompt(sctx)
 	userMsg := buildScriptUserMessage(sctx, currentSource, userPrompt)
-
-	// Build the messages array: system + conversation history + new user turn.
-	messages := []map[string]string{
-		{"role": "system", "content": systemPrompt},
-	}
-	for _, m := range priorMessages {
-		messages = append(messages, map[string]string{"role": m.Role, "content": m.Content})
-	}
-	messages = append(messages, map[string]string{"role": "user", "content": userMsg})
-
-	reqBody := map[string]any{
-		"model":           g.cfg.Model,
-		"messages":        messages,
-		"temperature":     0.5,
-		"response_format": map[string]string{"type": "json_object"},
-	}
-
-	data, err := json.Marshal(reqBody)
+	messages := append([]ChatMessage{}, priorMessages...)
+	messages = append(messages, ChatMessage{Role: "user", Content: userMsg})
+	content, err := g.provider.Complete(ctx, providerRequest{
+		SystemPrompt: systemPrompt,
+		Messages:     messages,
+		Temperature:  0.5,
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return "", err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, g.endpoint, bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+g.cfg.APIKey)
-
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("OpenAI request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var apiResp struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return "", fmt.Errorf("failed to decode OpenAI response: %w", err)
-	}
-	if apiResp.Error != nil {
-		return "", fmt.Errorf("OpenAI error: %s", apiResp.Error.Message)
-	}
-	if len(apiResp.Choices) == 0 {
-		return "", fmt.Errorf("OpenAI returned no choices")
-	}
-
-	content := apiResp.Choices[0].Message.Content
 
 	// The model wraps the script in {"source": "..."} per the system prompt.
 	var wrapper struct {

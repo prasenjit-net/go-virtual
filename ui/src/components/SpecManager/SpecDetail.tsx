@@ -17,6 +17,7 @@ import {
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
 import type {
+    AIStatus,
     Condition,
     ConditionOperator,
     ModePolicy,
@@ -194,11 +195,13 @@ export default function SpecDetail() {
         queryFn: tagsApi.list,
     })
 
-    const { data: aiConfigured = false, isLoading: aiConfigLoading } = useQuery<boolean>({
-        queryKey: ['ai-configured'],
-        queryFn: () => aiApi.isConfigured(),
+    const { data: aiStatus = { configured: false, provider: 'openai' }, isLoading: aiConfigLoading } = useQuery<AIStatus>({
+        queryKey: ['ai-status'],
+        queryFn: () => aiApi.getStatus(),
         staleTime: 60_000,
     })
+    const aiConfigured = aiStatus.configured
+    const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
     const updateTagsMutation = useMutation({
         mutationFn: (enabledTags: string[]) => specsApi.updateTags(specId!, enabledTags),
@@ -404,7 +407,7 @@ export default function SpecDetail() {
                             </div>
                             {!aiConfigured && (
                                 <p className="text-xs text-fuchsia-600 dark:text-fuchsia-400">
-                                    Configure an OpenAI API key to enable AI fallback.
+                                    Configure {aiProviderLabel} to enable AI fallback.
                                 </p>
                             )}
                             <ConditionsEditor

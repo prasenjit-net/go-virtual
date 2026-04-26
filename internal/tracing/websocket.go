@@ -2,11 +2,11 @@ package tracing
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/prasenjit/go-virtual/internal/logging"
 )
 
 // WebSocketHandler handles WebSocket connections for live tracing
@@ -34,7 +34,12 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Upgrade HTTP connection to WebSocket
 	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
+		logging.Logger("tracing.websocket").Warn("WebSocket upgrade failed",
+			"event", "websocket_upgrade_failed",
+			"path", r.URL.Path,
+			"client_ip", r.RemoteAddr,
+			"error", err,
+		)
 		return
 	}
 	defer conn.Close()
@@ -76,13 +81,21 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// Serialize trace to JSON
 			data, err := json.Marshal(trace)
 			if err != nil {
-				log.Printf("Failed to marshal trace: %v", err)
+				logging.Logger("tracing.websocket").Warn("Failed to marshal trace for websocket stream",
+					"event", "websocket_trace_marshal_failed",
+					"trace_id", trace.ID,
+					"error", err,
+				)
 				continue
 			}
 
 			// Send to client
 			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				log.Printf("Failed to send trace: %v", err)
+				logging.Logger("tracing.websocket").Warn("Failed to send trace over websocket",
+					"event", "websocket_trace_send_failed",
+					"trace_id", trace.ID,
+					"error", err,
+				)
 				return
 			}
 

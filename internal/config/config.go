@@ -3,9 +3,24 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	AIProviderOpenAI        = "openai"
+	AIProviderClaude        = "claude"
+	DefaultOpenAIModel      = "gpt-4o-mini"
+	DefaultClaudeModel      = "claude-sonnet-4-6"
+	DefaultClaudeAPIVersion = "2023-06-01"
+	LogLevelDebug           = "debug"
+	LogLevelInfo            = "info"
+	LogLevelWarn            = "warn"
+	LogLevelError           = "error"
+	LogFormatJSON           = "json"
+	LogFormatText           = "text"
 )
 
 // Config holds the application configuration
@@ -23,11 +38,64 @@ type Config struct {
 
 // AIConfig holds configuration for AI-powered response generation.
 type AIConfig struct {
-	// OpenAIAPIKey is the API key used to call the OpenAI API.
-	// Can also be set via the GOVIRTUAL_AI_OPENAIAPIKEY environment variable.
-	OpenAIAPIKey string `yaml:"openaiApiKey"`
-	// OpenAIModel is the model used for response generation. Defaults to "gpt-4o-mini".
-	OpenAIModel string `yaml:"openaiModel"`
+	// Provider selects which provider powers AI features. Supported values:
+	// "openai" and "claude". Defaults to "openai".
+	Provider string `yaml:"provider"`
+	// OpenAI holds OpenAI-compatible provider configuration.
+	OpenAI OpenAIConfig `yaml:"openai"`
+	// Claude holds Anthropic Claude provider configuration.
+	Claude ClaudeConfig `yaml:"claude"`
+	// Legacy OpenAI aliases kept for backwards compatibility with existing
+	// config files and environment variable names.
+	OpenAIAPIKey  string `yaml:"openaiApiKey"`
+	OpenAIModel   string `yaml:"openaiModel"`
+	OpenAIBaseURL string `yaml:"openaiBaseUrl"`
+}
+
+// OpenAIConfig holds settings for OpenAI-compatible providers.
+type OpenAIConfig struct {
+	APIKey  string `yaml:"apiKey"`
+	Model   string `yaml:"model"`
+	BaseURL string `yaml:"baseUrl"`
+}
+
+// ClaudeConfig holds settings for Anthropic Claude.
+type ClaudeConfig struct {
+	APIKey     string `yaml:"apiKey"`
+	Model      string `yaml:"model"`
+	BaseURL    string `yaml:"baseUrl"`
+	APIVersion string `yaml:"apiVersion"`
+}
+
+// Normalize applies defaults and migrates legacy aliases to the provider-aware shape.
+func (c *AIConfig) Normalize() {
+	c.Provider = strings.ToLower(strings.TrimSpace(c.Provider))
+	if c.Provider == "" {
+		c.Provider = AIProviderOpenAI
+	}
+
+	if strings.TrimSpace(c.OpenAI.APIKey) == "" {
+		c.OpenAI.APIKey = strings.TrimSpace(c.OpenAIAPIKey)
+	}
+	if strings.TrimSpace(c.OpenAIModel) != "" && (strings.TrimSpace(c.OpenAI.Model) == "" || c.OpenAI.Model == DefaultOpenAIModel) {
+		c.OpenAI.Model = strings.TrimSpace(c.OpenAIModel)
+	}
+	if strings.TrimSpace(c.OpenAI.Model) == "" {
+		c.OpenAI.Model = strings.TrimSpace(c.OpenAIModel)
+	}
+	if strings.TrimSpace(c.OpenAI.BaseURL) == "" {
+		c.OpenAI.BaseURL = strings.TrimSpace(c.OpenAIBaseURL)
+	}
+	if strings.TrimSpace(c.OpenAI.Model) == "" {
+		c.OpenAI.Model = DefaultOpenAIModel
+	}
+
+	if strings.TrimSpace(c.Claude.Model) == "" {
+		c.Claude.Model = DefaultClaudeModel
+	}
+	if strings.TrimSpace(c.Claude.APIVersion) == "" {
+		c.Claude.APIVersion = DefaultClaudeAPIVersion
+	}
 }
 
 // BrandingConfig holds UI branding configuration
@@ -49,11 +117,11 @@ type ServerConfig struct {
 
 // TLSConfig holds TLS configuration
 type TLSConfig struct {
-	Enabled      bool   `yaml:"enabled"`       // Enable TLS
-	CertFile     string `yaml:"certFile"`      // Path to certificate file
-	KeyFile      string `yaml:"keyFile"`       // Path to private key file
-	AutoGenerate bool   `yaml:"autoGenerate"`  // Auto-generate self-signed cert if not configured
-	StorePath    string `yaml:"storePath"`     // Path to store auto-generated certs
+	Enabled      bool   `yaml:"enabled"`      // Enable TLS
+	CertFile     string `yaml:"certFile"`     // Path to certificate file
+	KeyFile      string `yaml:"keyFile"`      // Path to private key file
+	AutoGenerate bool   `yaml:"autoGenerate"` // Auto-generate self-signed cert if not configured
+	StorePath    string `yaml:"storePath"`    // Path to store auto-generated certs
 }
 
 // StorageConfig holds storage configuration
@@ -72,6 +140,29 @@ type TracingConfig struct {
 type LoggingConfig struct {
 	Level  string `yaml:"level"`
 	Format string `yaml:"format"`
+}
+
+// Normalize applies supported defaults for logging configuration.
+func (c *LoggingConfig) Normalize() {
+	level := strings.ToLower(strings.TrimSpace(c.Level))
+	switch level {
+	case "", LogLevelInfo:
+		c.Level = LogLevelInfo
+	case LogLevelDebug, LogLevelWarn, LogLevelError:
+		c.Level = level
+	default:
+		c.Level = LogLevelInfo
+	}
+
+	format := strings.ToLower(strings.TrimSpace(c.Format))
+	switch format {
+	case "", LogFormatJSON:
+		c.Format = LogFormatJSON
+	case LogFormatText:
+		c.Format = format
+	default:
+		c.Format = LogFormatJSON
+	}
 }
 
 // SessionConfig controls per-request session behaviour.
@@ -162,6 +253,16 @@ func Default() *Config {
 			TimeoutSeconds:     30,
 			InsecureSkipVerify: false,
 		},
+		AI: AIConfig{
+			Provider: AIProviderOpenAI,
+			OpenAI: OpenAIConfig{
+				Model: DefaultOpenAIModel,
+			},
+			Claude: ClaudeConfig{
+				Model:      DefaultClaudeModel,
+				APIVersion: DefaultClaudeAPIVersion,
+			},
+		},
 	}
 }
 
@@ -176,6 +277,8 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	cfg.AI.Normalize()
+	cfg.Logging.Normalize()
 
 	// Convert relative storage path to absolute using current working directory
 	// This ensures consistent behavior across all platforms

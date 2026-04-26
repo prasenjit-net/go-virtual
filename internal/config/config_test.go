@@ -49,6 +49,18 @@ func TestDefault(t *testing.T) {
 	if cfg.Logging.Format != "json" {
 		t.Errorf("Expected default log format 'json', got %q", cfg.Logging.Format)
 	}
+	if cfg.AI.Provider != AIProviderOpenAI {
+		t.Errorf("Expected default AI provider %q, got %q", AIProviderOpenAI, cfg.AI.Provider)
+	}
+	if cfg.AI.OpenAI.Model != DefaultOpenAIModel {
+		t.Errorf("Expected default OpenAI model %q, got %q", DefaultOpenAIModel, cfg.AI.OpenAI.Model)
+	}
+	if cfg.AI.Claude.Model != DefaultClaudeModel {
+		t.Errorf("Expected default Claude model %q, got %q", DefaultClaudeModel, cfg.AI.Claude.Model)
+	}
+	if cfg.AI.Claude.APIVersion != DefaultClaudeAPIVersion {
+		t.Errorf("Expected default Claude API version %q, got %q", DefaultClaudeAPIVersion, cfg.AI.Claude.APIVersion)
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -104,6 +116,75 @@ logging:
 	}
 	if cfg.Logging.Format != "text" {
 		t.Errorf("Expected log format 'text', got %q", cfg.Logging.Format)
+	}
+}
+
+func TestLoad_AIProviderConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+ai:
+  provider: claude
+  claude:
+    apiKey: test-claude-key
+    model: claude-3-7-sonnet-latest
+    baseUrl: https://api.anthropic.com/v1/messages
+    apiVersion: 2023-06-01
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.AI.Provider != AIProviderClaude {
+		t.Fatalf("Expected provider %q, got %q", AIProviderClaude, cfg.AI.Provider)
+	}
+	if cfg.AI.Claude.APIKey != "test-claude-key" {
+		t.Errorf("Expected Claude API key to load")
+	}
+	if cfg.AI.Claude.Model != "claude-3-7-sonnet-latest" {
+		t.Errorf("Expected Claude model override, got %q", cfg.AI.Claude.Model)
+	}
+	if cfg.AI.Claude.BaseURL != "https://api.anthropic.com/v1/messages" {
+		t.Errorf("Expected Claude base URL override, got %q", cfg.AI.Claude.BaseURL)
+	}
+}
+
+func TestLoad_AILegacyOpenAIAliases(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+ai:
+  openaiApiKey: legacy-key
+  openaiModel: gpt-4.1-mini
+  openaiBaseUrl: http://localhost:1234/v1
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.AI.Provider != AIProviderOpenAI {
+		t.Fatalf("Expected provider %q, got %q", AIProviderOpenAI, cfg.AI.Provider)
+	}
+	if cfg.AI.OpenAI.APIKey != "legacy-key" {
+		t.Errorf("Expected legacy OpenAI API key to map into nested config")
+	}
+	if cfg.AI.OpenAI.Model != "gpt-4.1-mini" {
+		t.Errorf("Expected legacy OpenAI model to map into nested config, got %q", cfg.AI.OpenAI.Model)
+	}
+	if cfg.AI.OpenAI.BaseURL != "http://localhost:1234/v1" {
+		t.Errorf("Expected legacy OpenAI base URL to map into nested config, got %q", cfg.AI.OpenAI.BaseURL)
 	}
 }
 
@@ -242,6 +323,36 @@ func TestLoggingConfig(t *testing.T) {
 	}
 	if cfg.Format != "text" {
 		t.Errorf("Expected format 'text', got %q", cfg.Format)
+	}
+}
+
+func TestLoggingConfigNormalize(t *testing.T) {
+	cfg := LoggingConfig{
+		Level:  " DEBUG ",
+		Format: " TEXT ",
+	}
+	cfg.Normalize()
+
+	if cfg.Level != LogLevelDebug {
+		t.Fatalf("expected normalized debug level, got %q", cfg.Level)
+	}
+	if cfg.Format != LogFormatText {
+		t.Fatalf("expected normalized text format, got %q", cfg.Format)
+	}
+}
+
+func TestLoggingConfigNormalizeInvalidValues(t *testing.T) {
+	cfg := LoggingConfig{
+		Level:  "verbose",
+		Format: "pretty",
+	}
+	cfg.Normalize()
+
+	if cfg.Level != LogLevelInfo {
+		t.Fatalf("expected invalid level to fall back to info, got %q", cfg.Level)
+	}
+	if cfg.Format != LogFormatJSON {
+		t.Fatalf("expected invalid format to fall back to json, got %q", cfg.Format)
 	}
 }
 

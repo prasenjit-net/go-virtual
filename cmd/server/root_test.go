@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/spf13/viper"
 )
 
@@ -24,6 +25,21 @@ func TestSetDefaults(t *testing.T) {
 	}
 	if viper.GetInt("tracing.maxTraces") != 1000 {
 		t.Fatalf("expected default tracing maxTraces 1000")
+	}
+	if viper.GetString("ai.provider") != "openai" {
+		t.Fatalf("expected default AI provider openai, got %q", viper.GetString("ai.provider"))
+	}
+	if viper.GetString("ai.openai.model") != "gpt-4o-mini" {
+		t.Fatalf("expected default OpenAI model gpt-4o-mini, got %q", viper.GetString("ai.openai.model"))
+	}
+	if viper.GetString("ai.claude.model") == "" {
+		t.Fatalf("expected default Claude model to be set")
+	}
+	if viper.GetString("logging.level") != "info" {
+		t.Fatalf("expected default logging level info, got %q", viper.GetString("logging.level"))
+	}
+	if viper.GetString("logging.format") != "json" {
+		t.Fatalf("expected default logging format json, got %q", viper.GetString("logging.format"))
 	}
 
 	cwd, _ := os.Getwd()
@@ -92,5 +108,37 @@ func TestRunInit(t *testing.T) {
 	initForce = true
 	if err := runInit(nil, nil); err != nil {
 		t.Fatalf("expected runInit with --force to succeed: %v", err)
+	}
+}
+
+func TestLoadAIConfigAndFirstNonEmpty(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.Set("ai.provider", config.AIProviderClaude)
+	viper.Set("ai.openaiApiKey", " legacy-key ")
+	viper.Set("ai.openaiModel", " legacy-model ")
+	viper.Set("ai.openaiBaseUrl", " https://legacy.example ")
+	viper.Set("ai.claude.apiKey", " claude-key ")
+	viper.Set("ai.claude.model", " claude-model ")
+	viper.Set("ai.claude.baseUrl", " https://claude.example ")
+	viper.Set("ai.claude.apiVersion", " 2023-06-01 ")
+
+	cfg := loadAIConfig()
+	if cfg.Provider != config.AIProviderClaude {
+		t.Fatalf("expected provider %q, got %q", config.AIProviderClaude, cfg.Provider)
+	}
+	if cfg.OpenAI.APIKey != "legacy-key" || cfg.OpenAI.Model != "legacy-model" || cfg.OpenAI.BaseURL != "https://legacy.example" {
+		t.Fatalf("expected legacy OpenAI aliases to load, got %+v", cfg.OpenAI)
+	}
+	if cfg.Claude.APIKey != "claude-key" || cfg.Claude.Model != "claude-model" || cfg.Claude.BaseURL != "https://claude.example" || cfg.Claude.APIVersion != "2023-06-01" {
+		t.Fatalf("expected Claude config to be trimmed and loaded, got %+v", cfg.Claude)
+	}
+
+	if got := firstNonEmpty("", "  ", " value ", "other"); got != "value" {
+		t.Fatalf("expected first non-empty trimmed value, got %q", got)
+	}
+	if got := firstNonEmpty("", " "); got != "" {
+		t.Fatalf("expected empty fallback, got %q", got)
 	}
 }

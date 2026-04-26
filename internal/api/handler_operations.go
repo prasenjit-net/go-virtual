@@ -110,7 +110,7 @@ func (h *Handler) validateModePolicy(spec *models.Spec, policy models.ModePolicy
 		return fmt.Errorf("invalid proxy conditions: signature conditions are only supported on operation responses")
 	}
 	if policy.AI.Enabled && (h.aiGenerator == nil || !h.aiGenerator.IsConfigured()) {
-		return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
+		return h.aiModeConfigurationError()
 	}
 	if policy.Proxy.Enabled && (spec == nil || spec.BackendURI == "") {
 		return fmt.Errorf("backendUri must be set before enabling proxy mode")
