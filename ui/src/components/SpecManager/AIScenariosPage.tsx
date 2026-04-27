@@ -173,7 +173,7 @@ function ScenarioListItem({
             className={clsx(
                 'rounded-xl border transition-colors',
                 selected
-                    ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-950/20'
+                    ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/30'
                     : 'border-gray-200 bg-white hover:border-gray-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700'
             )}
         >
