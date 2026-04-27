@@ -58,8 +58,8 @@ function SnapshotPanel() {
     }
 
     return (
-        <div className="p-6 max-w-3xl mx-auto">
-            <div className="flex items-center gap-3 mb-6">
+        <div className="p-8">
+            <div className="flex items-center gap-3 mb-8">
                 <Archive className="w-6 h-6 text-indigo-500" />
                 <div>
                     <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Archives — Snapshot Mode</h1>
@@ -160,7 +160,7 @@ export default function ArchiveManager() {
     }
 
     if (infoLoading) {
-        return <div className="p-6 text-center text-gray-500 dark:text-gray-400">Loading…</div>
+        return <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading…</div>
     }
 
     // Snapshot mode: delegate to dedicated panel
@@ -169,9 +169,9 @@ export default function ArchiveManager() {
     }
 
     return (
-        <div className="p-6 max-w-5xl mx-auto">
+        <div className="p-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                     <Archive className="w-6 h-6 text-indigo-500" />
                     <div>

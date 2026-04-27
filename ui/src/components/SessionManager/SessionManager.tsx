@@ -63,9 +63,9 @@ export default function SessionManager() {
     const truncateID = (id: string) => id.slice(0, 8) + '…';
 
     return (
-        <div className="p-6 max-w-6xl mx-auto">
+        <div className="p-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                     <Users className="w-6 h-6 text-teal-400" />
                     <div>

@@ -93,9 +93,9 @@ export default function StoreManager() {
     };
 
     return (
-        <div className="p-6 max-w-5xl mx-auto">
+        <div className="p-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                     <Database className="w-6 h-6 text-indigo-400" />
                     <div>
