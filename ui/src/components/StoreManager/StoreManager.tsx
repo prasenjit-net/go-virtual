@@ -97,10 +97,10 @@ export default function StoreManager() {
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
-                    <Database className="w-6 h-6 text-indigo-400" />
+                    <Database className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
                     <div>
-                        <h1 className="text-xl font-semibold text-white">Global Store</h1>
-                        <p className="text-sm text-slate-400">
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Global Store</h1>
+                        <p className="text-sm text-gray-500 dark:text-slate-400">
                             Persistent key-value data seeded into every session
                         </p>
                     </div>
@@ -121,25 +121,25 @@ export default function StoreManager() {
                     placeholder="Search by key…"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
             </div>
 
             {/* Entry table */}
             {isLoading ? (
-                <div className="text-center py-12 text-slate-400">Loading…</div>
+                <div className="text-center py-12 text-gray-500 dark:text-slate-400">Loading…</div>
             ) : filtered.length === 0 ? (
-                <div className="text-center py-12 text-slate-400">
+                <div className="text-center py-12 text-gray-500 dark:text-slate-400">
                     <Database className="w-10 h-10 mx-auto mb-3 opacity-30" />
                     {entries.length === 0
                         ? 'No store entries. Add global data accessible to all scripts.'
                         : 'No entries match the search.'}
                 </div>
             ) : (
-                <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="bg-slate-700/50 text-slate-400 text-xs uppercase tracking-wide">
+                            <tr className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 text-xs uppercase tracking-wide">
                                 <th className="px-4 py-3 text-left w-1/4">Key</th>
                                 <th className="px-4 py-3 text-left">Value</th>
                                 <th className="px-4 py-3 text-left w-36">Updated</th>
@@ -150,29 +150,29 @@ export default function StoreManager() {
                             {filtered.map((entry) => (
                                 <tr
                                     key={entry.key}
-                                    className="border-t border-slate-700 hover:bg-slate-700/30 transition-colors"
+                                    className="border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors"
                                 >
-                                    <td className="px-4 py-3 font-mono text-indigo-300 font-medium">
+                                    <td className="px-4 py-3 font-mono text-indigo-600 dark:text-indigo-300 font-medium">
                                         {entry.key}
                                     </td>
-                                    <td className="px-4 py-3 font-mono text-slate-300 truncate max-w-xs">
+                                    <td className="px-4 py-3 font-mono text-gray-700 dark:text-slate-300 truncate max-w-xs">
                                         {truncateValue(entry.value)}
                                     </td>
-                                    <td className="px-4 py-3 text-slate-400 text-xs">
+                                    <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
                                         {new Date(entry.updatedAt).toLocaleString()}
                                     </td>
                                     <td className="px-4 py-3 text-right">
                                         <div className="flex items-center justify-end gap-1">
                                             <button
                                                 onClick={() => openEdit(entry)}
-                                                className="p-1.5 hover:bg-slate-600 rounded text-slate-400 hover:text-white transition-colors"
+                                                className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-600 rounded text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                                                 title="Edit"
                                             >
                                                 <Edit2 className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={() => deleteMutation.mutate(entry.key)}
-                                                className="p-1.5 hover:bg-red-900/30 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                                className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-gray-500 dark:text-slate-400 hover:text-red-400 transition-colors"
                                                 title="Delete"
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
@@ -189,12 +189,12 @@ export default function StoreManager() {
             {/* Danger Zone */}
             {entries.length > 0 && (
                 <details className="mt-8 group">
-                    <summary className="cursor-pointer text-sm text-slate-400 flex items-center gap-2 select-none">
+                    <summary className="cursor-pointer text-sm text-gray-500 dark:text-slate-400 flex items-center gap-2 select-none">
                         <AlertTriangle className="w-4 h-4 text-amber-400" />
                         Danger Zone
                     </summary>
-                    <div className="mt-3 p-4 border border-red-800/40 rounded-lg bg-red-900/10">
-                        <p className="text-sm text-slate-300 mb-3">
+                    <div className="mt-3 p-4 border border-red-200 dark:border-red-800/40 rounded-lg bg-red-50 dark:bg-red-900/10">
+                        <p className="text-sm text-gray-700 dark:text-slate-300 mb-3">
                             Clearing all entries will remove every key from the global store.
                             Active sessions will retain their current snapshot until they expire.
                         </p>
@@ -211,12 +211,12 @@ export default function StoreManager() {
             {/* Add / Edit Modal */}
             {showAddModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-lg shadow-2xl">
-                        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
-                            <h2 className="text-white font-semibold">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 w-full max-w-lg shadow-2xl">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
+                            <h2 className="text-gray-900 dark:text-white font-semibold">
                                 {editEntry ? `Edit "${editEntry.key}"` : 'Add Store Entry'}
                             </h2>
-                            <button onClick={closeModal} className="text-slate-400 hover:text-white">
+                            <button onClick={closeModal} className="text-gray-400 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -224,24 +224,24 @@ export default function StoreManager() {
                         <div className="p-5 space-y-4">
                             {/* Key */}
                             <div>
-                                <label className="block text-sm text-slate-400 mb-1">Key</label>
+                                <label className="block text-sm text-gray-500 dark:text-slate-400 mb-1">Key</label>
                                 <input
                                     type="text"
                                     value={newKey}
                                     onChange={(e) => setNewKey(e.target.value)}
                                     disabled={!!editEntry}
                                     placeholder="e.g. id-counter"
-                                    className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed font-mono"
+                                    className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-lg text-gray-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed font-mono"
                                 />
                             </div>
 
                             {/* Value — Monaco JSON editor */}
                             <div>
-                                <label className="block text-sm text-slate-400 mb-1">
+                                <label className="block text-sm text-gray-500 dark:text-slate-400 mb-1">
                                     Value{' '}
-                                    <span className="text-xs text-slate-500">(any valid JSON)</span>
+                                    <span className="text-xs text-gray-400 dark:text-slate-500">(any valid JSON)</span>
                                 </label>
-                                <div className="rounded-lg overflow-hidden border border-slate-600">
+                                <div className="rounded-lg overflow-hidden border border-gray-300 dark:border-slate-600">
                                     <Editor
                                         height="180px"
                                         language="json"
@@ -261,15 +261,15 @@ export default function StoreManager() {
                                     />
                                 </div>
                                 {editorError && (
-                                    <p className="text-red-400 text-xs mt-1">{editorError}</p>
+                                    <p className="text-red-600 dark:text-red-400 text-xs mt-1">{editorError}</p>
                                 )}
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-2 px-5 py-4 border-t border-slate-700">
+                        <div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-200 dark:border-slate-700">
                             <button
                                 onClick={closeModal}
-                                className="px-4 py-2 text-slate-300 hover:text-white text-sm transition-colors"
+                                className="px-4 py-2 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white text-sm transition-colors"
                             >
                                 Cancel
                             </button>
@@ -289,16 +289,16 @@ export default function StoreManager() {
             {/* Clear confirmation */}
             {showClearConfirm && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl p-6">
-                        <h2 className="text-white font-semibold mb-2">Clear All Entries?</h2>
-                        <p className="text-slate-400 text-sm mb-4">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 w-full max-w-sm shadow-2xl p-6">
+                        <h2 className="text-gray-900 dark:text-white font-semibold mb-2">Clear All Entries?</h2>
+                        <p className="text-gray-500 dark:text-slate-400 text-sm mb-4">
                             This will permanently remove all {entries.length} entries from the global
                             store. This cannot be undone.
                         </p>
                         <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => setShowClearConfirm(false)}
-                                className="px-4 py-2 text-slate-300 hover:text-white text-sm"
+                                className="px-4 py-2 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white text-sm"
                             >
                                 Cancel
                             </button>

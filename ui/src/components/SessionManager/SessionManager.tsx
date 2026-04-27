@@ -67,17 +67,17 @@ export default function SessionManager() {
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
-                    <Users className="w-6 h-6 text-teal-400" />
+                    <Users className="w-6 h-6 text-teal-500 dark:text-teal-400" />
                     <div>
-                        <h1 className="text-xl font-semibold text-white">
+                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
                             Sessions
                             {count > 0 && (
-                                <span className="ml-2 text-xs bg-teal-700/40 text-teal-300 px-2 py-0.5 rounded-full">
+                                <span className="ml-2 text-xs bg-teal-100 text-teal-700 dark:bg-teal-700/40 dark:text-teal-300 px-2 py-0.5 rounded-full">
                                     {count}
                                 </span>
                             )}
                         </h1>
-                        <p className="text-sm text-slate-400">Active request sessions</p>
+                        <p className="text-sm text-gray-500 dark:text-slate-400">Active request sessions</p>
                     </div>
                 </div>
 
@@ -85,7 +85,7 @@ export default function SessionManager() {
                     <button
                         onClick={() => refetch()}
                         disabled={isFetching}
-                        className="p-2 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white transition-colors"
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                         title="Refresh"
                     >
                         <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
@@ -106,17 +106,17 @@ export default function SessionManager() {
                 {/* Session list */}
                 <div className="flex-1 min-w-0">
                     {isLoading ? (
-                        <div className="text-center py-12 text-slate-400">Loading…</div>
+                        <div className="text-center py-12 text-gray-500 dark:text-slate-400">Loading…</div>
                     ) : sessions.length === 0 ? (
-                        <div className="text-center py-12 text-slate-400">
+                        <div className="text-center py-12 text-gray-500 dark:text-slate-400">
                             <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
                             No active sessions
                         </div>
                     ) : (
-                        <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+                        <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="bg-slate-700/50 text-slate-400 text-xs uppercase tracking-wide">
+                                    <tr className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 text-xs uppercase tracking-wide">
                                         <th className="px-4 py-3 text-left">Session ID</th>
                                         <th className="px-4 py-3 text-left">Created</th>
                                         <th className="px-4 py-3 text-left">Last Active</th>
@@ -133,29 +133,29 @@ export default function SessionManager() {
                                                     s.id === selectedSession?.id ? null : s
                                                 )
                                             }
-                                            className={`border-t border-slate-700 hover:bg-slate-700/30 transition-colors cursor-pointer ${selectedSession?.id === s.id
-                                                    ? 'bg-teal-900/20 border-l-2 border-l-teal-500'
+                                            className={`border-t border-gray-100 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer ${selectedSession?.id === s.id
+                                                    ? 'bg-teal-50 dark:bg-teal-900/20 border-l-2 border-l-teal-500'
                                                     : ''
                                                 }`}
                                         >
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="font-mono text-teal-300 text-xs">
+                                                    <span className="font-mono text-teal-600 dark:text-teal-300 text-xs">
                                                         {truncateID(s.id)}
                                                     </span>
-                                                    <ChevronRight className="w-3 h-3 text-slate-500" />
+                                                    <ChevronRight className="w-3 h-3 text-gray-400 dark:text-slate-500" />
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-slate-400 text-xs">
+                                            <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
                                                 {formatAge(s.createdAt)}
                                             </td>
-                                            <td className="px-4 py-3 text-slate-400 text-xs">
+                                            <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3" />
                                                     {formatAge(s.lastActive)}
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-3 text-slate-300">
+                                            <td className="px-4 py-3 text-gray-700 dark:text-slate-300">
                                                 {s.entryCount}
                                             </td>
                                             <td className="px-4 py-3 text-right">
@@ -164,7 +164,7 @@ export default function SessionManager() {
                                                         e.stopPropagation();
                                                         invalidateMutation.mutate(s.id);
                                                     }}
-                                                    className="p-1.5 hover:bg-red-900/30 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-gray-500 dark:text-slate-400 hover:text-red-400 transition-colors"
                                                     title="Invalidate"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
@@ -180,12 +180,12 @@ export default function SessionManager() {
 
                 {/* Detail panel */}
                 {selectedSession && (
-                    <div className="w-80 flex-shrink-0 bg-slate-800 rounded-lg border border-slate-700 h-fit">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-                            <h2 className="text-sm font-semibold text-white">Session Detail</h2>
+                    <div className="w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 h-fit">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700">
+                            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Session Detail</h2>
                             <button
                                 onClick={() => setSelectedSession(null)}
-                                className="text-slate-400 hover:text-white"
+                                className="text-gray-400 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white"
                             >
                                 <X className="w-4 h-4" />
                             </button>
@@ -193,38 +193,38 @@ export default function SessionManager() {
 
                         <div className="p-4 space-y-3 text-sm">
                             <div>
-                                <div className="text-slate-400 text-xs mb-1">Session ID</div>
-                                <div className="font-mono text-teal-300 text-xs break-all">
+                                <div className="text-gray-500 dark:text-slate-400 text-xs mb-1">Session ID</div>
+                                <div className="font-mono text-teal-600 dark:text-teal-300 text-xs break-all">
                                     {selectedSession.id}
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                                 <div>
-                                    <div className="text-slate-400 mb-0.5">Created</div>
-                                    <div className="text-slate-300">
+                                    <div className="text-gray-500 dark:text-slate-400 mb-0.5">Created</div>
+                                    <div className="text-gray-700 dark:text-slate-300">
                                         {formatTime(selectedSession.createdAt)}
                                     </div>
                                 </div>
                                 <div>
-                                    <div className="text-slate-400 mb-0.5">Last Active</div>
-                                    <div className="text-slate-300">
+                                    <div className="text-gray-500 dark:text-slate-400 mb-0.5">Last Active</div>
+                                    <div className="text-gray-700 dark:text-slate-300">
                                         {formatTime(selectedSession.lastActive)}
                                     </div>
                                 </div>
                             </div>
 
                             <div>
-                                <div className="text-slate-400 text-xs mb-2">
+                                <div className="text-gray-500 dark:text-slate-400 text-xs mb-2">
                                     Store Snapshot ({selectedSession.entryCount} entries)
                                 </div>
                                 {detailLoading ? (
-                                    <div className="text-slate-400 text-xs">Loading…</div>
+                                    <div className="text-gray-500 dark:text-slate-400 text-xs">Loading…</div>
                                 ) : sessionDetail?.storeSnapshot &&
                                     Object.keys(sessionDetail.storeSnapshot).length > 0 ? (
-                                    <div className="bg-slate-900 rounded-lg p-2 overflow-auto max-h-48">
+                                    <div className="bg-gray-50 dark:bg-slate-900 rounded-lg p-2 overflow-auto max-h-48">
                                         <table className="w-full text-xs">
                                             <thead>
-                                                <tr className="text-slate-500">
+                                                <tr className="text-gray-400 dark:text-slate-500">
                                                     <th className="text-left pb-1">Key</th>
                                                     <th className="text-left pb-1">Value</th>
                                                 </tr>
@@ -234,12 +234,12 @@ export default function SessionManager() {
                                                     ([k, v]) => (
                                                         <tr
                                                             key={k}
-                                                            className="border-t border-slate-800"
+                                                            className="border-t border-gray-100 dark:border-slate-800"
                                                         >
-                                                            <td className="py-1 pr-2 font-mono text-indigo-300">
+                                                            <td className="py-1 pr-2 font-mono text-indigo-600 dark:text-indigo-300">
                                                                 {k}
                                                             </td>
-                                                            <td className="py-1 font-mono text-slate-300 truncate max-w-[120px]">
+                                                            <td className="py-1 font-mono text-gray-700 dark:text-slate-300 truncate max-w-[120px]">
                                                                 {JSON.stringify(v)}
                                                             </td>
                                                         </tr>
@@ -249,7 +249,7 @@ export default function SessionManager() {
                                         </table>
                                     </div>
                                 ) : (
-                                    <div className="text-slate-500 text-xs">No store entries</div>
+                                    <div className="text-gray-400 dark:text-slate-500 text-xs">No store entries</div>
                                 )}
                             </div>
 
@@ -269,19 +269,19 @@ export default function SessionManager() {
             {/* Invalidate All confirmation */}
             {showInvalidateAll && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 rounded-xl border border-slate-700 w-full max-w-sm shadow-2xl p-6">
+                    <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 w-full max-w-sm shadow-2xl p-6">
                         <div className="flex items-center gap-3 mb-3">
                             <AlertTriangle className="w-5 h-5 text-amber-400" />
-                            <h2 className="text-white font-semibold">Invalidate All Sessions?</h2>
+                            <h2 className="text-gray-900 dark:text-white font-semibold">Invalidate All Sessions?</h2>
                         </div>
-                        <p className="text-slate-400 text-sm mb-4">
+                        <p className="text-gray-500 dark:text-slate-400 text-sm mb-4">
                             This will remove all {count} active sessions. Clients will receive new
                             session IDs on their next request.
                         </p>
                         <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => setShowInvalidateAll(false)}
-                                className="px-4 py-2 text-slate-300 hover:text-white text-sm"
+                                className="px-4 py-2 text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white text-sm"
                             >
                                 Cancel
                             </button>
