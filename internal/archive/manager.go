@@ -50,13 +50,13 @@ type RestoreResponse struct {
 type ArchiveManager struct {
 	dir   string
 	stor  storage.Storage
-	gs    *store.GlobalStore
+	gs    store.GlobalStoreBackend
 	mu    sync.Mutex
 	index []*ArchiveMeta
 }
 
 // NewArchiveManager creates (or opens) the archives directory and loads the index.
-func NewArchiveManager(dir string, stor storage.Storage, gs *store.GlobalStore) (*ArchiveManager, error) {
+func NewArchiveManager(dir string, stor storage.Storage, gs store.GlobalStoreBackend) (*ArchiveManager, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("archive: create dir %s: %w", dir, err)
 	}

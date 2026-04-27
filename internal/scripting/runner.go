@@ -22,7 +22,7 @@ type CompiledScript interface {
 	// When sess is non-nil, a `store` builtin is injected into the Starlark thread
 	// and access events are appended to accessLog.
 	// logBuf collects log() calls from the script; may be nil (logs are discarded).
-	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (any, error)
+	Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess store.SessionState, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (any, error)
 }
 
 // StarlarkRunner compiles and executes Starlark scripts.
@@ -52,7 +52,7 @@ type starlarkScript struct {
 // It calls the mandatory top-level `run(req)` function.
 // When sess is non-nil a `store` Starlark builtin is injected for session store access.
 // logBuf collects messages written via log() in the script; passing nil discards them.
-func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess *store.Session, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (result any, err error) {
+func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeoutMs int, sess store.SessionState, accessLog *[]models.StoreAccessEvent, logBuf *[]string) (result any, err error) {
 	// Recover from any Starlark panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -83,7 +83,7 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 
 	// Build predeclared names (available to the module as global constants)
 	predeclared := starlark.StringDict{}
-	if sess != nil {
+	if hasSession(sess) {
 		predeclared["store"] = store.NewStoreBuiltin(sess, accessLog)
 	}
 	// log(msg, ...) — always available; appends formatted message to logBuf.

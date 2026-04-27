@@ -42,6 +42,15 @@ func TestSetDefaults(t *testing.T) {
 	if viper.GetString("logging.format") != "json" {
 		t.Fatalf("expected default logging format json, got %q", viper.GetString("logging.format"))
 	}
+	if viper.GetString("session.storeType") != config.SessionStoreMemory {
+		t.Fatalf("expected default session store type %q, got %q", config.SessionStoreMemory, viper.GetString("session.storeType"))
+	}
+	if viper.GetString("session.redis.addr") != config.DefaultRedisAddr {
+		t.Fatalf("expected default session redis addr %q, got %q", config.DefaultRedisAddr, viper.GetString("session.redis.addr"))
+	}
+	if viper.GetString("session.redis.keyPrefix") != config.DefaultRedisKeyPrefix {
+		t.Fatalf("expected default session redis key prefix %q, got %q", config.DefaultRedisKeyPrefix, viper.GetString("session.redis.keyPrefix"))
+	}
 
 	cwd, _ := os.Getwd()
 	expectedPath := filepath.Join(cwd, "data")
@@ -102,6 +111,11 @@ func TestRunInit(t *testing.T) {
 		"branding:",
 		"scripting:",
 		"session:",
+		`storeType: "memory"`,
+		`# Redis configuration example used when session.storeType is "redis":`,
+		"redis:",
+		`addr: "127.0.0.1:6379"`,
+		`keyPrefix: "go-virtual:sessions"`,
 		"proxy:",
 		"ai:",
 		`provider: "openai"`,
@@ -137,6 +151,15 @@ func TestRunInit(t *testing.T) {
 	}
 	if loadedCfg.AI.Claude.Model != config.DefaultClaudeModel {
 		t.Fatalf("expected generated Claude model %q, got %q", config.DefaultClaudeModel, loadedCfg.AI.Claude.Model)
+	}
+	if loadedCfg.Session.StoreType != config.SessionStoreMemory {
+		t.Fatalf("expected generated session store type %q, got %q", config.SessionStoreMemory, loadedCfg.Session.StoreType)
+	}
+	if loadedCfg.Session.Redis.Addr != config.DefaultRedisAddr {
+		t.Fatalf("expected generated session redis addr %q, got %q", config.DefaultRedisAddr, loadedCfg.Session.Redis.Addr)
+	}
+	if loadedCfg.Session.Redis.KeyPrefix != config.DefaultRedisKeyPrefix {
+		t.Fatalf("expected generated session redis key prefix %q, got %q", config.DefaultRedisKeyPrefix, loadedCfg.Session.Redis.KeyPrefix)
 	}
 
 	dirs := []string{
@@ -189,5 +212,75 @@ func TestLoadAIConfigAndFirstNonEmpty(t *testing.T) {
 	}
 	if got := firstNonEmpty("", " "); got != "" {
 		t.Fatalf("expected empty fallback, got %q", got)
+	}
+}
+
+func TestLoadSessionConfig(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	viper.Set("session.storeType", config.SessionStoreRedis)
+	viper.Set("session.headerName", " X-Scale-Session ")
+	viper.Set("session.inactivityTimeout", "45m")
+	viper.Set("session.maxSessions", 250)
+	viper.Set("session.redis.addr", " redis.example:6380 ")
+	viper.Set("session.redis.username", " app-user ")
+	viper.Set("session.redis.password", " secret ")
+	viper.Set("session.redis.db", 3)
+	viper.Set("session.redis.keyPrefix", " app:sessions ")
+
+	cfg := loadSessionConfig()
+	if cfg.StoreType != config.SessionStoreRedis {
+		t.Fatalf("expected session store type %q, got %q", config.SessionStoreRedis, cfg.StoreType)
+	}
+	if cfg.HeaderName != "X-Scale-Session" {
+		t.Fatalf("expected trimmed header name, got %q", cfg.HeaderName)
+	}
+	if cfg.InactivityTimeout.Minutes() != 45 {
+		t.Fatalf("expected inactivity timeout 45m, got %v", cfg.InactivityTimeout)
+	}
+	if cfg.MaxSessions != 250 {
+		t.Fatalf("expected maxSessions 250, got %d", cfg.MaxSessions)
+	}
+	if cfg.Redis.Addr != "redis.example:6380" {
+		t.Fatalf("expected redis addr to load, got %q", cfg.Redis.Addr)
+	}
+	if cfg.Redis.Username != "app-user" || cfg.Redis.Password != "secret" || cfg.Redis.DB != 3 || cfg.Redis.KeyPrefix != "app:sessions" {
+		t.Fatalf("expected redis config to load, got %+v", cfg.Redis)
+	}
+}
+
+func TestLoadStorageConfig(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+	setDefaults()
+
+	// Defaults.
+	if viper.GetString("storage.mongo.database") != config.DefaultMongoDB {
+		t.Fatalf("expected default mongo database %q, got %q", config.DefaultMongoDB, viper.GetString("storage.mongo.database"))
+	}
+	if viper.GetString("storage.mongo.collectionPrefix") != config.DefaultMongoCollectionPrefix {
+		t.Fatalf("expected default collection prefix %q, got %q", config.DefaultMongoCollectionPrefix, viper.GetString("storage.mongo.collectionPrefix"))
+	}
+	if viper.GetInt("storage.mongo.connectTimeoutSeconds") != config.DefaultMongoConnectTimeoutSeconds {
+		t.Fatalf("expected default connect timeout %d, got %d", config.DefaultMongoConnectTimeoutSeconds, viper.GetInt("storage.mongo.connectTimeoutSeconds"))
+	}
+	if viper.GetString("storage.mongo.uri") != "" {
+		t.Fatalf("expected default mongo URI to be empty, got %q", viper.GetString("storage.mongo.uri"))
+	}
+
+	// Override via viper.
+	viper.Set("storage.type", "mongo")
+	viper.Set("storage.mongo.uri", "mongodb://localhost:27017")
+	viper.Set("storage.mongo.database", "testdb")
+
+	if viper.GetString("storage.type") != "mongo" {
+		t.Fatalf("expected storage type mongo, got %q", viper.GetString("storage.type"))
+	}
+	if viper.GetString("storage.mongo.uri") != "mongodb://localhost:27017" {
+		t.Fatalf("expected mongo URI to be set, got %q", viper.GetString("storage.mongo.uri"))
+	}
+	if viper.GetString("storage.mongo.database") != "testdb" {
+		t.Fatalf("expected mongo database %q, got %q", "testdb", viper.GetString("storage.mongo.database"))
 	}
 }

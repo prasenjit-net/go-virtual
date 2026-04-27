@@ -95,10 +95,25 @@ func setDefaults() {
 	// Storage defaults
 	viper.SetDefault("storage.type", "file")
 	viper.SetDefault("storage.path", defaultDataPath)
+	viper.SetDefault("storage.mongo.uri", "")
+	viper.SetDefault("storage.mongo.database", config.DefaultMongoDB)
+	viper.SetDefault("storage.mongo.collectionPrefix", config.DefaultMongoCollectionPrefix)
+	viper.SetDefault("storage.mongo.connectTimeoutSeconds", config.DefaultMongoConnectTimeoutSeconds)
 
 	// Tracing defaults
 	viper.SetDefault("tracing.maxTraces", 1000)
 	viper.SetDefault("tracing.retention", "24h")
+
+	// Session defaults
+	viper.SetDefault("session.storeType", config.SessionStoreMemory)
+	viper.SetDefault("session.headerName", "X-Virtual-Session-Id")
+	viper.SetDefault("session.inactivityTimeout", "30m")
+	viper.SetDefault("session.maxSessions", 10000)
+	viper.SetDefault("session.redis.addr", config.DefaultRedisAddr)
+	viper.SetDefault("session.redis.username", "")
+	viper.SetDefault("session.redis.password", "")
+	viper.SetDefault("session.redis.db", 0)
+	viper.SetDefault("session.redis.keyPrefix", config.DefaultRedisKeyPrefix)
 
 	// Logging defaults
 	viper.SetDefault("logging.level", config.LogLevelInfo)

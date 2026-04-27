@@ -108,12 +108,37 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize storage
 	var store storage.Storage
 	var err error
-	if storageType == "file" {
+	storageMongoURI := viper.GetString("storage.mongo.uri")
+	storageMongoDatabase := viper.GetString("storage.mongo.database")
+	storageMongoCollectionPrefix := viper.GetString("storage.mongo.collectionPrefix")
+	storageMongoConnectTimeout := viper.GetInt("storage.mongo.connectTimeoutSeconds")
+	if storageMongoDatabase == "" {
+		storageMongoDatabase = config.DefaultMongoDB
+	}
+	if storageMongoCollectionPrefix == "" {
+		storageMongoCollectionPrefix = config.DefaultMongoCollectionPrefix
+	}
+	if storageMongoConnectTimeout <= 0 {
+		storageMongoConnectTimeout = config.DefaultMongoConnectTimeoutSeconds
+	}
+	switch storageType {
+	case config.StorageTypeMongo:
+		mongoCfg := config.MongoConfig{
+			URI:                   storageMongoURI,
+			Database:              storageMongoDatabase,
+			CollectionPrefix:      storageMongoCollectionPrefix,
+			ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		}
+		store, err = storage.NewMongoStorage(mongoCfg)
+		if err != nil {
+			return fmt.Errorf("failed to initialize mongo storage: %w", err)
+		}
+	case config.StorageTypeFile:
 		store, err = storage.NewFileStorage(storagePath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize file storage: %w", err)
 		}
-	} else {
+	default:
 		store = storage.NewMemoryStorage()
 	}
 
@@ -132,33 +157,52 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize Phase 2 — GlobalStore and SessionManager
 	storePath := storagePath // already resolved above
-	globalStorePath := filepath.Join(storePath, "store.json")
-
-	globalStore, err := gvstore.NewGlobalStore(globalStorePath)
-	if err != nil {
-		serverLog.Warn("Failed to load global store; starting with empty store", "event", "global_store_init_failed", "path", globalStorePath, "error", err)
-		globalStore, _ = gvstore.NewGlobalStore(globalStorePath)
+	var globalStore gvstore.GlobalStoreBackend
+	if storageType == config.StorageTypeMongo {
+		mongoCfg := config.MongoConfig{
+			URI:                   storageMongoURI,
+			Database:              storageMongoDatabase,
+			CollectionPrefix:      storageMongoCollectionPrefix,
+			ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		}
+		globalStore, err = gvstore.NewMongoGlobalStoreFromConfig(mongoCfg)
+		if err != nil {
+			serverLog.Warn("Failed to initialize mongo global store; starting with empty store", "event", "global_store_init_failed", "error", err)
+			globalStore, _ = gvstore.NewMongoGlobalStoreFromConfig(mongoCfg)
+		}
+	} else {
+		globalStorePath := filepath.Join(storePath, "store.json")
+		var fileGS *gvstore.GlobalStore
+		fileGS, err = gvstore.NewGlobalStore(globalStorePath)
+		if err != nil {
+			serverLog.Warn("Failed to load global store; starting with empty store", "event", "global_store_init_failed", "path", globalStorePath, "error", err)
+			fileGS, _ = gvstore.NewGlobalStore(globalStorePath)
+		}
+		globalStore = fileGS
 	}
 
-	sessionCfg := config.SessionConfig{
-		HeaderName:        viper.GetString("session.headerName"),
-		InactivityTimeout: viper.GetDuration("session.inactivityTimeout"),
-		MaxSessions:       viper.GetInt("session.maxSessions"),
-	}
-	if sessionCfg.HeaderName == "" {
-		sessionCfg.HeaderName = "X-Virtual-Session-Id"
-	}
-	if sessionCfg.InactivityTimeout <= 0 {
-		sessionCfg.InactivityTimeout = 30 * time.Minute
-	}
-	if sessionCfg.MaxSessions <= 0 {
-		sessionCfg.MaxSessions = 10000
-	}
+	sessionCfg := loadSessionConfig()
 
 	sessionCtx, cancelSessions := context.WithCancel(context.Background())
 	defer cancelSessions()
 
-	sessionManager := gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
+	var sessionManager gvstore.SessionRegistry
+	switch sessionCfg.StoreType {
+	case config.SessionStoreRedis:
+		sessionManager, err = gvstore.NewRedisSessionManager(sessionCtx, globalStore, sessionCfg)
+		if err != nil {
+			return fmt.Errorf("failed to initialize redis session store: %w", err)
+		}
+	default:
+		sessionManager = gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
+	}
+	serverLog.Info("Configured session backend",
+		"event", "session_backend_configured",
+		"store_type", sessionCfg.StoreType,
+		"header_name", sessionCfg.HeaderName,
+		"inactivity_timeout", sessionCfg.InactivityTimeout.String(),
+		"max_sessions", sessionCfg.MaxSessions,
+	)
 	proxyEngine.SetSessionManager(sessionManager, sessionCfg.HeaderName)
 
 	// Build the outbound HTTP client used in proxy/recording mode.
@@ -305,6 +349,24 @@ func loadAIConfig() ai.Config {
 			APIVersion: strings.TrimSpace(viper.GetString("ai.claude.apiVersion")),
 		},
 	}
+}
+
+func loadSessionConfig() config.SessionConfig {
+	cfg := config.SessionConfig{
+		StoreType:         strings.TrimSpace(viper.GetString("session.storeType")),
+		HeaderName:        viper.GetString("session.headerName"),
+		InactivityTimeout: viper.GetDuration("session.inactivityTimeout"),
+		MaxSessions:       viper.GetInt("session.maxSessions"),
+		Redis: config.RedisSessionConfig{
+			Addr:      strings.TrimSpace(viper.GetString("session.redis.addr")),
+			Username:  strings.TrimSpace(viper.GetString("session.redis.username")),
+			Password:  strings.TrimSpace(viper.GetString("session.redis.password")),
+			DB:        viper.GetInt("session.redis.db"),
+			KeyPrefix: strings.TrimSpace(viper.GetString("session.redis.keyPrefix")),
+		},
+	}
+	cfg.Normalize()
+	return cfg
 }
 
 func firstNonEmpty(values ...string) string {

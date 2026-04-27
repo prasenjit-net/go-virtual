@@ -36,7 +36,7 @@ type Engine struct {
 	condEvaluator     *condition.Evaluator
 	templateEngine    *template.Engine
 	scriptEngine      *scripting.ScriptEngine
-	sessionManager    *store.SessionManager // nil when Phase 2 is not configured
+	sessionManager    store.SessionRegistry // nil when Phase 2 is not configured
 	sessionHeaderName string
 	recorder          *Recorder
 	aiGenerator       *ai.Generator
@@ -82,7 +82,7 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 
 // SetSessionManager attaches a SessionManager to the engine, enabling Phase 2
 // session tracking. headerName is the HTTP header used to identify sessions.
-func (e *Engine) SetSessionManager(sm *store.SessionManager, headerName string) {
+func (e *Engine) SetSessionManager(sm store.SessionRegistry, headerName string) {
 	e.sessionManager = sm
 	e.sessionHeaderName = headerName
 }
@@ -676,15 +676,27 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve session and run scripts only once we know we are serving a virtual response.
-	var sess *store.Session
+	var sess store.SessionState
 	var sessionIsNew bool
 	if e.sessionManager != nil {
 		rawSessionID := r.Header.Get(e.sessionHeaderName)
-		sess, sessionIsNew = e.sessionManager.GetOrCreate(rawSessionID)
-		w.Header().Set(e.sessionHeaderName, sess.ID)
+		var err error
+		sess, sessionIsNew, err = e.sessionManager.GetOrCreate(rawSessionID)
+		if err != nil {
+			reqLogger.Error("Failed to resolve request session",
+				"event", "session_resolve_failed",
+				"header_name", e.sessionHeaderName,
+				"error", err,
+			)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error": "Failed to resolve session"}`))
+			return
+		}
+		sessionInfo := sess.Info(false)
+		w.Header().Set(e.sessionHeaderName, sessionInfo.ID)
 		reqLogger.Debug("Resolved request session",
 			"event", "session_resolved",
-			"session_id", sess.ID,
+			"session_id", sessionInfo.ID,
 			"session_is_new", sessionIsNew,
 		)
 	}
@@ -786,8 +798,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if matchedRoute.spec.Tracing {
 		var sessionTrace *models.SessionTrace
 		if sess != nil {
+			sessionInfo := sess.Info(false)
 			sessionTrace = &models.SessionTrace{
-				ID:    sess.ID,
+				ID:    sessionInfo.ID,
 				IsNew: sessionIsNew,
 			}
 		}

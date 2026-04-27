@@ -26,8 +26,8 @@ type RouterConfig struct {
 	StatsCollector *stats.Collector
 	TracingService *tracing.Service
 	ProxyEngine    *proxy.Engine
-	GlobalStore    *store.GlobalStore      // optional; nil = Phase 1 mode
-	SessionManager *store.SessionManager   // optional; nil = Phase 1 mode
+	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
+	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
 	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	Headless       bool

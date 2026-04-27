@@ -18,13 +18,13 @@ import (
 //	store.delete("key")        → None
 //	store.keys()               → list of strings
 type StoreBuiltin struct {
-	session    *Session
-	accessLog  *[]models.StoreAccessEvent
+	session   SessionState
+	accessLog *[]models.StoreAccessEvent
 }
 
 // NewStoreBuiltin wraps a session for Starlark access.
 // accessLog is appended to for each operation (used for trace recording).
-func NewStoreBuiltin(sess *Session, accessLog *[]models.StoreAccessEvent) *StoreBuiltin {
+func NewStoreBuiltin(sess SessionState, accessLog *[]models.StoreAccessEvent) *StoreBuiltin {
 	return &StoreBuiltin{session: sess, accessLog: accessLog}
 }
 
@@ -95,7 +95,9 @@ func (sb *StoreBuiltin) builtinSet(_ *starlark.Thread, _ *starlark.Builtin, args
 	}
 
 	goVal := starToGo(val)
-	sb.session.Set(key, goVal)
+	if err := sb.session.Set(key, goVal); err != nil {
+		return nil, err
+	}
 
 	if sb.accessLog != nil {
 		*sb.accessLog = append(*sb.accessLog, models.StoreAccessEvent{Op: "set", Key: key, Value: goVal})
@@ -127,7 +129,9 @@ func (sb *StoreBuiltin) builtinDelete(_ *starlark.Thread, _ *starlark.Builtin, a
 		return nil, err
 	}
 
-	sb.session.Delete(key)
+	if err := sb.session.Delete(key); err != nil {
+		return nil, err
+	}
 
 	if sb.accessLog != nil {
 		*sb.accessLog = append(*sb.accessLog, models.StoreAccessEvent{Op: "delete", Key: key})

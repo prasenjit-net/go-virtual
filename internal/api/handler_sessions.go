@@ -14,7 +14,11 @@ func (h *Handler) ListSessions(c *gin.Context) {
 		return
 	}
 
-	infos := h.sessionManager.ActiveSessions()
+	infos, err := h.sessionManager.ActiveSessions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if infos == nil {
 		infos = []models.SessionInfo{}
 	}
@@ -33,7 +37,11 @@ func (h *Handler) GetSession(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	sess, ok := h.sessionManager.Get(id)
+	sess, ok, err := h.sessionManager.Get(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if !ok {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found"})
 		return
@@ -50,7 +58,10 @@ func (h *Handler) InvalidateSession(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	h.sessionManager.Invalidate(id)
+	if err := h.sessionManager.Invalidate(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.Status(http.StatusNoContent)
 }
 
@@ -67,6 +78,9 @@ func (h *Handler) InvalidateAllSessions(c *gin.Context) {
 		return
 	}
 
-	h.sessionManager.InvalidateAll()
+	if err := h.sessionManager.InvalidateAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.Status(http.StatusNoContent)
 }

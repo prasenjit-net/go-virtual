@@ -16,13 +16,15 @@ import (
 type SessionManager struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
-	global   *GlobalStore
+	global   GlobalStoreBackend
 	cfg      config.SessionConfig
 }
 
+var _ SessionRegistry = (*SessionManager)(nil)
+
 // NewSessionManager creates a SessionManager and starts the background expiry loop.
 // The loop runs until the provided context is cancelled.
-func NewSessionManager(ctx context.Context, global *GlobalStore, cfg config.SessionConfig) *SessionManager {
+func NewSessionManager(ctx context.Context, global GlobalStoreBackend, cfg config.SessionConfig) *SessionManager {
 	m := &SessionManager{
 		sessions: make(map[string]*Session),
 		global:   global,
@@ -40,7 +42,7 @@ func NewSessionManager(ctx context.Context, global *GlobalStore, cfg config.Sess
 //   - If rawID is empty → generate a new UUID v4 session ID.
 //
 // In all cases the session is seeded from the current global store snapshot.
-func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
+func (m *SessionManager) GetOrCreate(rawID string) (SessionState, bool, error) {
 	// Fast path: try to find an existing valid session
 	if rawID != "" {
 		m.mu.RLock()
@@ -49,7 +51,7 @@ func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
 
 		if ok {
 			sess.touch()
-			return sess, false // false = existing session
+			return sess, false, nil // false = existing session
 		}
 	}
 
@@ -61,7 +63,7 @@ func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
 	if rawID != "" {
 		if sess, ok := m.sessions[rawID]; ok {
 			sess.touch()
-			return sess, false
+			return sess, false, nil
 		}
 	}
 
@@ -75,39 +77,45 @@ func (m *SessionManager) GetOrCreate(rawID string) (*Session, bool) {
 	if id == "" {
 		id = uuid.New().String()
 	}
-	sess := newSession(id, m.global.Snapshot())
+	var snapshot map[string]any
+	if m.global != nil {
+		snapshot = m.global.Snapshot()
+	}
+	sess := newSession(id, snapshot)
 	m.sessions[id] = sess
 
-	return sess, true // true = new session
+	return sess, true, nil // true = new session
 }
 
 // Get returns a session by ID without creating one. ok is false if not found.
-func (m *SessionManager) Get(sessionID string) (*Session, bool) {
+func (m *SessionManager) Get(sessionID string) (SessionState, bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	sess, ok := m.sessions[sessionID]
-	return sess, ok
+	return sess, ok, nil
 }
 
 // Invalidate removes a session from the registry.
-func (m *SessionManager) Invalidate(sessionID string) {
+func (m *SessionManager) Invalidate(sessionID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	delete(m.sessions, sessionID)
+	return nil
 }
 
 // InvalidateAll removes all sessions from the registry.
-func (m *SessionManager) InvalidateAll() {
+func (m *SessionManager) InvalidateAll() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.sessions = make(map[string]*Session)
+	return nil
 }
 
 // ActiveSessions returns metadata about all live sessions, sorted by last-active descending.
-func (m *SessionManager) ActiveSessions() []models.SessionInfo {
+func (m *SessionManager) ActiveSessions() ([]models.SessionInfo, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -120,15 +128,15 @@ func (m *SessionManager) ActiveSessions() []models.SessionInfo {
 		return infos[i].LastActive.After(infos[j].LastActive)
 	})
 
-	return infos
+	return infos, nil
 }
 
 // Count returns the number of active sessions.
-func (m *SessionManager) Count() int {
+func (m *SessionManager) Count() (int, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	return len(m.sessions)
+	return len(m.sessions), nil
 }
 
 // expiryLoop runs every minute and removes sessions that have been idle

@@ -37,7 +37,7 @@ type RestoreError struct {
 // ApplyZIP applies an archive ZIP to the given storage and global store.
 // It verifies SHA-256 checksums before touching any data. If any checksum
 // fails the operation is aborted immediately and no writes are made.
-func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs *store.GlobalStore) (*RestoreResult, error) {
+func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.GlobalStoreBackend) (*RestoreResult, error) {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("archive: open zip: %w", err)
@@ -312,7 +312,7 @@ func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs *store.
 
 // wipeAll removes all user data from storage and clears the global store.
 // The default tag is preserved.
-func wipeAll(stor storage.Storage, gs *store.GlobalStore) error {
+func wipeAll(stor storage.Storage, gs store.GlobalStoreBackend) error {
 	// Wipe specs (cascade to operations and responses).
 	specs, err := stor.GetAllSpecs()
 	if err != nil {

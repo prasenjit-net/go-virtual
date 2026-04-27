@@ -120,9 +120,17 @@ func defaultInitConfig() initConfigFile {
 			DefaultTimeoutMs: cfg.Scripting.DefaultTimeoutMs,
 		},
 		Session: initSessionConfig{
+			StoreType:         cfg.Session.StoreType,
 			HeaderName:        cfg.Session.HeaderName,
 			InactivityTimeout: formatDuration(cfg.Session.InactivityTimeout),
 			MaxSessions:       cfg.Session.MaxSessions,
+			Redis: initSessionRedisConfig{
+				Addr:      cfg.Session.Redis.Addr,
+				Username:  cfg.Session.Redis.Username,
+				Password:  cfg.Session.Redis.Password,
+				DB:        cfg.Session.Redis.DB,
+				KeyPrefix: cfg.Session.Redis.KeyPrefix,
+			},
 		},
 		Proxy: initProxyConfig{
 			TimeoutSeconds:     cfg.Proxy.TimeoutSeconds,
@@ -171,8 +179,14 @@ server:
   headless: %t             # Disable the admin UI/API and only serve runtime traffic from saved data.
 
 storage:
-  type: %q                 # "file" persists specs/responses to disk. "memory" keeps everything in RAM.
-  path: %q                 # Base directory for persisted specs, responses, traces, and other app data.
+  type: %q                 # "file" persists specs/responses to disk. "memory" keeps everything in RAM (no persistence). "mongo" uses MongoDB.
+  path: %q                 # Base directory for persisted specs, responses, traces, and other app data (used when type is "file").
+  # MongoDB settings — used only when type is "mongo":
+  # mongo:
+  #   uri: "mongodb://localhost:27017"   # MongoDB connection URI.
+  #   database: "go-virtual"             # Database name.
+  #   collectionPrefix: "gv_"            # Prefix for all collection names.
+  #   connectTimeoutSeconds: 10          # Connection timeout in seconds.
 
 tracing:
   maxTraces: %d            # Maximum number of recent traces kept in memory for inspection in the UI/API.
@@ -190,9 +204,17 @@ scripting:
   defaultTimeoutMs: %d     # Default execution timeout for each Starlark script in milliseconds.
 
 session:
+  storeType: %q            # "memory" keeps sessions inside one process. "redis" shares sessions across instances for horizontal scaling.
   headerName: %q           # Request header used to identify and resume a session.
   inactivityTimeout: %q    # Session TTL since last activity.
-  maxSessions: %d          # Hard cap on concurrent sessions before least-recently-used sessions are evicted.
+  maxSessions: %d          # Hard cap on concurrent sessions before least-recently-used sessions are evicted. For Redis this is best-effort across instances.
+  # Redis configuration example used when session.storeType is "redis":
+  redis:
+    addr: %q               # Redis server address used when session.storeType is "redis".
+    username: %q           # Optional Redis ACL username.
+    password: %q           # Optional Redis password.
+    db: %d                 # Redis logical database number.
+    keyPrefix: %q          # Namespace prefix for session keys so invalidate-all only touches this app's sessions.
 
 proxy:
   timeoutSeconds: %d       # Timeout for outbound backend requests in proxy mode.
@@ -218,7 +240,7 @@ ai:
 # ai.openaiApiKey
 # ai.openaiModel
 # ai.openaiBaseUrl
-`, cfg.Server.Port, cfg.Server.Host, cfg.Server.TLS.Enabled, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile, cfg.Server.TLS.AutoGenerate, cfg.Server.TLS.StorePath, cfg.Server.Headless, cfg.Storage.Type, cfg.Storage.Path, cfg.Tracing.MaxTraces, cfg.Tracing.Retention, cfg.Logging.Level, cfg.Logging.Format, cfg.Branding.AppTitle, cfg.Branding.AppSubtitle, cfg.Scripting.DefaultTimeoutMs, cfg.Session.HeaderName, cfg.Session.InactivityTimeout, cfg.Session.MaxSessions, cfg.Proxy.TimeoutSeconds, cfg.Proxy.InsecureSkipVerify, cfg.Proxy.MTLS.CertFile, cfg.Proxy.MTLS.KeyFile, cfg.Proxy.MTLS.CACertFile, cfg.AI.Provider, cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.Model, cfg.AI.OpenAI.BaseURL, cfg.AI.Claude.APIKey, cfg.AI.Claude.Model, cfg.AI.Claude.BaseURL, cfg.AI.Claude.APIVersion)
+`, cfg.Server.Port, cfg.Server.Host, cfg.Server.TLS.Enabled, cfg.Server.TLS.CertFile, cfg.Server.TLS.KeyFile, cfg.Server.TLS.AutoGenerate, cfg.Server.TLS.StorePath, cfg.Server.Headless, cfg.Storage.Type, cfg.Storage.Path, cfg.Tracing.MaxTraces, cfg.Tracing.Retention, cfg.Logging.Level, cfg.Logging.Format, cfg.Branding.AppTitle, cfg.Branding.AppSubtitle, cfg.Scripting.DefaultTimeoutMs, cfg.Session.StoreType, cfg.Session.HeaderName, cfg.Session.InactivityTimeout, cfg.Session.MaxSessions, cfg.Session.Redis.Addr, cfg.Session.Redis.Username, cfg.Session.Redis.Password, cfg.Session.Redis.DB, cfg.Session.Redis.KeyPrefix, cfg.Proxy.TimeoutSeconds, cfg.Proxy.InsecureSkipVerify, cfg.Proxy.MTLS.CertFile, cfg.Proxy.MTLS.KeyFile, cfg.Proxy.MTLS.CACertFile, cfg.AI.Provider, cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.Model, cfg.AI.OpenAI.BaseURL, cfg.AI.Claude.APIKey, cfg.AI.Claude.Model, cfg.AI.Claude.BaseURL, cfg.AI.Claude.APIVersion)
 }
 
 func formatDuration(d time.Duration) string {
@@ -287,9 +309,19 @@ type initScriptingConfig struct {
 }
 
 type initSessionConfig struct {
-	HeaderName        string `yaml:"headerName"`
-	InactivityTimeout string `yaml:"inactivityTimeout"`
-	MaxSessions       int    `yaml:"maxSessions"`
+	StoreType         string                 `yaml:"storeType"`
+	HeaderName        string                 `yaml:"headerName"`
+	InactivityTimeout string                 `yaml:"inactivityTimeout"`
+	MaxSessions       int                    `yaml:"maxSessions"`
+	Redis             initSessionRedisConfig `yaml:"redis"`
+}
+
+type initSessionRedisConfig struct {
+	Addr      string `yaml:"addr"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	DB        int    `yaml:"db"`
+	KeyPrefix string `yaml:"keyPrefix"`
 }
 
 type initProxyConfig struct {

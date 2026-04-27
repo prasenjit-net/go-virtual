@@ -15,12 +15,22 @@ const (
 	DefaultOpenAIModel      = "gpt-4o-mini"
 	DefaultClaudeModel      = "claude-sonnet-4-6"
 	DefaultClaudeAPIVersion = "2023-06-01"
+	SessionStoreMemory      = "memory"
+	SessionStoreRedis       = "redis"
+	DefaultRedisAddr        = "127.0.0.1:6379"
+	DefaultRedisKeyPrefix   = "go-virtual:sessions"
 	LogLevelDebug           = "debug"
 	LogLevelInfo            = "info"
 	LogLevelWarn            = "warn"
 	LogLevelError           = "error"
 	LogFormatJSON           = "json"
 	LogFormatText           = "text"
+	StorageTypeFile         = "file"
+	StorageTypeMongo        = "mongo"
+	StorageTypeMemory       = "memory"
+	DefaultMongoDB                    = "go-virtual"
+	DefaultMongoCollectionPrefix      = "gv_"
+	DefaultMongoConnectTimeoutSeconds = 10
 )
 
 // Config holds the application configuration
@@ -124,10 +134,40 @@ type TLSConfig struct {
 	StorePath    string `yaml:"storePath"`    // Path to store auto-generated certs
 }
 
+// MongoConfig holds settings for MongoDB-backed storage.
+type MongoConfig struct {
+	URI                   string `yaml:"uri"`
+	Database              string `yaml:"database"`
+	CollectionPrefix      string `yaml:"collectionPrefix"`
+	ConnectTimeoutSeconds int    `yaml:"connectTimeoutSeconds"`
+}
+
 // StorageConfig holds storage configuration
 type StorageConfig struct {
-	Type string `yaml:"type"` // "memory" or "file"
-	Path string `yaml:"path"` // Path for file storage
+	Type  string      `yaml:"type"`  // "file", "memory", or "mongo"
+	Path  string      `yaml:"path"`  // Path for file storage
+	Mongo MongoConfig `yaml:"mongo"` // MongoDB settings (used when Type is "mongo")
+}
+
+// Normalize applies defaults and normalises the storage configuration.
+func (c *StorageConfig) Normalize() {
+	t := strings.ToLower(strings.TrimSpace(c.Type))
+	switch t {
+	case StorageTypeFile, StorageTypeMongo, StorageTypeMemory:
+		c.Type = t
+	default:
+		c.Type = StorageTypeFile
+	}
+
+	if c.Mongo.Database == "" {
+		c.Mongo.Database = DefaultMongoDB
+	}
+	if c.Mongo.CollectionPrefix == "" {
+		c.Mongo.CollectionPrefix = DefaultMongoCollectionPrefix
+	}
+	if c.Mongo.ConnectTimeoutSeconds <= 0 {
+		c.Mongo.ConnectTimeoutSeconds = DefaultMongoConnectTimeoutSeconds
+	}
 }
 
 // TracingConfig holds tracing configuration
@@ -167,6 +207,9 @@ func (c *LoggingConfig) Normalize() {
 
 // SessionConfig controls per-request session behaviour.
 type SessionConfig struct {
+	// StoreType controls where sessions are persisted. Supported values are
+	// "memory" and "redis". Defaults to "memory".
+	StoreType string `yaml:"storeType"`
 	// HeaderName is the HTTP header used to identify the session. Defaults to "X-Virtual-Session-Id".
 	HeaderName string `yaml:"headerName"`
 	// InactivityTimeout is how long a session survives without activity. Defaults to 30 minutes.
@@ -174,6 +217,54 @@ type SessionConfig struct {
 	// MaxSessions is a hard cap on concurrent sessions. When exceeded the
 	// least-recently-active session is evicted. Defaults to 10000.
 	MaxSessions int `yaml:"maxSessions"`
+	// Redis holds Redis-specific settings used when StoreType is "redis".
+	Redis RedisSessionConfig `yaml:"redis"`
+}
+
+// RedisSessionConfig holds settings for Redis-backed session storage.
+type RedisSessionConfig struct {
+	Addr      string `yaml:"addr"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	DB        int    `yaml:"db"`
+	KeyPrefix string `yaml:"keyPrefix"`
+}
+
+// Normalize applies supported defaults for session configuration.
+func (c *SessionConfig) Normalize() {
+	storeType := strings.ToLower(strings.TrimSpace(c.StoreType))
+	switch storeType {
+	case "", SessionStoreMemory:
+		c.StoreType = SessionStoreMemory
+	case SessionStoreRedis:
+		c.StoreType = storeType
+	default:
+		c.StoreType = SessionStoreMemory
+	}
+
+	c.HeaderName = strings.TrimSpace(c.HeaderName)
+	if c.HeaderName == "" {
+		c.HeaderName = "X-Virtual-Session-Id"
+	}
+	if c.InactivityTimeout <= 0 {
+		c.InactivityTimeout = 30 * time.Minute
+	}
+	if c.MaxSessions <= 0 {
+		c.MaxSessions = 10000
+	}
+	c.Redis.Addr = strings.TrimSpace(c.Redis.Addr)
+	if c.Redis.Addr == "" {
+		c.Redis.Addr = DefaultRedisAddr
+	}
+	c.Redis.Username = strings.TrimSpace(c.Redis.Username)
+	c.Redis.Password = strings.TrimSpace(c.Redis.Password)
+	if c.Redis.DB < 0 {
+		c.Redis.DB = 0
+	}
+	c.Redis.KeyPrefix = strings.TrimSpace(c.Redis.KeyPrefix)
+	if c.Redis.KeyPrefix == "" {
+		c.Redis.KeyPrefix = DefaultRedisKeyPrefix
+	}
 }
 
 // ScriptingConfig holds Starlark scripting configuration
@@ -228,6 +319,11 @@ func Default() *Config {
 		Storage: StorageConfig{
 			Type: "file",
 			Path: defaultDataPath,
+			Mongo: MongoConfig{
+				Database:              DefaultMongoDB,
+				CollectionPrefix:      DefaultMongoCollectionPrefix,
+				ConnectTimeoutSeconds: DefaultMongoConnectTimeoutSeconds,
+			},
 		},
 		Tracing: TracingConfig{
 			MaxTraces: 1000,
@@ -245,9 +341,15 @@ func Default() *Config {
 			DefaultTimeoutMs: 100,
 		},
 		Session: SessionConfig{
+			StoreType:         SessionStoreMemory,
 			HeaderName:        "X-Virtual-Session-Id",
 			InactivityTimeout: 30 * time.Minute,
 			MaxSessions:       10000,
+			Redis: RedisSessionConfig{
+				Addr:      DefaultRedisAddr,
+				DB:        0,
+				KeyPrefix: DefaultRedisKeyPrefix,
+			},
 		},
 		Proxy: ProxyConfig{
 			TimeoutSeconds:     30,
@@ -279,6 +381,8 @@ func Load(path string) (*Config, error) {
 	}
 	cfg.AI.Normalize()
 	cfg.Logging.Normalize()
+	cfg.Session.Normalize()
+	cfg.Storage.Normalize()
 
 	// Convert relative storage path to absolute using current working directory
 	// This ensures consistent behavior across all platforms

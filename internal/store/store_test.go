@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prasenjit/go-virtual/internal/config"
+	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/store"
 	"go.starlark.net/starlark"
 )
@@ -18,6 +19,46 @@ func tempStorePath(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	return filepath.Join(dir, "store.json")
+}
+
+func mustGetOrCreate(t *testing.T, sm *store.SessionManager, rawID string) (store.SessionState, bool) {
+	t.Helper()
+	sess, isNew, err := sm.GetOrCreate(rawID)
+	if err != nil {
+		t.Fatalf("GetOrCreate(%q): %v", rawID, err)
+	}
+	return sess, isNew
+}
+
+func mustGetSession(t *testing.T, sm *store.SessionManager, sessionID string) (store.SessionState, bool) {
+	t.Helper()
+	sess, ok, err := sm.Get(sessionID)
+	if err != nil {
+		t.Fatalf("Get(%q): %v", sessionID, err)
+	}
+	return sess, ok
+}
+
+func mustCountSessions(t *testing.T, sm *store.SessionManager) int {
+	t.Helper()
+	count, err := sm.Count()
+	if err != nil {
+		t.Fatalf("Count(): %v", err)
+	}
+	return count
+}
+
+func mustActiveSessions(t *testing.T, sm *store.SessionManager) []models.SessionInfo {
+	t.Helper()
+	infos, err := sm.ActiveSessions()
+	if err != nil {
+		t.Fatalf("ActiveSessions(): %v", err)
+	}
+	return infos
+}
+
+func mustSessionID(sess store.SessionState) string {
+	return sess.Info(false).ID
 }
 
 func TestGlobalStore_NewCreatesFile(t *testing.T) {
@@ -147,7 +188,8 @@ func TestGlobalStore_Snapshot(t *testing.T) {
 
 // ── Session tests ─────────────────────────────────────────────────────────
 
-func makeSession(snapshot map[string]any) *store.Session {
+func makeSession(t *testing.T, snapshot map[string]any) store.SessionState {
+	t.Helper()
 	// Use the SessionManager to create a session via GetOrCreate
 	gs, _ := store.NewGlobalStore(filepath.Join(os.TempDir(), "test-session-"+time.Now().Format("150405.000000000")+".json"))
 	for k, v := range snapshot {
@@ -159,7 +201,7 @@ func makeSession(snapshot map[string]any) *store.Session {
 		MaxSessions:       100,
 	}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
-	sess, _ := sm.GetOrCreate("")
+	sess, _ := mustGetOrCreate(t, sm, "")
 	return sess
 }
 
@@ -169,7 +211,7 @@ func TestSession_GetSet(t *testing.T) {
 
 	cfg := config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 100}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
-	sess, isNew := sm.GetOrCreate("")
+	sess, isNew := mustGetOrCreate(t, sm, "")
 
 	if !isNew {
 		t.Fatal("first session should be new")
@@ -180,7 +222,9 @@ func TestSession_GetSet(t *testing.T) {
 		t.Errorf("expected seed=value from snapshot, got %v, %v", v, ok)
 	}
 
-	sess.Set("counter", 1)
+	if err := sess.Set("counter", 1); err != nil {
+		t.Fatalf("Set(counter): %v", err)
+	}
 	v2, ok2 := sess.Get("counter")
 	if !ok2 || v2 != 1 {
 		t.Errorf("expected counter=1, got %v", v2)
@@ -194,7 +238,7 @@ func TestSession_GetSet(t *testing.T) {
 }
 
 func TestSession_Has(t *testing.T) {
-	sess := makeSession(map[string]any{"exists": "yes"})
+	sess := makeSession(t, map[string]any{"exists": "yes"})
 
 	if !sess.Has("exists") {
 		t.Fatal("expected Has to return true for existing key")
@@ -205,16 +249,18 @@ func TestSession_Has(t *testing.T) {
 }
 
 func TestSession_Delete(t *testing.T) {
-	sess := makeSession(map[string]any{"del": "me"})
+	sess := makeSession(t, map[string]any{"del": "me"})
 
-	sess.Delete("del")
+	if err := sess.Delete("del"); err != nil {
+		t.Fatalf("Delete(del): %v", err)
+	}
 	if sess.Has("del") {
 		t.Fatal("key should be gone after delete")
 	}
 }
 
 func TestSession_Keys(t *testing.T) {
-	sess := makeSession(map[string]any{"b": 1, "a": 2, "c": 3})
+	sess := makeSession(t, map[string]any{"b": 1, "a": 2, "c": 3})
 	keys := sess.Keys()
 
 	if len(keys) != 3 {
@@ -226,8 +272,10 @@ func TestSession_Keys(t *testing.T) {
 }
 
 func TestSession_Snapshot(t *testing.T) {
-	sess := makeSession(nil)
-	sess.Set("x", 42)
+	sess := makeSession(t, nil)
+	if err := sess.Set("x", 42); err != nil {
+		t.Fatalf("Set(x): %v", err)
+	}
 
 	snap := sess.Snapshot()
 	if snap["x"] != 42 {
@@ -259,11 +307,11 @@ func newManager(t *testing.T) (*store.GlobalStore, *store.SessionManager) {
 func TestSessionManager_GetOrCreate_NewSession(t *testing.T) {
 	_, sm := newManager(t)
 
-	sess, isNew := sm.GetOrCreate("")
+	sess, isNew := mustGetOrCreate(t, sm, "")
 	if !isNew {
 		t.Fatal("expected new session")
 	}
-	if sess.ID == "" {
+	if mustSessionID(sess) == "" {
 		t.Fatal("session ID must not be empty")
 	}
 }
@@ -271,13 +319,13 @@ func TestSessionManager_GetOrCreate_NewSession(t *testing.T) {
 func TestSessionManager_GetOrCreate_Resume(t *testing.T) {
 	_, sm := newManager(t)
 
-	sess1, _ := sm.GetOrCreate("")
-	sess2, isNew := sm.GetOrCreate(sess1.ID)
+	sess1, _ := mustGetOrCreate(t, sm, "")
+	sess2, isNew := mustGetOrCreate(t, sm, mustSessionID(sess1))
 
 	if isNew {
 		t.Fatal("should have resumed existing session")
 	}
-	if sess1.ID != sess2.ID {
+	if mustSessionID(sess1) != mustSessionID(sess2) {
 		t.Fatal("should return same session on resume")
 	}
 }
@@ -285,13 +333,13 @@ func TestSessionManager_GetOrCreate_Resume(t *testing.T) {
 func TestSessionManager_GetOrCreate_UnknownIDCreatesNew(t *testing.T) {
 	_, sm := newManager(t)
 
-	sess, isNew := sm.GetOrCreate("my-custom-session-id")
+	sess, isNew := mustGetOrCreate(t, sm, "my-custom-session-id")
 	if !isNew {
 		t.Fatal("unknown ID should produce a new session")
 	}
 	// The provided ID must be adopted as the session ID
-	if sess.ID != "my-custom-session-id" {
-		t.Fatalf("expected session ID 'my-custom-session-id', got %q", sess.ID)
+	if got := mustSessionID(sess); got != "my-custom-session-id" {
+		t.Fatalf("expected session ID 'my-custom-session-id', got %q", got)
 	}
 }
 
@@ -299,31 +347,33 @@ func TestSessionManager_GetOrCreate_UnknownIDCanBeResumed(t *testing.T) {
 	_, sm := newManager(t)
 
 	// First request with a custom ID creates the session
-	sess1, isNew := sm.GetOrCreate("user-session-abc")
+	sess1, isNew := mustGetOrCreate(t, sm, "user-session-abc")
 	if !isNew {
 		t.Fatal("first request should create a new session")
 	}
-	if sess1.ID != "user-session-abc" {
-		t.Fatalf("expected ID 'user-session-abc', got %q", sess1.ID)
+	if got := mustSessionID(sess1); got != "user-session-abc" {
+		t.Fatalf("expected ID 'user-session-abc', got %q", got)
 	}
 
 	// Second request with the same custom ID resumes the session
-	sess2, isNew := sm.GetOrCreate("user-session-abc")
+	sess2, isNew := mustGetOrCreate(t, sm, "user-session-abc")
 	if isNew {
 		t.Fatal("second request with same ID should resume existing session")
 	}
-	if sess2.ID != "user-session-abc" {
-		t.Fatalf("expected ID 'user-session-abc', got %q", sess2.ID)
+	if got := mustSessionID(sess2); got != "user-session-abc" {
+		t.Fatalf("expected ID 'user-session-abc', got %q", got)
 	}
 }
 
 func TestSessionManager_Invalidate(t *testing.T) {
 	_, sm := newManager(t)
 
-	sess, _ := sm.GetOrCreate("")
-	sm.Invalidate(sess.ID)
+	sess, _ := mustGetOrCreate(t, sm, "")
+	if err := sm.Invalidate(mustSessionID(sess)); err != nil {
+		t.Fatalf("Invalidate(): %v", err)
+	}
 
-	_, ok := sm.Get(sess.ID)
+	_, ok := mustGetSession(t, sm, mustSessionID(sess))
 	if ok {
 		t.Fatal("session should not exist after invalidate")
 	}
@@ -332,18 +382,20 @@ func TestSessionManager_Invalidate(t *testing.T) {
 func TestSessionManager_InvalidateAll(t *testing.T) {
 	_, sm := newManager(t)
 
-	sm.GetOrCreate("")
-	sm.GetOrCreate("")
-	sm.GetOrCreate("")
+	mustGetOrCreate(t, sm, "")
+	mustGetOrCreate(t, sm, "")
+	mustGetOrCreate(t, sm, "")
 
-	if sm.Count() != 3 {
-		t.Fatalf("expected 3 sessions, got %d", sm.Count())
+	if got := mustCountSessions(t, sm); got != 3 {
+		t.Fatalf("expected 3 sessions, got %d", got)
 	}
 
-	sm.InvalidateAll()
+	if err := sm.InvalidateAll(); err != nil {
+		t.Fatalf("InvalidateAll(): %v", err)
+	}
 
-	if sm.Count() != 0 {
-		t.Fatalf("expected 0 sessions after InvalidateAll, got %d", sm.Count())
+	if got := mustCountSessions(t, sm); got != 0 {
+		t.Fatalf("expected 0 sessions after InvalidateAll, got %d", got)
 	}
 }
 
@@ -356,24 +408,24 @@ func TestSessionManager_MaxSessions_Evicts(t *testing.T) {
 	}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
 
-	sm.GetOrCreate("")
-	sm.GetOrCreate("")
-	sm.GetOrCreate("")
+	mustGetOrCreate(t, sm, "")
+	mustGetOrCreate(t, sm, "")
+	mustGetOrCreate(t, sm, "")
 	// This one should evict the oldest
-	sm.GetOrCreate("")
+	mustGetOrCreate(t, sm, "")
 
-	if sm.Count() > 3 {
-		t.Errorf("expected at most 3 sessions, got %d", sm.Count())
+	if got := mustCountSessions(t, sm); got > 3 {
+		t.Errorf("expected at most 3 sessions, got %d", got)
 	}
 }
 
 func TestSessionManager_ActiveSessions(t *testing.T) {
 	_, sm := newManager(t)
 
-	sm.GetOrCreate("")
-	sm.GetOrCreate("")
+	mustGetOrCreate(t, sm, "")
+	mustGetOrCreate(t, sm, "")
 
-	infos := sm.ActiveSessions()
+	infos := mustActiveSessions(t, sm)
 	if len(infos) != 2 {
 		t.Fatalf("expected 2 active sessions, got %d", len(infos))
 	}
@@ -381,13 +433,14 @@ func TestSessionManager_ActiveSessions(t *testing.T) {
 
 // ── StoreBuiltin tests ────────────────────────────────────────────────────
 
-func makeBuiltin() (*store.StoreBuiltin, *store.Session) {
+func makeBuiltin(t *testing.T) (*store.StoreBuiltin, store.SessionState) {
+	t.Helper()
 	gs, _ := store.NewGlobalStore(filepath.Join(os.TempDir(), "builtin-test-"+time.Now().Format("150405.000000000")+".json"))
 	_ = gs.Set("seed", "hello")
 
 	cfg := config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 100}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
-	sess, _ := sm.GetOrCreate("")
+	sess, _ := mustGetOrCreate(t, sm, "")
 
 	var log []interface{}
 	_ = log
@@ -413,7 +466,7 @@ func callMethod(t *testing.T, sb *store.StoreBuiltin, name string, args ...starl
 }
 
 func TestStoreBuiltin_GetExisting(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	v := callMethod(t, sb, "get", starlark.String("seed"))
 	if v.(starlark.String) != "hello" {
 		t.Errorf("expected 'hello', got %v", v)
@@ -421,7 +474,7 @@ func TestStoreBuiltin_GetExisting(t *testing.T) {
 }
 
 func TestStoreBuiltin_GetMissing_ReturnsNone(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	v := callMethod(t, sb, "get", starlark.String("missing"))
 	if v != starlark.None {
 		t.Errorf("expected None, got %v", v)
@@ -429,7 +482,7 @@ func TestStoreBuiltin_GetMissing_ReturnsNone(t *testing.T) {
 }
 
 func TestStoreBuiltin_GetWithDefault(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	v := callMethod(t, sb, "get", starlark.String("missing"), starlark.MakeInt(42))
 	if v.(starlark.Int).BigInt().Int64() != 42 {
 		t.Errorf("expected 42, got %v", v)
@@ -437,7 +490,7 @@ func TestStoreBuiltin_GetWithDefault(t *testing.T) {
 }
 
 func TestStoreBuiltin_Set(t *testing.T) {
-	sb, sess := makeBuiltin()
+	sb, sess := makeBuiltin(t)
 	callMethod(t, sb, "set", starlark.String("counter"), starlark.MakeInt(1))
 
 	v, ok := sess.Get("counter")
@@ -450,7 +503,7 @@ func TestStoreBuiltin_Set(t *testing.T) {
 }
 
 func TestStoreBuiltin_Has(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	v := callMethod(t, sb, "has", starlark.String("seed"))
 	if v.(starlark.Bool) != starlark.True {
 		t.Error("expected has(seed) = True")
@@ -463,7 +516,7 @@ func TestStoreBuiltin_Has(t *testing.T) {
 }
 
 func TestStoreBuiltin_Delete(t *testing.T) {
-	sb, sess := makeBuiltin()
+	sb, sess := makeBuiltin(t)
 	callMethod(t, sb, "delete", starlark.String("seed"))
 
 	if sess.Has("seed") {
@@ -472,7 +525,7 @@ func TestStoreBuiltin_Delete(t *testing.T) {
 }
 
 func TestStoreBuiltin_Keys(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	callMethod(t, sb, "set", starlark.String("z"), starlark.String("last"))
 	callMethod(t, sb, "set", starlark.String("a"), starlark.String("first"))
 
@@ -489,7 +542,7 @@ func TestStoreBuiltin_AccessLog(t *testing.T) {
 
 	cfg := config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 100}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
-	sess, _ := sm.GetOrCreate("")
+	sess, _ := mustGetOrCreate(t, sm, "")
 
 	// NewStoreBuiltin with nil accessLog must not panic on any operation
 	sb := store.NewStoreBuiltin(sess, nil)
@@ -501,7 +554,7 @@ func TestStoreBuiltin_AccessLog(t *testing.T) {
 }
 
 func TestStoreBuiltin_AttrNames(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 	names := sb.AttrNames()
 
 	expected := map[string]bool{"get": true, "set": true, "has": true, "delete": true, "keys": true}
@@ -565,7 +618,7 @@ func TestNewEphemeralSession_NilSnapshot(t *testing.T) {
 // ── StoreBuiltin interface methods ───────────────────────────────────────────
 
 func TestStoreBuiltin_Interface(t *testing.T) {
-	sb, _ := makeBuiltin()
+	sb, _ := makeBuiltin(t)
 
 	if got := sb.String(); got != "store" {
 		t.Errorf("String() = %q, want 'store'", got)
@@ -634,4 +687,3 @@ store.set("nil_val",   None)
 		t.Errorf("nil_val = %v, want nil", v)
 	}
 }
-

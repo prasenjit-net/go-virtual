@@ -61,6 +61,15 @@ func TestDefault(t *testing.T) {
 	if cfg.AI.Claude.APIVersion != DefaultClaudeAPIVersion {
 		t.Errorf("Expected default Claude API version %q, got %q", DefaultClaudeAPIVersion, cfg.AI.Claude.APIVersion)
 	}
+	if cfg.Session.StoreType != SessionStoreMemory {
+		t.Errorf("Expected default session store type %q, got %q", SessionStoreMemory, cfg.Session.StoreType)
+	}
+	if cfg.Session.Redis.Addr != DefaultRedisAddr {
+		t.Errorf("Expected default session redis addr %q, got %q", DefaultRedisAddr, cfg.Session.Redis.Addr)
+	}
+	if cfg.Session.Redis.KeyPrefix != DefaultRedisKeyPrefix {
+		t.Errorf("Expected default session redis key prefix %q, got %q", DefaultRedisKeyPrefix, cfg.Session.Redis.KeyPrefix)
+	}
 }
 
 func TestLoad(t *testing.T) {
@@ -152,6 +161,49 @@ ai:
 	}
 	if cfg.AI.Claude.BaseURL != "https://api.anthropic.com/v1/messages" {
 		t.Errorf("Expected Claude base URL override, got %q", cfg.AI.Claude.BaseURL)
+	}
+}
+
+func TestLoad_SessionRedisConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configContent := `
+session:
+  storeType: redis
+  headerName: X-Scale-Session
+  inactivityTimeout: 45m
+  maxSessions: 500
+  redis:
+    addr: redis.example:6380
+    username: app-user
+    password: secret
+    db: 2
+    keyPrefix: app:sessions
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Session.StoreType != SessionStoreRedis {
+		t.Fatalf("Expected session store type %q, got %q", SessionStoreRedis, cfg.Session.StoreType)
+	}
+	if cfg.Session.HeaderName != "X-Scale-Session" {
+		t.Fatalf("Expected session header name to load, got %q", cfg.Session.HeaderName)
+	}
+	if cfg.Session.InactivityTimeout != 45*time.Minute {
+		t.Fatalf("Expected inactivity timeout 45m, got %v", cfg.Session.InactivityTimeout)
+	}
+	if cfg.Session.MaxSessions != 500 {
+		t.Fatalf("Expected maxSessions 500, got %d", cfg.Session.MaxSessions)
+	}
+	if cfg.Session.Redis.Addr != "redis.example:6380" || cfg.Session.Redis.Username != "app-user" || cfg.Session.Redis.Password != "secret" || cfg.Session.Redis.DB != 2 || cfg.Session.Redis.KeyPrefix != "app:sessions" {
+		t.Fatalf("Expected Redis session config to load, got %+v", cfg.Session.Redis)
 	}
 }
 
@@ -356,6 +408,64 @@ func TestLoggingConfigNormalizeInvalidValues(t *testing.T) {
 	}
 }
 
+func TestSessionConfigNormalize(t *testing.T) {
+	cfg := SessionConfig{
+		StoreType:         " REDIS ",
+		HeaderName:        " X-Scale-Session ",
+		InactivityTimeout: 45 * time.Minute,
+		MaxSessions:       250,
+		Redis: RedisSessionConfig{
+			Addr:      " redis.example:6380 ",
+			Username:  " user ",
+			Password:  " pass ",
+			DB:        3,
+			KeyPrefix: " app:sessions ",
+		},
+	}
+	cfg.Normalize()
+
+	if cfg.StoreType != SessionStoreRedis {
+		t.Fatalf("expected normalized redis store type, got %q", cfg.StoreType)
+	}
+	if cfg.HeaderName != "X-Scale-Session" {
+		t.Fatalf("expected trimmed header name, got %q", cfg.HeaderName)
+	}
+	if cfg.Redis.Addr != "redis.example:6380" || cfg.Redis.Username != "user" || cfg.Redis.Password != "pass" || cfg.Redis.DB != 3 || cfg.Redis.KeyPrefix != "app:sessions" {
+		t.Fatalf("expected trimmed redis config, got %+v", cfg.Redis)
+	}
+}
+
+func TestSessionConfigNormalizeInvalidValues(t *testing.T) {
+	cfg := SessionConfig{
+		StoreType:         "clustered",
+		HeaderName:        " ",
+		InactivityTimeout: 0,
+		MaxSessions:       0,
+		Redis: RedisSessionConfig{
+			Addr:      " ",
+			DB:        -1,
+			KeyPrefix: " ",
+		},
+	}
+	cfg.Normalize()
+
+	if cfg.StoreType != SessionStoreMemory {
+		t.Fatalf("expected invalid store type to fall back to %q, got %q", SessionStoreMemory, cfg.StoreType)
+	}
+	if cfg.HeaderName != "X-Virtual-Session-Id" {
+		t.Fatalf("expected default header name, got %q", cfg.HeaderName)
+	}
+	if cfg.InactivityTimeout != 30*time.Minute {
+		t.Fatalf("expected default inactivity timeout 30m, got %v", cfg.InactivityTimeout)
+	}
+	if cfg.MaxSessions != 10000 {
+		t.Fatalf("expected default maxSessions 10000, got %d", cfg.MaxSessions)
+	}
+	if cfg.Redis.Addr != DefaultRedisAddr || cfg.Redis.DB != 0 || cfg.Redis.KeyPrefix != DefaultRedisKeyPrefix {
+		t.Fatalf("expected default redis config fallback, got %+v", cfg.Redis)
+	}
+}
+
 func TestLoad_RelativeStoragePath(t *testing.T) {
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "config.yaml")
@@ -551,5 +661,84 @@ func TestMTLSConfig_Struct(t *testing.T) {
 	}
 	if m.CACertFile != "ca.crt" {
 		t.Errorf("CACertFile mismatch: %q", m.CACertFile)
+	}
+}
+
+func TestStorageConfigNormalize(t *testing.T) {
+	// Default file type is preserved.
+	cfg := StorageConfig{Type: "file", Path: "/data"}
+	cfg.Normalize()
+	if cfg.Type != StorageTypeFile {
+		t.Errorf("expected type %q, got %q", StorageTypeFile, cfg.Type)
+	}
+	// Mongo defaults are applied even when type is file.
+	if cfg.Mongo.Database != DefaultMongoDB {
+		t.Errorf("expected mongo database %q, got %q", DefaultMongoDB, cfg.Mongo.Database)
+	}
+	if cfg.Mongo.CollectionPrefix != DefaultMongoCollectionPrefix {
+		t.Errorf("expected mongo collection prefix %q, got %q", DefaultMongoCollectionPrefix, cfg.Mongo.CollectionPrefix)
+	}
+	if cfg.Mongo.ConnectTimeoutSeconds != DefaultMongoConnectTimeoutSeconds {
+		t.Errorf("expected connect timeout %d, got %d", DefaultMongoConnectTimeoutSeconds, cfg.Mongo.ConnectTimeoutSeconds)
+	}
+
+	// Unknown type falls back to "file".
+	cfg2 := StorageConfig{Type: "unknown"}
+	cfg2.Normalize()
+	if cfg2.Type != StorageTypeFile {
+		t.Errorf("expected fallback type %q, got %q", StorageTypeFile, cfg2.Type)
+	}
+
+	// "memory" type is preserved.
+	cfg3 := StorageConfig{Type: "memory"}
+	cfg3.Normalize()
+	if cfg3.Type != StorageTypeMemory {
+		t.Errorf("expected type %q, got %q", StorageTypeMemory, cfg3.Type)
+	}
+}
+
+func TestStorageConfigNormalizeMongo(t *testing.T) {
+	cfg := StorageConfig{
+		Type: "mongo",
+		Mongo: MongoConfig{
+			URI:      "mongodb://localhost:27017",
+			Database: "mydb",
+		},
+	}
+	cfg.Normalize()
+
+	if cfg.Type != StorageTypeMongo {
+		t.Errorf("expected type %q, got %q", StorageTypeMongo, cfg.Type)
+	}
+	if cfg.Mongo.Database != "mydb" {
+		t.Errorf("expected database %q, got %q", "mydb", cfg.Mongo.Database)
+	}
+	// CollectionPrefix defaults applied since it was empty.
+	if cfg.Mongo.CollectionPrefix != DefaultMongoCollectionPrefix {
+		t.Errorf("expected collection prefix %q, got %q", DefaultMongoCollectionPrefix, cfg.Mongo.CollectionPrefix)
+	}
+	if cfg.Mongo.ConnectTimeoutSeconds != DefaultMongoConnectTimeoutSeconds {
+		t.Errorf("expected connect timeout %d, got %d", DefaultMongoConnectTimeoutSeconds, cfg.Mongo.ConnectTimeoutSeconds)
+	}
+
+	// Explicit values are not overwritten.
+	cfg2 := StorageConfig{
+		Type: "mongo",
+		Mongo: MongoConfig{
+			URI:                   "mongodb://host:27017",
+			Database:              "customdb",
+			CollectionPrefix:      "myapp_",
+			ConnectTimeoutSeconds: 30,
+		},
+	}
+	cfg2.Normalize()
+	if cfg2.Mongo.Database != "customdb" {
+		t.Errorf("expected database %q, got %q", "customdb", cfg2.Mongo.Database)
+	}
+	if cfg2.Mongo.CollectionPrefix != "myapp_" {
+		t.Errorf("expected collection prefix %q, got %q", "myapp_", cfg2.Mongo.CollectionPrefix)
+	}
+	if cfg2.Mongo.ConnectTimeoutSeconds != 30 {
+		t.Errorf("expected connect timeout 30, got %d", cfg2.Mongo.ConnectTimeoutSeconds)
 	}
 }
