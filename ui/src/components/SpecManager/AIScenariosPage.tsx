@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ArrowLeft, Bot, ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
+import { AlertTriangle, Bot, ChevronRight, Plus, Save, Trash2 } from 'lucide-react'
 import clsx from 'clsx'
 import { aiScenariosApi } from '../../services/api'
 import type { AIScenario, AIScenarioKind } from '../../types'
@@ -347,12 +346,19 @@ export default function AIScenariosPage() {
     }, [selectedScenario])
 
     if (scenariosQuery.isLoading) {
-        return <div className="p-6 text-sm text-gray-500 dark:text-slate-400">Loading AI scenarios...</div>
+        return (
+            <div className="p-8">
+                <div className="animate-pulse space-y-4">
+                    <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-48"></div>
+                    <div className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
+                </div>
+            </div>
+        )
     }
 
     if (scenariosQuery.error) {
         return (
-            <div className="p-6">
+            <div className="p-8">
                 <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">
                     Failed to load AI scenarios.
                 </div>
@@ -361,27 +367,18 @@ export default function AIScenariosPage() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between gap-4">
-                <div>
-                    <Link
-                        to="/scripts"
-                        className="inline-flex items-center text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
-                    >
-                        <ArrowLeft className="mr-1 h-4 w-4" />
-                        Back to scripts
-                    </Link>
-                    <div className="mt-3 flex items-start gap-3">
-                        <div className="rounded-lg bg-fuchsia-100 p-3 dark:bg-fuchsia-900/30">
-                            <Bot className="h-6 w-6 text-fuchsia-600 dark:text-fuchsia-400" />
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">AI Scenarios</h1>
-                            <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
-                                All specs share these named scenarios when requests send{' '}
-                                <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-slate-800">X-Virtual-AI-Scenario</code>.
-                            </p>
-                        </div>
+        <div className="p-8 space-y-8">
+            <div className="flex items-center justify-between">
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-fuchsia-100 p-3 dark:bg-fuchsia-900/30">
+                        <Bot className="h-6 w-6 text-fuchsia-600 dark:text-fuchsia-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">AI Scenarios</h1>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                            All specs share these named scenarios when requests send{' '}
+                            <code className="rounded bg-gray-100 px-1 py-0.5 dark:bg-slate-800">X-Virtual-AI-Scenario</code>.
+                        </p>
                     </div>
                 </div>
             </div>
