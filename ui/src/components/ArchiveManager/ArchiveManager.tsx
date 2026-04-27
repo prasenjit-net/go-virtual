@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Archive, Plus, Upload, RefreshCw, Download, Trash2, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react'
 import { archivesApi } from '../../services/api'
@@ -25,6 +25,111 @@ function formatRelativeTime(iso: string): string {
     return `${days}d ago`
 }
 
+// ── Snapshot mode panel ───────────────────────────────────────────────────────
+
+function SnapshotPanel() {
+    const fileInputRef = useRef<HTMLInputElement>(null)
+    const [restoreMsg, setRestoreMsg] = useState<string | null>(null)
+    const [restoreError, setRestoreError] = useState<string | null>(null)
+
+    const restoreMutation = useMutation({
+        mutationFn: archivesApi.restoreSnapshot,
+        onSuccess: () => {
+            setRestoreError(null)
+            setRestoreMsg('Snapshot restored successfully. All data has been replaced.')
+        },
+        onError: (err: Error) => {
+            setRestoreMsg(null)
+            setRestoreError(err.message || 'Restore failed')
+        },
+    })
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+        if (!confirm(`Upload and restore "${file.name}"? This will wipe ALL current data and replace it with the contents of the uploaded file.`)) {
+            e.target.value = ''
+            return
+        }
+        setRestoreMsg(null)
+        setRestoreError(null)
+        restoreMutation.mutate(file)
+        e.target.value = ''
+    }
+
+    return (
+        <div className="p-6 max-w-3xl mx-auto">
+            <div className="flex items-center gap-3 mb-6">
+                <Archive className="w-6 h-6 text-indigo-500" />
+                <div>
+                    <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Archives — Snapshot Mode</h1>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                        In-memory or MongoDB storage: download the current state or upload a full replacement snapshot.
+                    </p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Download */}
+                <a
+                    href={archivesApi.snapshotDownloadUrl()}
+                    download
+                    className="flex flex-col items-center justify-center gap-3 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors group"
+                >
+                    <Download className="w-8 h-8 text-indigo-500 group-hover:text-indigo-600" />
+                    <div className="text-center">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">Download Snapshot</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Export all current data as a ZIP file
+                        </div>
+                    </div>
+                </a>
+
+                {/* Upload & Restore */}
+                <button
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={restoreMutation.isPending}
+                    className="flex flex-col items-center justify-center gap-3 p-6 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors group disabled:opacity-60"
+                >
+                    <Upload className="w-8 h-8 text-amber-500 group-hover:text-amber-600" />
+                    <div className="text-center">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">
+                            {restoreMutation.isPending ? 'Restoring…' : 'Upload & Restore'}
+                        </div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                            Replace all data with an uploaded snapshot ZIP
+                        </div>
+                    </div>
+                </button>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".zip"
+                    className="hidden"
+                    onChange={handleFileChange}
+                />
+            </div>
+
+            {restoreMsg && (
+                <div className="mt-4 p-3 rounded bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 text-green-700 dark:text-green-300 text-sm">
+                    {restoreMsg}
+                </div>
+            )}
+            {restoreError && (
+                <div className="mt-4 p-3 rounded bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 text-sm">
+                    {restoreError}
+                </div>
+            )}
+
+            <p className="mt-6 text-xs text-gray-400 dark:text-gray-500">
+                ⚠️ Upload & Restore wipes <strong>all current data</strong> before applying the snapshot. Make sure to download a backup first.
+            </p>
+        </div>
+    )
+}
+
+// ── Full mode panel (original UI) ─────────────────────────────────────────────
+
 export default function ArchiveManager() {
     const queryClient = useQueryClient()
     const [showCreate, setShowCreate] = useState(false)
@@ -32,9 +137,16 @@ export default function ArchiveManager() {
     const [restoreTarget, setRestoreTarget] = useState<ArchiveMeta | null>(null)
     const [expandedId, setExpandedId] = useState<string | null>(null)
 
+    const { data: info, isLoading: infoLoading } = useQuery({
+        queryKey: ['archives-info'],
+        queryFn: archivesApi.info,
+        retry: false,
+    })
+
     const { data: archives = [], isLoading, refetch } = useQuery({
         queryKey: ['archives'],
         queryFn: archivesApi.list,
+        enabled: info?.mode === 'full',
     })
 
     const deleteMutation = useMutation({
@@ -45,6 +157,15 @@ export default function ArchiveManager() {
     const handleDelete = (meta: ArchiveMeta) => {
         if (!confirm(`Delete archive "${meta.label || meta.filename}"? This cannot be undone.`)) return
         deleteMutation.mutate(meta.id)
+    }
+
+    if (infoLoading) {
+        return <div className="p-6 text-center text-gray-500 dark:text-gray-400">Loading…</div>
+    }
+
+    // Snapshot mode: delegate to dedicated panel
+    if (info?.mode === 'snapshot') {
+        return <SnapshotPanel />
     }
 
     return (

@@ -1,9 +1,12 @@
 package archive_test
 
 import (
+	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +29,7 @@ func newTestStore(t *testing.T) *store.GlobalStore {
 	return gs
 }
 
-// seedStorage populates a Storage with one spec, one tag, and one response config.
+// seedStorage populates a Storage with one spec, one tag, one response config, one script, and one binding.
 func seedStorage(t *testing.T, stor storage.Storage) {
 	t.Helper()
 
@@ -68,6 +71,26 @@ func seedStorage(t *testing.T, stor storage.Storage) {
 	}
 	if err := stor.CreateResponseConfig(cfg); err != nil {
 		t.Fatalf("create response config: %v", err)
+	}
+
+	script := &models.Script{
+		ID:      "script-001",
+		Name:    "hello-world",
+		Source:  `def run(req): log("hello")`,
+		Enabled: true,
+	}
+	if err := stor.CreateScript(script); err != nil {
+		t.Fatalf("create script: %v", err)
+	}
+
+	binding := &models.ScriptBinding{
+		ID:          "bind-001",
+		OperationID: "op-001",
+		ScriptID:    "script-001",
+		Order:       0,
+	}
+	if err := stor.CreateScriptBinding(binding); err != nil {
+		t.Fatalf("create script binding: %v", err)
 	}
 }
 
@@ -512,4 +535,367 @@ func TestManagerSortOrder(t *testing.T) {
 	if list[0].Label != "second" {
 		t.Errorf("expected newest-first; list[0].Label = %q, want %q", list[0].Label, "second")
 	}
+}
+
+// ── SnapshotArchiveManager tests ─────────────────────────────────────────────
+
+func TestSnapshotMode(t *testing.T) {
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, stor)
+
+mgr := archive.NewSnapshotArchiveManager(stor, gs)
+
+if mgr.Mode() != archive.ModeSnapshot {
+t.Fatalf("expected ModeSnapshot, got %q", mgr.Mode())
+}
+}
+
+func TestSnapshotDownloadAndRestore(t *testing.T) {
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, stor)
+
+mgr := archive.NewSnapshotArchiveManager(stor, gs)
+
+// Download
+zipBytes, meta, err := mgr.DownloadSnapshot()
+if err != nil {
+t.Fatalf("DownloadSnapshot: %v", err)
+}
+if len(zipBytes) == 0 {
+t.Fatal("expected non-empty ZIP")
+}
+if meta == nil {
+t.Fatal("expected non-nil meta")
+}
+if meta.Filename == "" {
+t.Error("expected non-empty filename")
+}
+if meta.SizeBytes != int64(len(zipBytes)) {
+t.Errorf("meta.SizeBytes=%d, len(zipBytes)=%d", meta.SizeBytes, len(zipBytes))
+}
+
+// Wipe destination and restore
+dest := storage.NewMemoryStorage()
+gsDest := newTestStore(t)
+mgr2 := archive.NewSnapshotArchiveManager(dest, gsDest)
+
+resp, err := mgr2.RestoreSnapshot(zipBytes)
+if err != nil {
+t.Fatalf("RestoreSnapshot: %v", err)
+}
+if resp == nil || resp.Result == nil {
+t.Fatal("expected non-nil response")
+}
+if len(resp.Result.Errors) > 0 {
+t.Errorf("restore errors: %v", resp.Result.Errors)
+}
+
+specs, err := dest.GetAllSpecs()
+if err != nil {
+t.Fatalf("ListSpecs after restore: %v", err)
+}
+if len(specs) == 0 {
+t.Error("expected at least one spec after restore")
+}
+}
+
+func TestSnapshotFullModeStubsReturnError(t *testing.T) {
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+mgr := archive.NewSnapshotArchiveManager(stor, gs)
+
+if list := mgr.List(); list != nil {
+t.Errorf("expected nil list in snapshot mode, got %v", list)
+}
+
+if _, err := mgr.Create("x"); err != archive.ErrSnapshotMode {
+t.Errorf("Create: expected ErrSnapshotMode, got %v", err)
+}
+if _, err := mgr.Get("x"); err != archive.ErrSnapshotMode {
+t.Errorf("Get: expected ErrSnapshotMode, got %v", err)
+}
+if err := mgr.Delete("x"); err != archive.ErrSnapshotMode {
+t.Errorf("Delete: expected ErrSnapshotMode, got %v", err)
+}
+if _, err := mgr.FilePath("x"); err != archive.ErrSnapshotMode {
+t.Errorf("FilePath: expected ErrSnapshotMode, got %v", err)
+}
+if _, err := mgr.Save(bytes.NewReader(nil), 0, ""); err != archive.ErrSnapshotMode {
+t.Errorf("Save: expected ErrSnapshotMode, got %v", err)
+}
+if _, err := mgr.Restore("x", archive.RestoreInput{}); err != archive.ErrSnapshotMode {
+t.Errorf("Restore: expected ErrSnapshotMode, got %v", err)
+}
+}
+
+func TestArchiveManagerSnapshotStubsReturnError(t *testing.T) {
+dir := t.TempDir()
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+mgr, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+
+if mgr.Mode() != archive.ModeFull {
+t.Fatalf("expected ModeFull, got %q", mgr.Mode())
+}
+if _, _, err := mgr.DownloadSnapshot(); err != archive.ErrFullMode {
+t.Errorf("DownloadSnapshot: expected ErrFullMode, got %v", err)
+}
+if _, err := mgr.RestoreSnapshot(nil); err != archive.ErrFullMode {
+t.Errorf("RestoreSnapshot: expected ErrFullMode, got %v", err)
+}
+}
+
+func TestArchiveServiceInterface(t *testing.T) {
+// Both implementations must satisfy the interface at compile time.
+var _ archive.ArchiveService = archive.NewSnapshotArchiveManager(storage.NewMemoryStorage(), newTestStore(t))
+dir := t.TempDir()
+mgr, err := archive.NewArchiveManager(dir, storage.NewMemoryStorage(), newTestStore(t))
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+var _ archive.ArchiveService = mgr
+}
+
+func TestArchiveErrTypes(t *testing.T) {
+// archiveErr.Error() — the typed sentinel
+if archive.ErrSnapshotMode.Error() == "" {
+t.Error("ErrSnapshotMode.Error() should be non-empty")
+}
+if archive.ErrFullMode.Error() == "" {
+t.Error("ErrFullMode.Error() should be non-empty")
+}
+}
+
+func TestSnapshotRestoreCorruptZIP(t *testing.T) {
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+mgr := archive.NewSnapshotArchiveManager(stor, gs)
+
+// Corrupt data should produce an error
+_, err := mgr.RestoreSnapshot([]byte("not a zip"))
+if err == nil {
+t.Error("expected error restoring corrupt ZIP")
+}
+}
+
+func TestManagerRebuildIndex_MultipleArchives(t *testing.T) {
+dir := t.TempDir()
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, stor)
+
+mgr, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+if _, err := mgr.Create("first"); err != nil {
+t.Fatalf("Create first: %v", err)
+}
+time.Sleep(2 * time.Millisecond)
+if _, err := mgr.Create("second"); err != nil {
+t.Fatalf("Create second: %v", err)
+}
+
+// Remove the index to force rebuild with 2 ZIPs.
+if err := os.Remove(filepath.Join(dir, "index.json")); err != nil {
+t.Fatalf("remove index: %v", err)
+}
+
+mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager after index removal: %v", err)
+}
+list := mgr2.List()
+if len(list) != 2 {
+t.Fatalf("expected 2 archives after rebuild, got %d", len(list))
+}
+if list[0].Label != "second" {
+t.Errorf("expected newest-first, got %q", list[0].Label)
+}
+}
+
+func TestManagerRestoreWithBackup(t *testing.T) {
+dir := t.TempDir()
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, stor)
+
+mgr, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+meta, err := mgr.Create("before-restore")
+if err != nil {
+t.Fatalf("Create: %v", err)
+}
+
+resp, err := mgr.Restore(meta.ID, archive.RestoreInput{WipeFirst: false, CreateBackupFirst: true})
+if err != nil {
+t.Fatalf("Restore with backup: %v", err)
+}
+if resp.BackupCreated == nil {
+t.Error("expected backup to be created")
+}
+if len(mgr.List()) < 2 {
+t.Errorf("expected >= 2 archives after restore with backup, got %d", len(mgr.List()))
+}
+}
+
+func TestWipeFirst_WithRichStore(t *testing.T) {
+src := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, src)
+
+zipBytes, _, err := archive.BuildZIP("rich-wipe-test", src, gs)
+if err != nil {
+t.Fatalf("BuildZIP: %v", err)
+}
+
+// Use a destination that also has seeded data (scripts, tags, operations)
+// so wipeAll exercises the loop bodies for each entity type.
+dst := storage.NewMemoryStorage()
+dstGS := newTestStore(t)
+seedStorage(t, dst)
+_ = dstGS.Set("extra-key", "should-be-gone")
+
+_, err = archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, dst, dstGS)
+if err != nil {
+t.Fatalf("ApplyZIP wipe with rich store: %v", err)
+}
+
+// Original data should still be present (restored from archive).
+if _, err := dst.GetSpec("spec-001"); err != nil {
+t.Errorf("archive spec missing after wipe restore: %v", err)
+}
+// Extra key should be gone.
+if _, ok := dstGS.Get("extra-key"); ok {
+t.Error("extra store key should have been wiped")
+}
+}
+
+func TestManagerRestore_InvalidID(t *testing.T) {
+dir := t.TempDir()
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+
+mgr, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+
+_, err = mgr.Restore("nonexistent-id", archive.RestoreInput{})
+if err == nil {
+t.Error("expected error when restoring nonexistent archive")
+}
+}
+
+func TestManagerRestore_DeletedFile(t *testing.T) {
+dir := t.TempDir()
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+seedStorage(t, stor)
+
+mgr, err := archive.NewArchiveManager(dir, stor, gs)
+if err != nil {
+t.Fatalf("NewArchiveManager: %v", err)
+}
+meta, err := mgr.Create("test")
+if err != nil {
+t.Fatalf("Create: %v", err)
+}
+
+// Delete the ZIP file from disk but keep the index entry.
+path, _ := mgr.FilePath(meta.ID)
+if err := os.Remove(path); err != nil {
+t.Fatalf("Remove: %v", err)
+}
+
+// Restore should fail because the ZIP is gone.
+_, err = mgr.Restore(meta.ID, archive.RestoreInput{})
+if err == nil {
+t.Error("expected error when ZIP file is missing")
+}
+}
+
+func TestBuildZIP_JSONSpec(t *testing.T) {
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+
+// Create a spec with JSON content (not YAML).
+jsonSpec := `{"openapi":"3.0.0","info":{"title":"test","version":"1.0"},"paths":{}}`
+if err := stor.CreateSpec(&models.Spec{
+ID:      "json-spec",
+Name:    "JSON Spec",
+Content: jsonSpec,
+}); err != nil {
+t.Fatalf("CreateSpec: %v", err)
+}
+
+zipBytes, _, err := archive.BuildZIP("json-spec-test", stor, gs)
+if err != nil {
+t.Fatalf("BuildZIP: %v", err)
+}
+
+// Verify we can read it back.
+result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, storage.NewMemoryStorage(), newTestStore(t))
+if err != nil {
+t.Fatalf("ApplyZIP: %v", err)
+}
+if result.Created["specs"] < 1 {
+t.Errorf("expected at least 1 spec created, got %d", result.Created["specs"])
+}
+}
+
+func TestApplyZIP_UnsupportedVersion(t *testing.T) {
+// Build a valid ZIP, then tamper with manifest.json to have a different version.
+stor := storage.NewMemoryStorage()
+gs := newTestStore(t)
+zipBytes, _, err := archive.BuildZIP("test", stor, gs)
+if err != nil {
+t.Fatalf("BuildZIP: %v", err)
+}
+
+// Unpack, modify manifest, repack.
+r, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+if err != nil {
+t.Fatalf("open zip: %v", err)
+}
+var newBuf bytes.Buffer
+zw := zip.NewWriter(&newBuf)
+for _, f := range r.File {
+rc, _ := f.Open()
+var content []byte
+if f.Name == "manifest.json" {
+var m archive.Manifest
+_ = json.NewDecoder(rc).Decode(&m)
+rc.Close()
+m.Version = "999"
+content, _ = json.Marshal(m)
+} else {
+buf := new(bytes.Buffer)
+buf.ReadFrom(rc)
+rc.Close()
+content = buf.Bytes()
+}
+w, _ := zw.Create(f.Name)
+w.Write(content)
+}
+zw.Close()
+
+_, err = archive.ApplyZIP(newBuf.Bytes(), archive.RestoreOptions{}, storage.NewMemoryStorage(), newTestStore(t))
+if err == nil || !strings.Contains(err.Error(), "unsupported version") {
+t.Errorf("expected unsupported version error, got %v", err)
+}
+}
+
+func TestParseManifest_InvalidJSON(t *testing.T) {
+_, err := archive.ParseManifest([]byte("not json"))
+if err == nil {
+t.Error("expected error for invalid JSON manifest")
+}
 }

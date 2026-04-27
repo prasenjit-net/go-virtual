@@ -28,7 +28,7 @@ type RouterConfig struct {
 	ProxyEngine    *proxy.Engine
 	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
 	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
-	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
+	ArchiveManager archive.ArchiveService  // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	Headless       bool
 	ScriptTimeout  int           // ms; 0 = use default (100)
@@ -194,6 +194,9 @@ func (r *Router) setupRoutes() {
 		api.DELETE("/sessions", r.handler.InvalidateAllSessions)
 
 		// Archives
+		api.GET("/archives/info", r.handler.ArchiveInfo)
+		api.GET("/archives/snapshot", r.handler.DownloadSnapshot)
+		api.POST("/archives/snapshot/restore", r.handler.RestoreSnapshot)
 		api.GET("/archives", r.handler.ListArchives)
 		api.POST("/archives", r.handler.CreateArchive)
 		api.POST("/archives/upload", r.handler.UploadArchive)

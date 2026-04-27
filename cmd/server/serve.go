@@ -238,12 +238,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize archive manager before creating the router so all deps can
 	// be passed in one shot via RouterConfig.
-	var archiveManager *archive.ArchiveManager
-	archivesDir := filepath.Join(storePath, "archives")
-	if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
-		serverLog.Warn("Failed to initialize archive manager", "event", "archive_manager_init_failed", "path", archivesDir, "error", err)
-	} else {
-		archiveManager = am
+	var archiveService archive.ArchiveService
+	switch storageType {
+	case config.StorageTypeMongo, config.StorageTypeMemory:
+		archiveService = archive.NewSnapshotArchiveManager(store, globalStore)
+		serverLog.Info("Archive mode: snapshot (no persistent history)", "event", "archive_mode", "mode", "snapshot", "storage_type", storageType)
+	default: // file
+		archivesDir := filepath.Join(storePath, "archives")
+		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
+			serverLog.Warn("Failed to initialize archive manager", "event", "archive_manager_init_failed", "path", archivesDir, "error", err)
+		} else {
+			archiveService = am
+			serverLog.Info("Archive mode: full (persistent history)", "event", "archive_mode", "mode", "full", "path", archivesDir)
+		}
 	}
 
 	// Setup router — all dependencies injected upfront, no post-construction setters.
@@ -254,7 +261,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ProxyEngine:    proxyEngine,
 		GlobalStore:    globalStore,
 		SessionManager: sessionManager,
-		ArchiveManager: archiveManager,
+		ArchiveManager: archiveService,
 		Branding:       branding,
 		Headless:       headless,
 		ScriptTimeout:  scriptTimeoutMs,

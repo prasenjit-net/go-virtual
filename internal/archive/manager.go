@@ -47,6 +47,7 @@ type RestoreResponse struct {
 }
 
 // ArchiveManager owns the archives directory and provides CRUD + restore.
+// It implements ArchiveService in full mode.
 type ArchiveManager struct {
 	dir   string
 	stor  storage.Storage
@@ -289,6 +290,21 @@ func (m *ArchiveManager) Restore(id string, input RestoreInput) (*RestoreRespons
 	)
 
 	return &RestoreResponse{BackupCreated: backupMeta, Result: result}, nil
+}
+
+// ── ArchiveService implementation ────────────────────────────────────────────
+
+// Mode returns ModeFull — ArchiveManager supports full archive history.
+func (m *ArchiveManager) Mode() ArchiveMode { return ModeFull }
+
+// DownloadSnapshot is not supported in full mode.
+func (m *ArchiveManager) DownloadSnapshot() ([]byte, *ArchiveMeta, error) {
+	return nil, nil, ErrFullMode
+}
+
+// RestoreSnapshot is not supported in full mode.
+func (m *ArchiveManager) RestoreSnapshot(_ []byte) (*RestoreResponse, error) {
+	return nil, ErrFullMode
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

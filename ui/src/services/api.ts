@@ -557,6 +557,11 @@ export const sessionsApi = {
 };
 // Archives API
 export const archivesApi = {
+    info: async () => {
+        const response = await fetch(`${API_BASE}/archives/info`);
+        return handleResponse<{ mode: 'full' | 'snapshot' }>(response);
+    },
+
     list: async () => {
         const response = await fetch(`${API_BASE}/archives`);
         return handleResponse<import('../types').ArchiveMeta[]>(response);
@@ -586,6 +591,8 @@ export const archivesApi = {
 
     downloadUrl: (id: string) => `${API_BASE}/archives/${id}/download`,
 
+    snapshotDownloadUrl: () => `${API_BASE}/archives/snapshot`,
+
     upload: async (file: File, label?: string) => {
         const form = new FormData();
         form.append('archive', file);
@@ -595,6 +602,16 @@ export const archivesApi = {
             body: form,
         });
         return handleResponse<import('../types').ArchiveMeta>(response);
+    },
+
+    restoreSnapshot: async (file: File) => {
+        const form = new FormData();
+        form.append('archive', file);
+        const response = await fetch(`${API_BASE}/archives/snapshot/restore`, {
+            method: 'POST',
+            body: form,
+        });
+        return handleResponse<import('../types').RestoreResponse>(response);
     },
 
     restore: async (id: string, opts: {
