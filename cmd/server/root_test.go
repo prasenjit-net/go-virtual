@@ -112,7 +112,7 @@ func TestRunInit(t *testing.T) {
 		"scripting:",
 		"session:",
 		`storeType: "memory"`,
-		`# Redis configuration example used when session.storeType is "redis":`,
+		`# Redis configuration — used only when storeType is "redis":`,
 		"redis:",
 		`addr: "127.0.0.1:6379"`,
 		`keyPrefix: "go-virtual:sessions"`,
