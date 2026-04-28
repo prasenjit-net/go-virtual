@@ -1,3 +1,5 @@
+//go:build !unit
+
 package main
 
 import (
@@ -10,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -129,7 +130,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 			CollectionPrefix:      storageMongoCollectionPrefix,
 			ConnectTimeoutSeconds: storageMongoConnectTimeout,
 		}
-		store, err = storage.NewMongoStorage(mongoCfg)
+		store, err = newMongoStorageBackend(mongoCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize mongo storage: %w", err)
 		}
@@ -165,10 +166,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 			CollectionPrefix:      storageMongoCollectionPrefix,
 			ConnectTimeoutSeconds: storageMongoConnectTimeout,
 		}
-		globalStore, err = gvstore.NewMongoGlobalStoreFromConfig(mongoCfg)
+		globalStore, err = newMongoGlobalStoreBackend(mongoCfg)
 		if err != nil {
 			serverLog.Warn("Failed to initialize mongo global store; starting with empty store", "event", "global_store_init_failed", "error", err)
-			globalStore, _ = gvstore.NewMongoGlobalStoreFromConfig(mongoCfg)
+			globalStore, _ = newMongoGlobalStoreBackend(mongoCfg)
 		}
 	} else {
 		globalStorePath := filepath.Join(storePath, "store.json")
@@ -339,50 +340,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	serverLog.Info("Server stopped", "event", "server_shutdown_complete")
 	return nil
-}
-
-func loadAIConfig() ai.Config {
-	return ai.Config{
-		Provider: strings.TrimSpace(viper.GetString("ai.provider")),
-		OpenAI: ai.ProviderConfig{
-			APIKey:  firstNonEmpty(viper.GetString("ai.openai.apiKey"), viper.GetString("ai.openaiApiKey")),
-			Model:   firstNonEmpty(viper.GetString("ai.openai.model"), viper.GetString("ai.openaiModel")),
-			BaseURL: firstNonEmpty(viper.GetString("ai.openai.baseUrl"), viper.GetString("ai.openaiBaseUrl")),
-		},
-		Claude: ai.ClaudeProviderConfig{
-			APIKey:     strings.TrimSpace(viper.GetString("ai.claude.apiKey")),
-			Model:      strings.TrimSpace(viper.GetString("ai.claude.model")),
-			BaseURL:    strings.TrimSpace(viper.GetString("ai.claude.baseUrl")),
-			APIVersion: strings.TrimSpace(viper.GetString("ai.claude.apiVersion")),
-		},
-	}
-}
-
-func loadSessionConfig() config.SessionConfig {
-	cfg := config.SessionConfig{
-		StoreType:         strings.TrimSpace(viper.GetString("session.storeType")),
-		HeaderName:        viper.GetString("session.headerName"),
-		InactivityTimeout: viper.GetDuration("session.inactivityTimeout"),
-		MaxSessions:       viper.GetInt("session.maxSessions"),
-		Redis: config.RedisSessionConfig{
-			Addr:      strings.TrimSpace(viper.GetString("session.redis.addr")),
-			Username:  strings.TrimSpace(viper.GetString("session.redis.username")),
-			Password:  strings.TrimSpace(viper.GetString("session.redis.password")),
-			DB:        viper.GetInt("session.redis.db"),
-			KeyPrefix: strings.TrimSpace(viper.GetString("session.redis.keyPrefix")),
-		},
-	}
-	cfg.Normalize()
-	return cfg
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }
 
 // startHTTPServer starts a plain HTTP server
