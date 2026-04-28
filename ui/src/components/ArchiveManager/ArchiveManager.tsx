@@ -195,16 +195,16 @@ export default function ArchiveManager() {
                     </button>
                     <button
                         onClick={() => setShowUpload(true)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                     >
-                        <Upload className="w-4 h-4" />
+                        <Upload className="w-5 h-5 mr-2" />
                         Upload
                     </button>
                     <button
                         onClick={() => setShowCreate(true)}
-                        className="flex items-center gap-2 px-3 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                        className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                     >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-5 h-5 mr-2" />
                         Create Archive
                     </button>
                 </div>
