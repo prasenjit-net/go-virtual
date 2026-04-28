@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -686,4 +687,324 @@ store.set("nil_val",   None)
 	if v, ok := sess.Get("nil_val"); !ok || v != nil {
 		t.Errorf("nil_val = %v, want nil", v)
 	}
+}
+
+// ── errSessionState – mock that returns errors on Set/Delete ─────────────────
+
+type errSessionState struct{}
+
+func (e *errSessionState) Get(key string) (any, bool)                 { return nil, false }
+func (e *errSessionState) Set(key string, value any) error            { return fmt.Errorf("mock set error") }
+func (e *errSessionState) Has(key string) bool                        { return false }
+func (e *errSessionState) Delete(key string) error                    { return fmt.Errorf("mock delete error") }
+func (e *errSessionState) Keys() []string                             { return nil }
+func (e *errSessionState) Snapshot() map[string]any                  { return nil }
+func (e *errSessionState) Info(bool) models.SessionInfo               { return models.SessionInfo{} }
+
+// callMethodErr calls a StoreBuiltin method and returns the error (or nil on success).
+func callMethodErr(t *testing.T, sb *store.StoreBuiltin, name string, args ...starlark.Value) error {
+	t.Helper()
+	attr, err := sb.Attr(name)
+	if err != nil || attr == nil {
+		t.Fatalf("Attr(%q) failed: %v / %v", name, attr, err)
+	}
+	fn := attr.(*starlark.Builtin)
+	tuple := make(starlark.Tuple, len(args))
+	for i, a := range args {
+		tuple[i] = a
+	}
+	_, err = starlark.Call(&starlark.Thread{}, fn, tuple, nil)
+	return err
+}
+
+// ── Session.Info(includeSnapshot=true) ───────────────────────────────────────
+
+func TestSession_Info_WithSnapshot(t *testing.T) {
+	sess := makeSession(t, map[string]any{"alpha": "x", "beta": "y"})
+	info := sess.Info(true)
+	if len(info.StoreSnapshot) < 2 {
+		t.Errorf("expected ≥2 entries in StoreSnapshot, got %d", len(info.StoreSnapshot))
+	}
+	if info.EntryCount < 2 {
+		t.Errorf("expected EntryCount ≥2, got %d", info.EntryCount)
+	}
+}
+
+// ── SessionManager with nil global store (newSession nil-snapshot path) ──────
+
+func TestSessionManager_NilGlobalStore(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.SessionConfig{
+		HeaderName:        "X-Session",
+		InactivityTimeout: 30 * time.Minute,
+		MaxSessions:       100,
+	}
+	sm := store.NewSessionManager(ctx, nil, cfg)
+	sess, isNew, err := sm.GetOrCreate("")
+	if err != nil {
+		t.Fatalf("GetOrCreate with nil global: %v", err)
+	}
+	if !isNew {
+		t.Fatal("expected new session")
+	}
+	if sess.Has("anything") {
+		t.Error("expected empty session when global is nil")
+	}
+}
+
+// ── StoreBuiltin with non-nil access log ─────────────────────────────────────
+
+func TestStoreBuiltin_AccessLog_NonNil(t *testing.T) {
+	sess := store.NewEphemeralSession(map[string]any{"k": "v"})
+	var log []models.StoreAccessEvent
+	sb := store.NewStoreBuiltin(sess, &log)
+
+	callMethod(t, sb, "get", starlark.String("k"))
+	callMethod(t, sb, "set", starlark.String("k2"), starlark.String("v2"))
+	callMethod(t, sb, "has", starlark.String("k"))
+	callMethod(t, sb, "delete", starlark.String("k"))
+	callMethod(t, sb, "keys")
+
+	if len(log) != 5 {
+		t.Fatalf("expected 5 log entries, got %d", len(log))
+	}
+	ops := make(map[string]bool)
+	for _, e := range log {
+		ops[e.Op] = true
+	}
+	for _, op := range []string{"get", "set", "has", "delete", "keys"} {
+		if !ops[op] {
+			t.Errorf("missing op %q in access log", op)
+		}
+	}
+}
+
+// ── UnpackPositionalArgs error paths ─────────────────────────────────────────
+
+func TestStoreBuiltin_UnpackErrors(t *testing.T) {
+	sess := store.NewEphemeralSession(nil)
+	sb := store.NewStoreBuiltin(sess, nil)
+
+	if err := callMethodErr(t, sb, "get"); err == nil {
+		t.Error("get() with no args: expected unpack error")
+	}
+	if err := callMethodErr(t, sb, "set", starlark.String("k")); err == nil {
+		t.Error("set(k) with 1 arg: expected unpack error")
+	}
+	if err := callMethodErr(t, sb, "has"); err == nil {
+		t.Error("has() with no args: expected unpack error")
+	}
+	if err := callMethodErr(t, sb, "delete"); err == nil {
+		t.Error("delete() with no args: expected unpack error")
+	}
+	if err := callMethodErr(t, sb, "keys", starlark.String("extra")); err == nil {
+		t.Error("keys(extra) with extra arg: expected unpack error")
+	}
+}
+
+// ── session.Set / session.Delete error propagation ───────────────────────────
+
+func TestStoreBuiltin_SessionError_Set(t *testing.T) {
+	sb := store.NewStoreBuiltin(&errSessionState{}, nil)
+	if err := callMethodErr(t, sb, "set", starlark.String("k"), starlark.String("v")); err == nil {
+		t.Error("expected error from set when session.Set returns error")
+	}
+}
+
+func TestStoreBuiltin_SessionError_Delete(t *testing.T) {
+	sb := store.NewStoreBuiltin(&errSessionState{}, nil)
+	if err := callMethodErr(t, sb, "delete", starlark.String("k")); err == nil {
+		t.Error("expected error from delete when session.Delete returns error")
+	}
+}
+
+// ── goToStar: nil, int, int64, and unknown-type (default) paths ──────────────
+
+func TestStoreBuiltin_GoToStar_IntTypes(t *testing.T) {
+	sess := store.NewEphemeralSession(nil)
+	_ = sess.Set("nil_val", nil)
+	_ = sess.Set("int_val", int(5))
+	_ = sess.Set("int64_val", int64(10))
+	sb := store.NewStoreBuiltin(sess, nil)
+
+	if v := callMethod(t, sb, "get", starlark.String("nil_val")); v != starlark.None {
+		t.Errorf("nil → expected None, got %v", v)
+	}
+	if v := callMethod(t, sb, "get", starlark.String("int_val")); v == starlark.None {
+		t.Error("int(5) → expected non-None")
+	}
+	if v := callMethod(t, sb, "get", starlark.String("int64_val")); v == starlark.None {
+		t.Error("int64(10) → expected non-None")
+	}
+}
+
+func TestStoreBuiltin_GoToStar_Default(t *testing.T) {
+	type customType struct{ X int }
+	sess := store.NewEphemeralSession(nil)
+	_ = sess.Set("custom", customType{X: 1})
+	sb := store.NewStoreBuiltin(sess, nil)
+
+	if v := callMethod(t, sb, "get", starlark.String("custom")); v != starlark.None {
+		t.Errorf("unknown type → expected None, got %v", v)
+	}
+}
+
+// ── starToGo: Float and unknown-type (default) paths ─────────────────────────
+
+func TestStoreBuiltin_StarToGo_FloatAndDefault(t *testing.T) {
+	sess := store.NewEphemeralSession(nil)
+	sb := store.NewStoreBuiltin(sess, nil)
+
+	src := `store.set("float_val", 1.5)
+store.set("set_val", set([1, 2]))`
+	thread := &starlark.Thread{Name: "float-default-test"}
+	if _, err := starlark.ExecFile(thread, "test.star", src, starlark.StringDict{"store": sb}); err != nil {
+		t.Fatalf("ExecFile: %v", err)
+	}
+
+	if v, ok := sess.Get("float_val"); !ok {
+		t.Error("float_val missing")
+	} else if f, ok2 := v.(float64); !ok2 || f != 1.5 {
+		t.Errorf("float_val = %v (%T), want float64(1.5)", v, v)
+	}
+	// starlark.Set hits the default case → stored as nil
+	if v, ok := sess.Get("set_val"); !ok || v != nil {
+		t.Errorf("set_val: expected nil from default case, got %v (ok=%v)", v, ok)
+	}
+}
+
+// ── StoreBuiltin.Attr with unknown name ──────────────────────────────────────
+
+func TestStoreBuiltin_Attr_Unknown(t *testing.T) {
+	sb, _ := makeBuiltin(t)
+	v, err := sb.Attr("does_not_exist")
+	if err != nil {
+		t.Errorf("Attr(unknown) should not error, got: %v", err)
+	}
+	if v != nil {
+		t.Errorf("Attr(unknown) should return nil, got: %v", v)
+	}
+}
+
+// ── GlobalStore: deepCopy nil value ──────────────────────────────────────────
+
+func TestGlobalStore_DeepCopy_Nil(t *testing.T) {
+	gs, _ := store.NewGlobalStore(tempStorePath(t))
+	if err := gs.Set("nil_key", nil); err != nil {
+		t.Fatalf("Set(nil_key): %v", err)
+	}
+	snap := gs.Snapshot()
+	if v, ok := snap["nil_key"]; !ok {
+		t.Error("nil_key missing from snapshot")
+	} else if v != nil {
+		t.Errorf("expected nil in snapshot, got %v", v)
+	}
+}
+
+// ── GlobalStore: Set overwrites an existing key (update createdAt path) ──────
+
+func TestGlobalStore_SetExistingKey(t *testing.T) {
+	gs, _ := store.NewGlobalStore(tempStorePath(t))
+	_ = gs.Set("key", "original")
+	_ = gs.Set("key", "updated")
+	v, ok := gs.Get("key")
+	if !ok || v != "updated" {
+		t.Errorf("expected 'updated', got %v (ok=%v)", v, ok)
+	}
+}
+
+// ── GlobalStore: NewGlobalStore with malformed JSON ───────────────────────────
+
+func TestGlobalStore_MalformedJSON(t *testing.T) {
+	path := tempStorePath(t)
+	if err := os.WriteFile(path, []byte(`not valid json {{{`), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	_, err := store.NewGlobalStore(path)
+	if err == nil {
+		t.Fatal("expected error from NewGlobalStore with malformed JSON")
+	}
+}
+
+// ── GlobalStore: save() mkdir failure ────────────────────────────────────────
+
+func TestGlobalStore_Save_MkdirError(t *testing.T) {
+	dir := t.TempDir()
+	// Place a regular file where a directory is needed
+	blockingFile := filepath.Join(dir, "not_a_dir")
+	if err := os.WriteFile(blockingFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+	path := filepath.Join(blockingFile, "store.json")
+	_, err := store.NewGlobalStore(path)
+	if err == nil {
+		t.Fatal("expected error when parent path is a regular file")
+	}
+}
+
+// ── GlobalStore: save() WriteFile failure ────────────────────────────────────
+
+func TestGlobalStore_Save_WriteError(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.json")
+	gs, err := store.NewGlobalStore(path)
+	if err != nil {
+		t.Fatalf("NewGlobalStore: %v", err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Skipf("cannot chmod dir: %v", err)
+	}
+	defer os.Chmod(dir, 0o755) //nolint:errcheck
+	if err := gs.Set("k", "v"); err == nil {
+		t.Skip("filesystem did not enforce read-only directory; skipping write error test")
+	}
+}
+
+// ── GlobalStore: load() ReadFile failure (unreadable file) ───────────────────
+
+func TestGlobalStore_UnreadableFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "store.json")
+	if err := os.WriteFile(path, []byte(`{"updatedAt":"2024-01-01T00:00:00Z","entries":{}}`), 0o000); err != nil {
+		t.Skipf("cannot create 0000-permission file: %v", err)
+	}
+	defer os.Chmod(path, 0o644) //nolint:errcheck
+	_, err := store.NewGlobalStore(path)
+	if err == nil {
+		t.Skip("filesystem did not block reading 0000 file; skipping")
+	}
+}
+
+// ── SessionManager expiryLoop context cancellation ───────────────────────────
+
+func TestSessionManager_ExpiryLoop_Cancel(t *testing.T) {
+	gs, _ := store.NewGlobalStore(tempStorePath(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	cfg := config.SessionConfig{
+		HeaderName:        "X-Session",
+		InactivityTimeout: 30 * time.Minute,
+		MaxSessions:       100,
+	}
+	_ = store.NewSessionManager(ctx, gs, cfg)
+	cancel()
+	time.Sleep(50 * time.Millisecond) // give the goroutine time to take ctx.Done
+}
+
+// ── GlobalStore: un-marshallable value covers deepCopy and save marshal errors ─
+
+func TestGlobalStore_Set_FuncValue(t *testing.T) {
+gs, err := store.NewGlobalStore(tempStorePath(t))
+if err != nil {
+t.Fatalf("NewGlobalStore: %v", err)
+}
+// func() is not JSON-marshallable; save() fails when marshalling the store.
+// The value is still stored in memory (assignment happens before save()).
+if err := gs.Set("fn", func() {}); err == nil {
+t.Error("expected error when setting an un-marshallable value")
+}
+// Snapshot calls deepCopy on the stored func() → json.Marshal error → returns original.
+snap := gs.Snapshot()
+if snap == nil {
+t.Error("expected non-nil snapshot even after failed set")
+}
 }
