@@ -96,11 +96,13 @@ export default function StoreManager() {
         <div className="p-8">
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                    <Database className="w-6 h-6 text-indigo-500 dark:text-indigo-400" />
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/30">
+                        <Database className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                    </div>
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">Global Store</h1>
-                        <p className="text-sm text-gray-500 dark:text-slate-400">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Global Store</h1>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
                             Persistent key-value data seeded into every session
                         </p>
                     </div>

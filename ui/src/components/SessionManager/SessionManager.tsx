@@ -66,10 +66,12 @@ export default function SessionManager() {
         <div className="p-8">
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                    <Users className="w-6 h-6 text-teal-500 dark:text-teal-400" />
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-teal-100 p-3 dark:bg-teal-900/30">
+                        <Users className="h-6 w-6 text-teal-600 dark:text-teal-400" />
+                    </div>
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
                             Sessions
                             {count > 0 && (
                                 <span className="ml-2 text-xs bg-teal-100 text-teal-700 dark:bg-teal-700/40 dark:text-teal-300 px-2 py-0.5 rounded-full">
@@ -77,7 +79,7 @@ export default function SessionManager() {
                                 </span>
                             )}
                         </h1>
-                        <p className="text-sm text-gray-500 dark:text-slate-400">Active request sessions</p>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Active request sessions</p>
                     </div>
                 </div>
 

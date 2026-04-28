@@ -59,11 +59,13 @@ function SnapshotPanel() {
 
     return (
         <div className="p-8">
-            <div className="flex items-center gap-3 mb-8">
-                <Archive className="w-6 h-6 text-indigo-500" />
+            <div className="flex items-start gap-3 mb-8">
+                <div className="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/30">
+                    <Archive className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                </div>
                 <div>
-                    <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Archives — Snapshot Mode</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                    <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Archives — Snapshot Mode</h1>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                         In-memory or MongoDB storage: download the current state or upload a full replacement snapshot.
                     </p>
                 </div>
@@ -172,11 +174,13 @@ export default function ArchiveManager() {
         <div className="p-8">
             {/* Header */}
             <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-3">
-                    <Archive className="w-6 h-6 text-indigo-500" />
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-indigo-100 p-3 dark:bg-indigo-900/30">
+                        <Archive className="h-6 w-6 text-indigo-600 dark:text-indigo-400" />
+                    </div>
                     <div>
-                        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Archives</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Archives</h1>
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                             Create and restore point-in-time snapshots of all data
                         </p>
                     </div>
