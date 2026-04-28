@@ -798,3 +798,104 @@ func TestMemoryDeleteScriptBindingsByScript(t *testing.T) {
 		t.Errorf("Expected s2 binding retained, got %d", len(b3))
 	}
 }
+
+// ---- UpdateTag edge cases ----
+
+func TestMemoryUpdateTag_NotFound(t *testing.T) {
+	s := NewMemoryStorage()
+	err := s.UpdateTag("nonexistent", &models.Tag{Name: "nonexistent"})
+	if err == nil {
+		t.Error("Expected error updating non-existent tag")
+	}
+}
+
+func TestMemoryUpdateTag_RenameToExisting(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateTag(&models.Tag{Name: "alpha"})
+	_ = s.CreateTag(&models.Tag{Name: "beta"})
+	// Rename alpha → beta (beta already exists) should fail
+	err := s.UpdateTag("alpha", &models.Tag{Name: "beta"})
+	if err == nil {
+		t.Error("Expected error when renaming to existing tag name")
+	}
+}
+
+func TestMemoryUpdateTag_Rename(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateTag(&models.Tag{Name: "old", Description: "desc"})
+	err := s.UpdateTag("old", &models.Tag{Name: "new", Description: "desc"})
+	if err != nil {
+		t.Fatalf("UpdateTag rename: %v", err)
+	}
+	if _, err := s.GetTag("new"); err != nil {
+		t.Error("Expected renamed tag to exist")
+	}
+	if _, err := s.GetTag("old"); err == nil {
+		t.Error("Expected old tag name to be removed")
+	}
+}
+
+func TestMemoryCreateTag_Duplicate(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateTag(&models.Tag{Name: "dup"})
+	err := s.CreateTag(&models.Tag{Name: "dup"})
+	if err == nil {
+		t.Error("Expected error on duplicate tag creation")
+	}
+}
+
+func TestMemoryDeleteTag_NotFound(t *testing.T) {
+	s := NewMemoryStorage()
+	err := s.DeleteTag("nonexistent")
+	if err == nil {
+		t.Error("Expected error deleting non-existent tag")
+	}
+}
+
+// ---- AI scenario error paths ----
+
+func TestMemoryCreateAIScenario_Duplicate(t *testing.T) {
+	s := NewMemoryStorage()
+	scenario := &models.AIScenario{ID: "dup-scenario", Name: "dup", Enabled: true}
+	if err := s.CreateAIScenario(scenario); err != nil {
+		t.Fatalf("first CreateAIScenario: %v", err)
+	}
+	err := s.CreateAIScenario(scenario)
+	if err == nil {
+		t.Error("Expected error on duplicate AI scenario creation")
+	}
+}
+
+func TestMemoryUpdateAIScenario_NotFound(t *testing.T) {
+	s := NewMemoryStorage()
+	err := s.UpdateAIScenario(&models.AIScenario{ID: "nonexistent", Name: "x"})
+	if err == nil {
+		t.Error("Expected error updating non-existent AI scenario")
+	}
+}
+
+func TestMemoryDeleteAIScenario_NotFound(t *testing.T) {
+	s := NewMemoryStorage()
+	err := s.DeleteAIScenario("nonexistent")
+	if err == nil {
+		t.Error("Expected error deleting non-existent AI scenario")
+	}
+}
+
+func TestMemoryListTags_Empty(t *testing.T) {
+	s := NewMemoryStorage()
+	// Only the default tag should exist
+	tags, err := s.ListTags()
+	if err != nil {
+		t.Fatalf("ListTags: %v", err)
+	}
+	found := false
+	for _, tag := range tags {
+		if tag.Name == models.DefaultTagName {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Expected default tag in ListTags")
+	}
+}
