@@ -25,6 +25,16 @@ func TestWebSocketHandler_SendsTraces(t *testing.T) {
 	}
 	defer conn.Close()
 
+	// Wait for the handler goroutine to subscribe before recording the trace.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		stats := svc.GetStats()
+		if n, _ := stats["activeSubscribers"].(int); n > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
 	trace := &models.Trace{
 		SpecID:      "spec-1",
 		OperationID: "op-1",
@@ -33,7 +43,7 @@ func TestWebSocketHandler_SendsTraces(t *testing.T) {
 	}
 	svc.RecordTrace(trace)
 
-	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, message, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("failed to read message: %v", err)
