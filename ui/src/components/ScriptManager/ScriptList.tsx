@@ -63,11 +63,16 @@ export default function ScriptList() {
     return (
         <div className="p-8">
             <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Scripts</h1>
-                    <p className="text-gray-500 dark:text-slate-400 mt-1">
-                        Manage Starlark scripts that can be attached to API operations
-                    </p>
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-primary-100 p-3 dark:bg-primary-900/30">
+                        <Code2 className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">Scripts</h1>
+                        <p className="mt-1 text-gray-500 dark:text-slate-400 text-sm">
+                            Manage Starlark scripts that can be attached to API operations
+                        </p>
+                    </div>
                 </div>
                 <Link
                     to="/scripts/new"
