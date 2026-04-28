@@ -15,6 +15,7 @@ import {
     BookOpen,
     Archive,
     Bot,
+    Menu,
 } from 'lucide-react'
 import { LogoFull } from './Logo'
 import { brandingApi } from '../services/api'
@@ -55,6 +56,7 @@ const applyThemeMode = (mode: ThemeMode) => {
 
 export default function Layout() {
     const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme)
+    const [sidebarOpen, setSidebarOpen] = useState(false)
 
     // Fetch branding config — stale forever (only changes on server restart)
     const { data: branding } = useQuery<Branding>({
@@ -111,12 +113,54 @@ export default function Layout() {
 
     return (
         <div className="h-screen bg-gray-50 text-gray-900 dark:bg-slate-950 dark:text-slate-100 flex overflow-hidden">
+            {/* Mobile top bar */}
+            <div className="flex lg:hidden fixed top-0 left-0 right-0 z-40 h-14 items-center justify-between px-4 bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800">
+                <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="p-2 rounded-lg text-gray-600 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800"
+                >
+                    <Menu className="w-5 h-5" />
+                </button>
+                <LogoFull iconSize={28} title={branding?.appTitle} />
+                <div className="flex items-center gap-0.5">
+                    {themeOptions.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setThemeMode(option.value)}
+                            aria-pressed={themeMode === option.value}
+                            className={clsx(
+                                'p-1.5 rounded-md transition-colors',
+                                themeMode === option.value
+                                    ? 'bg-gray-100 text-gray-900 dark:bg-slate-700 dark:text-slate-100'
+                                    : 'text-gray-500 hover:text-gray-900 dark:text-slate-400 dark:hover:text-slate-100'
+                            )}
+                        >
+                            <option.icon className="w-4 h-4" />
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Backdrop */}
+            {sidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+                    onClick={() => setSidebarOpen(false)}
+                />
+            )}
+
             {/* Sidebar */}
-            <aside className="w-64 h-screen sticky top-0 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col">
-                {/* Logo */}
-                <div className="h-16 flex items-center px-5 border-b border-gray-200 dark:border-slate-800">
+            <aside className={clsx(
+                "fixed lg:relative inset-y-0 left-0 z-30 w-64 h-full bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col transition-transform duration-300",
+                sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+            )}>
+                {/* Logo (desktop only) */}
+                <div className="hidden lg:flex h-16 items-center px-5 border-b border-gray-200 dark:border-slate-800">
                     <LogoFull iconSize={36} title={branding?.appTitle} />
                 </div>
+                {/* Spacer for mobile top bar */}
+                <div className="h-14 lg:hidden" />
 
                 {/* Navigation */}
                 <nav className="flex-1 px-4 py-6 overflow-y-auto">
@@ -125,6 +169,7 @@ export default function Layout() {
                             <li key={item.to}>
                                 <NavLink
                                     to={item.to}
+                                    onClick={() => setSidebarOpen(false)}
                                     className={({ isActive }) =>
                                         clsx(
                                             'flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
@@ -144,6 +189,7 @@ export default function Layout() {
                                 href="/_docs/"
                                 target="_blank"
                                 rel="noreferrer"
+                                onClick={() => setSidebarOpen(false)}
                                 className="flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                             >
                                 <BookOpen className="w-5 h-5 mr-3" />
@@ -190,8 +236,8 @@ export default function Layout() {
                 </div>
             </aside>
 
-            {/* Main Content */}
-            <main className="flex-1 overflow-y-auto">
+            {/* Main Content — top padding on mobile for the top bar */}
+            <main className="flex-1 overflow-y-auto min-w-0 pt-14 lg:pt-0">
                 <Outlet />
             </main>
         </div>

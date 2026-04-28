@@ -139,12 +139,13 @@ export default function StoreManager() {
                 </div>
             ) : (
                 <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+                    <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 text-xs uppercase tracking-wide">
                                 <th className="px-4 py-3 text-left w-1/4">Key</th>
                                 <th className="px-4 py-3 text-left">Value</th>
-                                <th className="px-4 py-3 text-left w-36">Updated</th>
+                                <th className="px-4 py-3 text-left w-36 hidden sm:table-cell">Updated</th>
                                 <th className="px-4 py-3 text-right w-20">Actions</th>
                             </tr>
                         </thead>
@@ -160,7 +161,7 @@ export default function StoreManager() {
                                     <td className="px-4 py-3 font-mono text-gray-700 dark:text-slate-300 truncate max-w-xs">
                                         {truncateValue(entry.value)}
                                     </td>
-                                    <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
+                                    <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs hidden sm:table-cell">
                                         {new Date(entry.updatedAt).toLocaleString()}
                                     </td>
                                     <td className="px-4 py-3 text-right">
@@ -185,6 +186,7 @@ export default function StoreManager() {
                             ))}
                         </tbody>
                     </table>
+                    </div>
                 </div>
             )}
 

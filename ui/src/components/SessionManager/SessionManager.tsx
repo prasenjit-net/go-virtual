@@ -9,6 +9,7 @@ import {
     Clock,
     AlertTriangle,
 } from 'lucide-react';
+import clsx from 'clsx';
 import { sessionsApi } from '../../services/api';
 import type { SessionInfo } from '../../types';
 
@@ -83,7 +84,7 @@ export default function SessionManager() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => refetch()}
                         disabled={isFetching}
@@ -104,9 +105,12 @@ export default function SessionManager() {
                 </div>
             </div>
 
-            <div className="flex gap-4">
+            <div className={clsx("flex gap-4", selectedSession ? "flex-col lg:flex-row" : "")}>
                 {/* Session list */}
-                <div className="flex-1 min-w-0">
+                <div className={clsx(
+                    "min-w-0",
+                    selectedSession ? "hidden lg:block lg:flex-1" : "flex-1"
+                )}>
                     {isLoading ? (
                         <div className="text-center py-12 text-gray-500 dark:text-slate-400">Loading…</div>
                     ) : sessions.length === 0 ? (
@@ -116,12 +120,13 @@ export default function SessionManager() {
                         </div>
                     ) : (
                         <div className="bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 overflow-hidden">
+                            <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="bg-gray-50 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 text-xs uppercase tracking-wide">
                                         <th className="px-4 py-3 text-left">Session ID</th>
                                         <th className="px-4 py-3 text-left">Created</th>
-                                        <th className="px-4 py-3 text-left">Last Active</th>
+                                        <th className="px-4 py-3 text-left hidden md:table-cell">Last Active</th>
                                         <th className="px-4 py-3 text-left">Entries</th>
                                         <th className="px-4 py-3 text-right">Actions</th>
                                     </tr>
@@ -151,7 +156,7 @@ export default function SessionManager() {
                                             <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
                                                 {formatAge(s.createdAt)}
                                             </td>
-                                            <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs">
+                                            <td className="px-4 py-3 text-gray-500 dark:text-slate-400 text-xs hidden md:table-cell">
                                                 <div className="flex items-center gap-1">
                                                     <Clock className="w-3 h-3" />
                                                     {formatAge(s.lastActive)}
@@ -176,15 +181,24 @@ export default function SessionManager() {
                                     ))}
                                 </tbody>
                             </table>
+                            </div>
                         </div>
                     )}
                 </div>
 
                 {/* Detail panel */}
                 {selectedSession && (
-                    <div className="w-80 flex-shrink-0 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 h-fit">
+                    <div className="lg:w-80 lg:flex-shrink-0 flex-1 bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-slate-700 h-fit">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700">
-                            <h2 className="text-sm font-semibold text-gray-900 dark:text-white">Session Detail</h2>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    className="flex lg:hidden items-center gap-1 text-sm text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white"
+                                    onClick={() => setSelectedSession(null)}
+                                >
+                                    ← Back
+                                </button>
+                                <h2 className="text-sm font-semibold text-gray-900 dark:text-white hidden lg:block">Session Detail</h2>
+                            </div>
                             <button
                                 onClick={() => setSelectedSession(null)}
                                 className="text-gray-400 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white"
