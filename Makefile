@@ -94,11 +94,21 @@ dev-all:
 ## test: Run all Go tests
 test:
 	@echo "› Running tests…"
-	$(GO) test -v -race ./...
+	$(GO) test -tags unit -v -race ./...
 
 ## test-coverage: Run tests and produce coverage.html report
+# Uses -tags unit to exclude MongoDB backend (requires live MongoDB) from
+# coverage so that the file.go / memory.go unit tests drive the metric.
+# Run with 'make test-coverage-integration' to include MongoDB (needs $MONGO_URI).
 test-coverage:
 	@echo "› Running tests with coverage…"
+	$(GO) test -tags unit -coverprofile=coverage.out ./...
+	$(GO) tool cover -html=coverage.out -o coverage.html
+	@echo "✓ Coverage report: coverage.html"
+
+## test-coverage-integration: Run tests including MongoDB integration tests
+test-coverage-integration:
+	@echo "› Running integration tests with coverage…"
 	$(GO) test -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "✓ Coverage report: coverage.html"

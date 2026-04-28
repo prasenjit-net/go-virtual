@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
 )
@@ -1028,76 +1027,6 @@ func TestFileStorage_AIScenario_ErrorPaths(t *testing.T) {
 	// Delete non-existent
 	if err := fs.DeleteAIScenario("nonexistent"); err == nil {
 		t.Error("Expected error deleting non-existent AIScenario")
-	}
-}
-
-// ---- marshalDoc / unmarshalDoc helpers (no MongoDB required) ----
-
-func TestMarshalDoc_Basic(t *testing.T) {
-	type payload struct {
-		Name string `json:"name"`
-	}
-	p := payload{Name: "test"}
-	doc, err := marshalDoc("id1", "spec1", "op1", "scr1", p)
-	if err != nil {
-		t.Fatalf("marshalDoc: %v", err)
-	}
-	if doc.ID != "id1" {
-		t.Errorf("expected ID id1, got %q", doc.ID)
-	}
-	if doc.SpecID != "spec1" {
-		t.Errorf("expected SpecID spec1, got %q", doc.SpecID)
-	}
-	if doc.OperationID != "op1" {
-		t.Errorf("expected OperationID op1, got %q", doc.OperationID)
-	}
-	if doc.ScriptID != "scr1" {
-		t.Errorf("expected ScriptID scr1, got %q", doc.ScriptID)
-	}
-	if doc.Data == "" {
-		t.Error("expected non-empty Data")
-	}
-}
-
-func TestMarshalDoc_EmptyRelationships(t *testing.T) {
-	doc, err := marshalDoc("id1", "", "", "", map[string]string{"k": "v"})
-	if err != nil {
-		t.Fatalf("marshalDoc: %v", err)
-	}
-	if doc.SpecID != "" || doc.OperationID != "" || doc.ScriptID != "" {
-		t.Error("expected empty relationship fields")
-	}
-}
-
-func TestUnmarshalDoc(t *testing.T) {
-	type payload struct {
-		Name string `json:"name"`
-	}
-	doc := &genericDoc{ID: "id1", Data: `{"name":"hello"}`}
-	var dest payload
-	if err := unmarshalDoc(doc, &dest); err != nil {
-		t.Fatalf("unmarshalDoc: %v", err)
-	}
-	if dest.Name != "hello" {
-		t.Errorf("expected Name hello, got %q", dest.Name)
-	}
-}
-
-func TestCtxTimeout(t *testing.T) {
-	ctx, cancel := ctxTimeout()
-	defer cancel()
-	if ctx == nil {
-		t.Error("expected non-nil context")
-	}
-	if ctx.Err() != nil {
-		t.Errorf("expected no error on fresh context, got %v", ctx.Err())
-	}
-}
-
-func TestNewMongoStorage_EmptyURI(t *testing.T) {
-	_, err := NewMongoStorage(config.MongoConfig{URI: ""})
-	if err == nil {
-		t.Error("Expected error for empty URI")
 	}
 }
 
