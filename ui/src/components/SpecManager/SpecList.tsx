@@ -109,7 +109,7 @@ export default function SpecList() {
                             key={spec.id}
                             className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-6"
                         >
-                            <div className="flex items-start justify-between">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                                 <div className="flex items-start">
                                     <div className="p-3 bg-primary-100/80 dark:bg-primary-900/40 rounded-lg">
                                         <FileCode2 className="w-6 h-6 text-primary-600" />
@@ -139,7 +139,7 @@ export default function SpecList() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-4">
+                                <div className="flex flex-wrap items-center gap-2">
                                     {/* Example Fallback Toggle */}
                                     <button
                                         onClick={() => toggleExampleFallbackMutation.mutate({ id: spec.id, enabled: spec.useExampleFallback })}

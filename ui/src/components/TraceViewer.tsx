@@ -167,7 +167,7 @@ export default function TraceViewer() {
                             Monitor live requests and responses
                         </p>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
                         {!isLive && (
                             <button
                                 onClick={() => refetchStoredTraces()}
@@ -211,8 +211,8 @@ export default function TraceViewer() {
                 </div>
 
                 {/* Filters */}
-                <div className="flex items-center gap-4">
-                    <div className="relative flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative flex-1 min-w-0">
                         <Search className="w-5 h-5 text-gray-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
                         <input
                             type="text"
@@ -238,9 +238,12 @@ export default function TraceViewer() {
             </div>
 
             {/* Content */}
-            <div className="flex-1 flex overflow-hidden">
-                {/* Trace List */}
-                <div className="w-1/2 border-r border-gray-200 dark:border-slate-800 overflow-y-auto">
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+                {/* Trace List — hide on mobile when trace selected */}
+                <div className={clsx(
+                    "border-r border-gray-200 dark:border-slate-800 overflow-y-auto",
+                    selectedTrace ? "hidden lg:block lg:w-1/2" : "flex-1 lg:w-1/2 lg:flex-none"
+                )}>
                     {filteredTraces.length > 0 ? (
                         <div className="divide-y divide-gray-100 dark:divide-slate-800">
                             {filteredTraces.map((trace) => (
@@ -321,10 +324,22 @@ export default function TraceViewer() {
                     )}
                 </div>
 
-                {/* Trace Detail */}
-                <div className="w-1/2 overflow-y-auto bg-gray-50 dark:bg-slate-950">
+                {/* Trace Detail — hide on mobile when no trace selected */}
+                <div className={clsx(
+                    "overflow-y-auto bg-gray-50 dark:bg-slate-950",
+                    selectedTrace ? "flex-1 lg:w-1/2" : "hidden lg:flex lg:w-1/2 lg:items-center lg:justify-center"
+                )}>
                     {selectedTrace ? (
-                        <TraceDetail trace={selectedTrace} formatDuration={formatDuration} />
+                        <>
+                            {/* Back button — mobile only */}
+                            <button
+                                className="flex lg:hidden items-center gap-1 px-4 py-3 text-sm text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white border-b border-gray-200 dark:border-slate-800 w-full"
+                                onClick={() => setSelectedTrace(null)}
+                            >
+                                ← Back to list
+                            </button>
+                            <TraceDetail trace={selectedTrace} formatDuration={formatDuration} />
+                        </>
                     ) : (
                         <div className="h-full flex items-center justify-center text-gray-500 dark:text-slate-400">
                             <div className="text-center">
