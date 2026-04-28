@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash"
 	"math/rand"
+	"reflect"
 	"regexp"
 	"sync"
 	"time"
@@ -44,7 +45,7 @@ func getCachedRegexp(pattern string) (*regexp.Regexp, error) {
 // injectBuiltins adds all standard builtins to the predeclared dict.
 // sess is used by the counter() builtin (nil → local fallback map).
 // rng is a per-execution random source.
-func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess *store.Session) {
+func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess store.SessionState) {
 	// ── uuid() ──────────────────────────────────────────────────────────────
 	// uuid() → string   Generate a random UUID v4.
 	predeclared["uuid"] = starlark.NewBuiltin("uuid", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -148,7 +149,7 @@ func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess *store
 		}
 		key := "__counter__:" + name
 		var cur int64
-		if sess != nil {
+		if hasSession(sess) {
 			existing, ok := sess.Get(key)
 			if ok && existing != nil {
 				switch v := existing.(type) {
@@ -161,7 +162,9 @@ func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess *store
 				}
 			}
 			cur += delta
-			sess.Set(key, cur)
+			if err := sess.Set(key, cur); err != nil {
+				return nil, err
+			}
 		} else {
 			cur = localCounters[key] + delta
 			localCounters[key] = cur
@@ -308,6 +311,19 @@ func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess *store
 		}
 		return starlark.NewList(elems), nil
 	})
+}
+
+func hasSession(sess store.SessionState) bool {
+	if sess == nil {
+		return false
+	}
+	v := reflect.ValueOf(sess)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return !v.IsNil()
+	default:
+		return true
+	}
 }
 
 // builtinNames lists all names that injectBuiltins injects, used by Compile's

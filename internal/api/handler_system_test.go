@@ -2,10 +2,13 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
@@ -31,6 +34,44 @@ func TestGetGlobalStats(t *testing.T) {
 	}
 	if _, ok := result["totalErrors"]; !ok {
 		t.Error("Expected totalErrors field")
+	}
+}
+
+func TestStreamGlobalStats(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.GET("/stats/stream", handler.StreamGlobalStats)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req := httptest.NewRequest("GET", "/stats/stream", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		r.ServeHTTP(w, req)
+		close(done)
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream handler did not exit after context cancellation")
+	}
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", w.Code)
+	}
+	if got := w.Header().Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("expected SSE content type, got %q", got)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "event: stats") {
+		t.Fatalf("expected stats SSE event, got %q", body)
+	}
+	if !strings.Contains(body, "\"totalRequests\"") {
+		t.Fatalf("expected global stats payload, got %q", body)
 	}
 }
 

@@ -23,9 +23,9 @@ type HandlerConfig struct {
 	StatsCollector *stats.Collector
 	TracingService *tracing.Service
 	ProxyEngine    *proxy.Engine
-	GlobalStore    *store.GlobalStore      // optional; nil = Phase 1 mode
-	SessionManager *store.SessionManager   // optional; nil = Phase 1 mode
-	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
+	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
+	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
+	ArchiveManager archive.ArchiveService  // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	ScriptTimeout  int           // ms; 0 = use default (100)
 	AIGenerator    *ai.Generator // optional; nil = AI generation disabled
@@ -40,9 +40,9 @@ type Handler struct {
 	parser         *parser.Parser
 	templateEngine *template.Engine
 	scriptEngine   *scripting.ScriptEngine
-	globalStore    *store.GlobalStore
-	sessionManager *store.SessionManager
-	archiveManager *archive.ArchiveManager
+	globalStore    store.GlobalStoreBackend
+	sessionManager store.SessionRegistry
+	archiveManager archive.ArchiveService
 	branding       config.BrandingConfig
 	aiGenerator    *ai.Generator
 }

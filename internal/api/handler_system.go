@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,6 +10,8 @@ import (
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/version"
 )
+
+const statsStreamInterval = time.Second
 
 // HealthCheck returns health status
 func (h *Handler) HealthCheck(c *gin.Context) {
@@ -59,11 +63,47 @@ func (h *Handler) ValidateTemplate(c *gin.Context) {
 
 // GetGlobalStats returns global statistics
 func (h *Handler) GetGlobalStats(c *gin.Context) {
-	specs, _ := h.store.GetEnabledSpecs()
-	ops, _ := h.store.GetAllOperations()
+	c.JSON(http.StatusOK, h.globalStatsSnapshot())
+}
 
-	stats := h.statsCollector.GetGlobalStats(len(specs), len(ops))
-	c.JSON(http.StatusOK, stats)
+// StreamGlobalStats streams global statistics over SSE.
+func (h *Handler) StreamGlobalStats(c *gin.Context) {
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+	c.Writer.Flush()
+
+	writeSnapshot := func() error {
+		payload, err := json.Marshal(h.globalStatsSnapshot())
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(c.Writer, "event: stats\ndata: %s\n\n", payload); err != nil {
+			return err
+		}
+		c.Writer.Flush()
+		return nil
+	}
+
+	if err := writeSnapshot(); err != nil {
+		return
+	}
+
+	ticker := time.NewTicker(statsStreamInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			if err := writeSnapshot(); err != nil {
+				return
+			}
+		}
+	}
 }
 
 // GetSpecStats returns statistics for a spec
@@ -97,6 +137,12 @@ func (h *Handler) GetOperationStats(c *gin.Context) {
 func (h *Handler) ResetStats(c *gin.Context) {
 	h.statsCollector.Reset()
 	c.JSON(http.StatusOK, gin.H{"message": "Statistics reset"})
+}
+
+func (h *Handler) globalStatsSnapshot() *models.GlobalStats {
+	specs, _ := h.store.GetEnabledSpecs()
+	ops, _ := h.store.GetAllOperations()
+	return h.statsCollector.GetGlobalStats(len(specs), len(ops))
 }
 
 // ── Tracing ───────────────────────────────────────────────────────────────────

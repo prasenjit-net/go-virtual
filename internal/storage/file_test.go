@@ -365,11 +365,13 @@ func TestFileStorage_OperationCustomization(t *testing.T) {
 	op := ops[0]
 
 	// Attach a SignatureConfig
+	includeBody := false
 	op.SignatureConfig = &models.SignatureConfig{
-		PathParams:  []string{"id"},
-		QueryParams: []string{"page"},
-		Headers:     []string{"X-Tenant"},
-		IncludeBody: false,
+		PathParams:        []string{"id"},
+		QueryParams:       []string{"page"},
+		HeadersConfigured: true,
+		Headers:           []string{"X-Tenant"},
+		IncludeBody:       &includeBody,
 	}
 
 	if err := fs.UpdateOperation(op); err != nil {
@@ -394,7 +396,7 @@ func TestFileStorage_OperationCustomization(t *testing.T) {
 	if len(ro.SignatureConfig.PathParams) != 1 || ro.SignatureConfig.PathParams[0] != "id" {
 		t.Errorf("unexpected PathParams after reload: %v", ro.SignatureConfig.PathParams)
 	}
-	if ro.SignatureConfig.IncludeBody {
+	if ro.SignatureConfig.IncludeBody == nil || *ro.SignatureConfig.IncludeBody {
 		t.Error("expected IncludeBody=false after reload")
 	}
 	if len(ro.SignatureConfig.Headers) != 1 || ro.SignatureConfig.Headers[0] != "X-Tenant" {
@@ -696,6 +698,191 @@ func TestFileStorage_DeleteScriptBindingsByScript(t *testing.T) {
 	}
 }
 
+// ---- Tag error paths ----
+
+func TestFileStorage_CreateTag_Duplicate(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	tag := &models.Tag{Name: "dup-tag"}
+	if err := fs.CreateTag(tag); err != nil {
+		t.Fatalf("first CreateTag: %v", err)
+	}
+	if err := fs.CreateTag(tag); err == nil {
+		t.Error("Expected error on duplicate tag creation")
+	}
+}
+
+func TestFileStorage_UpdateTag_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.UpdateTag("nonexistent", &models.Tag{Name: "nonexistent"})
+	if err == nil {
+		t.Error("Expected error updating non-existent tag")
+	}
+}
+
+func TestFileStorage_DeleteTag_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.DeleteTag("nonexistent")
+	if err == nil {
+		t.Error("Expected error deleting non-existent tag")
+	}
+}
+
+func TestFileStorage_UpdateTag_Rename(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	if err := fs.CreateTag(&models.Tag{Name: "old-name"}); err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	if err := fs.UpdateTag("old-name", &models.Tag{Name: "new-name", Description: "renamed"}); err != nil {
+		t.Fatalf("UpdateTag rename: %v", err)
+	}
+	if _, err := fs.GetTag("new-name"); err != nil {
+		t.Error("Expected renamed tag to exist")
+	}
+	if _, err := fs.GetTag("old-name"); err == nil {
+		t.Error("Expected old tag to be gone")
+	}
+}
+
+func TestFileStorage_UpdateTag_RenameToExisting(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	_ = fs.CreateTag(&models.Tag{Name: "tag-a"})
+	_ = fs.CreateTag(&models.Tag{Name: "tag-b"})
+	err = fs.UpdateTag("tag-a", &models.Tag{Name: "tag-b"})
+	if err == nil {
+		t.Error("Expected error renaming to existing tag name")
+	}
+}
+
+// ---- loadTags error path ----
+
+func TestFileStorage_LoadTags_CorruptJSON(t *testing.T) {
+	baseDir := t.TempDir()
+	// Write corrupt tags.json before creating FileStorage
+	if err := os.WriteFile(filepath.Join(baseDir, "tags.json"), []byte("not-json{{{"), 0644); err != nil {
+		t.Fatalf("write corrupt tags.json: %v", err)
+	}
+	_, err := NewFileStorage(baseDir)
+	if err == nil {
+		t.Error("Expected error when loading corrupt tags.json")
+	}
+}
+
+// ---- NewFileStorage error path ----
+
+func TestFileStorage_NewFileStorage_InvalidPath(t *testing.T) {
+	// Use a path that can't be created (a file used as directory)
+	baseDir := t.TempDir()
+	// Create a file where a directory is expected
+	blockingFile := filepath.Join(baseDir, "specs")
+	if err := os.WriteFile(blockingFile, []byte("block"), 0444); err != nil {
+		t.Fatalf("create blocking file: %v", err)
+	}
+	_, err := NewFileStorage(filepath.Join(baseDir, "specs"))
+	// Either creating subdirs under a file fails, or something else fails
+	if err == nil {
+		t.Error("Expected error for invalid base path")
+	}
+}
+
+// ---- Script error paths ----
+
+func TestFileStorage_CreateScript_NotFoundAfterDelete(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	// Test UpdateScript on non-existent
+	err = fs.UpdateScript(&models.Script{ID: "missing", Name: "x"})
+	if err == nil {
+		t.Error("Expected error updating non-existent script")
+	}
+	// Test DeleteScript on non-existent
+	err = fs.DeleteScript("missing")
+	if err == nil {
+		t.Error("Expected error deleting non-existent script")
+	}
+}
+
+func TestFileStorage_LoadScripts_CorruptBindingsJSON(t *testing.T) {
+	baseDir := t.TempDir()
+	// Pre-create directories
+	if err := os.MkdirAll(filepath.Join(baseDir, "operations"), 0755); err != nil {
+		t.Fatalf("mkdir operations: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "scripts"), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	// Write a corrupt scripts binding file — these are silently skipped
+	corruptPath := filepath.Join(baseDir, "operations", "op-corrupt.scripts.json")
+	if err := os.WriteFile(corruptPath, []byte("not-json"), 0644); err != nil {
+		t.Fatalf("write corrupt: %v", err)
+	}
+	// Should still load without error (corrupt files are silently skipped)
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage with corrupt bindings: %v", err)
+	}
+	// No bindings should be loaded
+	bindings, _ := fs.GetScriptBindings("op-corrupt")
+	if len(bindings) != 0 {
+		t.Errorf("Expected 0 bindings from corrupt file, got %d", len(bindings))
+	}
+}
+
+func TestFileStorage_LoadScripts_CorruptScriptJSON(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(baseDir, "scripts"), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	// Write a corrupt script metadata file — should be silently skipped
+	if err := os.WriteFile(filepath.Join(baseDir, "scripts", "bad.json"), []byte("not-json"), 0644); err != nil {
+		t.Fatalf("write corrupt: %v", err)
+	}
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage with corrupt script JSON: %v", err)
+	}
+	all, _ := fs.GetAllScripts()
+	if len(all) != 0 {
+		t.Errorf("Expected 0 scripts from corrupt file, got %d", len(all))
+	}
+}
+
+// ---- Script binding CRUD error paths ----
+
+func TestFileStorage_UpdateScriptBinding_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.UpdateScriptBinding(&models.ScriptBinding{ID: "missing", OperationID: "op-x"})
+	if err == nil {
+		t.Error("Expected error updating non-existent binding")
+	}
+}
+
 func TestFileStorage_ScriptBindingPersistsAcrossReload(t *testing.T) {
 	baseDir := t.TempDir()
 
@@ -719,5 +906,328 @@ func TestFileStorage_ScriptBindingPersistsAcrossReload(t *testing.T) {
 	}
 	if len(bindings) != 1 || bindings[0].OutputKey != "result" {
 		t.Errorf("Expected 1 binding with outputKey 'result' after reload, got %+v", bindings)
+	}
+}
+
+// ---- Internal error-path tests using direct struct access ----
+
+// TestFileStorage_loadTags_TagsJSONIsDir verifies loadTags returns an error when
+// tags.json exists as a directory (non-IsNotExist os.ReadFile error).
+func TestFileStorage_loadTags_TagsJSONIsDir(t *testing.T) {
+	baseDir := t.TempDir()
+	// Create tags.json as a directory so os.ReadFile fails (not IsNotExist)
+	if err := os.MkdirAll(filepath.Join(baseDir, "tags.json"), 0755); err != nil {
+		t.Fatalf("mkdir tags.json: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	err := fs.loadTags()
+	if err == nil {
+		t.Error("Expected error when tags.json is a directory")
+	}
+}
+
+// TestFileStorage_loadAll_SpecsDirIsFile verifies loadAll returns an error when the
+// specs directory is replaced by a regular file (non-IsNotExist ReadDir error).
+func TestFileStorage_loadAll_SpecsDirIsFile(t *testing.T) {
+	baseDir := t.TempDir()
+	// Create required support dirs and tags.json so loadTags passes
+	if err := os.MkdirAll(filepath.Join(baseDir, "operations"), 0755); err != nil {
+		t.Fatalf("mkdir operations: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "scripts"), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	tagsData := `[{"name":"default","createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-01T00:00:00Z"}]`
+	if err := os.WriteFile(filepath.Join(baseDir, "tags.json"), []byte(tagsData), 0644); err != nil {
+		t.Fatalf("write tags.json: %v", err)
+	}
+	// Create a FILE where the specs directory should be
+	if err := os.WriteFile(filepath.Join(baseDir, "specs"), []byte("block"), 0644); err != nil {
+		t.Fatalf("write blocking specs file: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	err := fs.loadAll()
+	if err == nil {
+		t.Error("Expected error when specs dir is a file")
+	}
+}
+
+// TestFileStorage_loadAll_ResponsesDirIsFile verifies loadAll returns an error when
+// the responses directory is replaced by a regular file.
+func TestFileStorage_loadAll_ResponsesDirIsFile(t *testing.T) {
+	baseDir := t.TempDir()
+	// Create support dirs and files needed before loadAll reaches the responses check
+	if err := os.MkdirAll(filepath.Join(baseDir, "specs"), 0755); err != nil {
+		t.Fatalf("mkdir specs: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "operations"), 0755); err != nil {
+		t.Fatalf("mkdir operations: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(baseDir, "scripts"), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	tagsData := `[{"name":"default","createdAt":"2024-01-01T00:00:00Z","updatedAt":"2024-01-01T00:00:00Z"}]`
+	if err := os.WriteFile(filepath.Join(baseDir, "tags.json"), []byte(tagsData), 0644); err != nil {
+		t.Fatalf("write tags.json: %v", err)
+	}
+	// Empty AI scenarios file so loadAIScenarios passes
+	if err := os.WriteFile(filepath.Join(baseDir, "ai-scenarios.json"), []byte("[]"), 0644); err != nil {
+		t.Fatalf("write ai-scenarios.json: %v", err)
+	}
+	// Create a FILE where the responses directory should be
+	if err := os.WriteFile(filepath.Join(baseDir, "responses"), []byte("block"), 0644); err != nil {
+		t.Fatalf("write blocking responses file: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	err := fs.loadAll()
+	if err == nil {
+		t.Error("Expected error when responses dir is a file")
+	}
+}
+
+// TestFileStorage_loadScripts_ScriptsDirIsFile verifies loadScripts returns an error
+// when the scripts directory is replaced by a regular file.
+func TestFileStorage_loadScripts_ScriptsDirIsFile(t *testing.T) {
+	baseDir := t.TempDir()
+	// Create a FILE where the scripts directory should be
+	if err := os.WriteFile(filepath.Join(baseDir, "scripts"), []byte("block"), 0644); err != nil {
+		t.Fatalf("write blocking scripts file: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	err := fs.loadScripts()
+	if err == nil {
+		t.Error("Expected error when scripts dir is a file")
+	}
+}
+
+// TestFileStorage_AIScenario_ErrorPaths covers CreateAIScenario duplicate,
+// UpdateAIScenario not-found, and DeleteAIScenario not-found via FileStorage.
+func TestFileStorage_AIScenario_ErrorPaths(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	scenario := &models.AIScenario{ID: "err-s1", Name: "err-test", Enabled: true}
+	if err := fs.CreateAIScenario(scenario); err != nil {
+		t.Fatalf("CreateAIScenario: %v", err)
+	}
+
+	// Duplicate should fail
+	if err := fs.CreateAIScenario(scenario); err == nil {
+		t.Error("Expected error on duplicate AIScenario")
+	}
+
+	// Update non-existent
+	if err := fs.UpdateAIScenario(&models.AIScenario{ID: "nonexistent"}); err == nil {
+		t.Error("Expected error updating non-existent AIScenario")
+	}
+
+	// Delete non-existent
+	if err := fs.DeleteAIScenario("nonexistent"); err == nil {
+		t.Error("Expected error deleting non-existent AIScenario")
+	}
+}
+
+// ---- Additional internal error-path tests ----
+
+// TestFileStorage_loadScripts_OpsDirIsFile verifies loadScripts returns an error
+// when the operations directory is a regular file (non-IsNotExist ReadDir error).
+func TestFileStorage_loadScripts_OpsDirIsFile(t *testing.T) {
+	baseDir := t.TempDir()
+	// Create scripts dir properly (empty)
+	if err := os.MkdirAll(filepath.Join(baseDir, "scripts"), 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+	// Create a FILE where operations dir should be
+	if err := os.WriteFile(filepath.Join(baseDir, "operations"), []byte("block"), 0644); err != nil {
+		t.Fatalf("write blocking operations file: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	err := fs.loadScripts()
+	if err == nil {
+		t.Error("Expected error when operations dir is a file")
+	}
+}
+
+// TestFileStorage_saveScript_WriteError uses a read-only scripts directory to trigger
+// the os.WriteFile error path inside saveScript.
+func TestFileStorage_saveScript_WriteError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission-based test: running as root")
+	}
+	baseDir := t.TempDir()
+	scriptsDir := filepath.Join(baseDir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("mkdir scripts: %v", err)
+	}
+
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+
+	// Make scripts dir read-only so WriteFile fails
+	if err := os.Chmod(scriptsDir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(scriptsDir, 0755)
+
+	script := &models.Script{ID: "err-script", Name: "err", Source: "def run(req): return 1"}
+	err := fs.saveScript(script)
+	if err == nil {
+		t.Error("Expected error when scripts dir is read-only")
+	}
+}
+
+// TestFileStorage_saveScriptBindings_WriteError triggers the os.WriteFile error in
+// saveScriptBindings by making the operations directory read-only.
+func TestFileStorage_saveScriptBindings_WriteError(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("skipping permission-based test: running as root")
+	}
+	baseDir := t.TempDir()
+	opsDir := filepath.Join(baseDir, "operations")
+	if err := os.MkdirAll(opsDir, 0755); err != nil {
+		t.Fatalf("mkdir operations: %v", err)
+	}
+
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+
+	if err := os.Chmod(opsDir, 0555); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	defer os.Chmod(opsDir, 0755)
+
+	err := fs.saveScriptBindings("op-write-err")
+	if err == nil {
+		t.Error("Expected error when operations dir is read-only")
+	}
+}
+
+// ---- FileStorage CRUD error paths (error from memory layer) ----
+
+func TestFileStorage_CreateSpec_Duplicate(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	spec := &models.Spec{ID: "dup-spec", Name: "Dup"}
+	if err := fs.CreateSpec(spec); err != nil {
+		t.Fatalf("first CreateSpec: %v", err)
+	}
+	if err := fs.CreateSpec(spec); err == nil {
+		t.Error("Expected error on duplicate CreateSpec")
+	}
+}
+
+func TestFileStorage_UpdateSpec_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.UpdateSpec(&models.Spec{ID: "nonexistent", Name: "X"})
+	if err == nil {
+		t.Error("Expected error updating non-existent spec")
+	}
+}
+
+func TestFileStorage_DeleteSpec_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.DeleteSpec("nonexistent")
+	if err == nil {
+		t.Error("Expected error deleting non-existent spec")
+	}
+}
+
+func TestFileStorage_CreateResponseConfig_Duplicate(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	cfg := &models.ResponseConfig{ID: "dup-resp", OperationID: "op-1", StatusCode: 200}
+	if err := fs.CreateResponseConfig(cfg); err != nil {
+		t.Fatalf("first CreateResponseConfig: %v", err)
+	}
+	if err := fs.CreateResponseConfig(cfg); err == nil {
+		t.Error("Expected error on duplicate CreateResponseConfig")
+	}
+}
+
+func TestFileStorage_UpdateResponseConfig_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.UpdateResponseConfig(&models.ResponseConfig{ID: "nonexistent", StatusCode: 200})
+	if err == nil {
+		t.Error("Expected error updating non-existent response config")
+	}
+}
+
+func TestFileStorage_DeleteResponseConfig_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.DeleteResponseConfig("nonexistent")
+	if err == nil {
+		t.Error("Expected error deleting non-existent response config")
+	}
+}
+
+func TestFileStorage_UpdateOperation_NotFound(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	err = fs.UpdateOperation(&models.Operation{ID: "nonexistent", SpecID: "s1"})
+	if err == nil {
+		t.Error("Expected error updating non-existent operation")
+	}
+}
+
+// TestFileStorage_loadAIScenarios_CorruptJSON verifies loadAIScenarios returns an
+// error when ai-scenarios.json contains invalid JSON.
+func TestFileStorage_loadAIScenarios_CorruptJSON(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(baseDir, "ai-scenarios.json"), []byte("corrupt{{"), 0644); err != nil {
+		t.Fatalf("write corrupt ai-scenarios.json: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	_, err := fs.loadAIScenarios()
+	if err == nil {
+		t.Error("Expected error when ai-scenarios.json is corrupt JSON")
+	}
+}
+
+// TestFileStorage_loadOperationCustomization_CorruptJSON verifies loadOperationCustomization
+// returns an error for a file with invalid JSON.
+func TestFileStorage_loadOperationCustomization_CorruptJSON(t *testing.T) {
+	baseDir := t.TempDir()
+	opsDir := filepath.Join(baseDir, "operations")
+	if err := os.MkdirAll(opsDir, 0755); err != nil {
+		t.Fatalf("mkdir operations: %v", err)
+	}
+	opID := "corrupt-op"
+	customPath := filepath.Join(opsDir, opID+".json")
+	if err := os.WriteFile(customPath, []byte("not-json{{"), 0644); err != nil {
+		t.Fatalf("write corrupt customization: %v", err)
+	}
+	fs := &FileStorage{basePath: baseDir, memory: NewMemoryStorage()}
+	custom, err := fs.loadOperationCustomization(opID)
+	if err == nil {
+		t.Error("Expected error when customization file is corrupt JSON")
+	}
+	if custom != nil {
+		t.Error("Expected nil customization on error")
 	}
 }

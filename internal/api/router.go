@@ -11,6 +11,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -25,9 +26,9 @@ type RouterConfig struct {
 	StatsCollector *stats.Collector
 	TracingService *tracing.Service
 	ProxyEngine    *proxy.Engine
-	GlobalStore    *store.GlobalStore      // optional; nil = Phase 1 mode
-	SessionManager *store.SessionManager   // optional; nil = Phase 1 mode
-	ArchiveManager *archive.ArchiveManager // optional; nil disables archive endpoints
+	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
+	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
+	ArchiveManager archive.ArchiveService  // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	Headless       bool
 	ScriptTimeout  int           // ms; 0 = use default (100)
@@ -69,9 +70,9 @@ func NewRouter(cfg RouterConfig) *Router {
 	})
 
 	// Setup middleware
-	r.engine.Use(gin.Recovery())
+	r.engine.Use(logging.RecoveryMiddleware())
 	r.engine.Use(corsMiddleware())
-	r.engine.Use(gin.Logger())
+	r.engine.Use(logging.AccessMiddleware())
 
 	// Setup routes
 	r.setupRoutes()
@@ -149,6 +150,7 @@ func (r *Router) setupRoutes() {
 
 		// Statistics
 		api.GET("/stats", r.handler.GetGlobalStats)
+		api.GET("/stats/stream", r.handler.StreamGlobalStats)
 		api.GET("/stats/specs/:id", r.handler.GetSpecStats)
 		api.GET("/stats/operations/:id", r.handler.GetOperationStats)
 		api.POST("/stats/reset", r.handler.ResetStats)
@@ -192,6 +194,9 @@ func (r *Router) setupRoutes() {
 		api.DELETE("/sessions", r.handler.InvalidateAllSessions)
 
 		// Archives
+		api.GET("/archives/info", r.handler.ArchiveInfo)
+		api.GET("/archives/snapshot", r.handler.DownloadSnapshot)
+		api.POST("/archives/snapshot/restore", r.handler.RestoreSnapshot)
 		api.GET("/archives", r.handler.ListArchives)
 		api.POST("/archives", r.handler.CreateArchive)
 		api.POST("/archives/upload", r.handler.UploadArchive)

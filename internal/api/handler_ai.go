@@ -1,22 +1,26 @@
 package api
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/ai"
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
 )
 
 // GetAIStatus returns whether the AI generator is configured.
 func (h *Handler) GetAIStatus(c *gin.Context) {
-	configured := h.aiGenerator != nil && h.aiGenerator.IsConfigured()
-	c.JSON(http.StatusOK, gin.H{"configured": configured})
+	status := ai.Status{Configured: false, Provider: "openai"}
+	if h.aiGenerator != nil {
+		status = h.aiGenerator.Status()
+	}
+	c.JSON(http.StatusOK, status)
 }
 
-// GenerateAIResponse calls the OpenAI API to generate a response config for an
+// GenerateAIResponse calls the configured AI provider to generate a response config for an
 // operation and stores it, returning the created ResponseConfig.
 func (h *Handler) GenerateAIResponse(c *gin.Context) {
 	opID := c.Param("id")
@@ -29,7 +33,7 @@ func (h *Handler) GenerateAIResponse(c *gin.Context) {
 
 	if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI generation is not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable",
+			"error": h.aiUnavailableMessage(),
 		})
 		return
 	}
@@ -102,13 +106,13 @@ func (h *Handler) GenerateAIResponse(c *gin.Context) {
 	c.JSON(http.StatusCreated, cfg)
 }
 
-// GenerateAIScript calls the OpenAI API to generate a Starlark script and
+// GenerateAIScript calls the configured AI provider to generate a Starlark script and
 // returns the source code. The caller can optionally pass an operationId in
 // the request body to provide operation context for the AI.
 func (h *Handler) GenerateAIScript(c *gin.Context) {
 	if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"error": "AI generation is not configured — set ai.openaiApiKey in config.yaml or the GOVIRTUAL_AI_OPENAIAPIKEY environment variable",
+			"error": h.aiUnavailableMessage(),
 		})
 		return
 	}
@@ -145,6 +149,20 @@ func (h *Handler) GenerateAIScript(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"source": source})
 }
 
+func (h *Handler) aiUnavailableMessage() string {
+	if h.aiGenerator == nil {
+		return "AI generation is not configured — set ai.provider and the selected provider credentials in config.yaml"
+	}
+	return h.aiGenerator.MissingConfigMessage()
+}
+
+func (h *Handler) aiModeConfigurationError() error {
+	if h.aiGenerator == nil {
+		return fmt.Errorf("the selected AI provider must be configured before enabling AI mode")
+	}
+	return fmt.Errorf("%s must be configured before enabling AI mode", h.aiGenerator.ProviderDisplayName())
+}
+
 // operation's path+method. Returns nil (non-fatal) on any error.
 func extractSpecResponses(h *Handler, op *models.Operation) []ai.SpecResponseDef {
 	spec, err := h.store.GetSpec(op.SpecID)
@@ -155,7 +173,13 @@ func extractSpecResponses(h *Handler, op *models.Operation) []ai.SpecResponseDef
 	p := parser.NewParser()
 	defs, err := p.ExtractAllResponses(spec.Content, op.Method, op.Path)
 	if err != nil {
-		log.Printf("ai: failed to extract spec responses for %s %s: %v", op.Method, op.Path, err)
+		logging.Logger("api.ai").Warn("Failed to extract spec responses for AI context",
+			"event", "ai_spec_responses_extract_failed",
+			"operation_method", op.Method,
+			"operation_path", op.Path,
+			"spec_id", op.SpecID,
+			"error", err,
+		)
 		return nil
 	}
 
@@ -182,7 +206,13 @@ func extractOperationInputs(h *Handler, op *models.Operation) *ai.OperationInput
 	p := parser.NewParser()
 	inputs, err := p.ExtractOperationInputs(spec.Content, op.Method, op.Path)
 	if err != nil {
-		log.Printf("ai: failed to extract operation inputs for %s %s: %v", op.Method, op.Path, err)
+		logging.Logger("api.ai").Warn("Failed to extract operation inputs for AI context",
+			"event", "ai_operation_inputs_extract_failed",
+			"operation_method", op.Method,
+			"operation_path", op.Path,
+			"spec_id", op.SpecID,
+			"error", err,
+		)
 		return nil
 	}
 	if inputs == nil {

@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	"github.com/prasenjit/go-virtual/internal/config"
 )
 
 var (
@@ -59,6 +62,7 @@ func initConfig() {
 
 	// Read in environment variables that match
 	viper.SetEnvPrefix("GOVIRTUAL")
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
 	// Set defaults
@@ -91,16 +95,40 @@ func setDefaults() {
 	// Storage defaults
 	viper.SetDefault("storage.type", "file")
 	viper.SetDefault("storage.path", defaultDataPath)
+	viper.SetDefault("storage.mongo.uri", "")
+	viper.SetDefault("storage.mongo.database", config.DefaultMongoDB)
+	viper.SetDefault("storage.mongo.collectionPrefix", config.DefaultMongoCollectionPrefix)
+	viper.SetDefault("storage.mongo.connectTimeoutSeconds", config.DefaultMongoConnectTimeoutSeconds)
 
 	// Tracing defaults
 	viper.SetDefault("tracing.maxTraces", 1000)
 	viper.SetDefault("tracing.retention", "24h")
 
+	// Session defaults
+	viper.SetDefault("session.storeType", config.SessionStoreMemory)
+	viper.SetDefault("session.headerName", "X-Virtual-Session-Id")
+	viper.SetDefault("session.inactivityTimeout", "30m")
+	viper.SetDefault("session.maxSessions", 10000)
+	viper.SetDefault("session.redis.addr", config.DefaultRedisAddr)
+	viper.SetDefault("session.redis.username", "")
+	viper.SetDefault("session.redis.password", "")
+	viper.SetDefault("session.redis.db", 0)
+	viper.SetDefault("session.redis.keyPrefix", config.DefaultRedisKeyPrefix)
+
 	// Logging defaults
-	viper.SetDefault("logging.level", "info")
-	viper.SetDefault("logging.format", "json")
+	viper.SetDefault("logging.level", config.LogLevelInfo)
+	viper.SetDefault("logging.format", config.LogFormatJSON)
 
 	// AI defaults
+	viper.SetDefault("ai.provider", config.AIProviderOpenAI)
+	viper.SetDefault("ai.openai.apiKey", "")
+	viper.SetDefault("ai.openai.model", config.DefaultOpenAIModel)
+	viper.SetDefault("ai.openai.baseUrl", "")
+	viper.SetDefault("ai.claude.apiKey", "")
+	viper.SetDefault("ai.claude.model", config.DefaultClaudeModel)
+	viper.SetDefault("ai.claude.baseUrl", "")
+	viper.SetDefault("ai.claude.apiVersion", config.DefaultClaudeAPIVersion)
 	viper.SetDefault("ai.openaiApiKey", "")
-	viper.SetDefault("ai.openaiModel", "gpt-4o-mini")
+	viper.SetDefault("ai.openaiModel", config.DefaultOpenAIModel)
+	viper.SetDefault("ai.openaiBaseUrl", "")
 }

@@ -14,7 +14,7 @@ const defaultTimeoutMs = 100
 // ScriptEngine manages script compilation, caching, and execution for the proxy pipeline.
 type ScriptEngine struct {
 	store            storage.Storage
-	globalStore      *store.GlobalStore // optional; seeded into ephemeral sessions for test execution
+	globalStore      store.GlobalStoreBackend // optional; seeded into ephemeral sessions for test execution
 	runner           *StarlarkRunner
 	cache            *compiledCache
 	defaultTimeoutMs int
@@ -37,7 +37,7 @@ func NewScriptEngine(store storage.Storage, defaultTimeout int) *ScriptEngine {
 
 // SetGlobalStore wires the GlobalStore into the engine so that TestScript can
 // seed its ephemeral session with the current store snapshot.
-func (e *ScriptEngine) SetGlobalStore(gs *store.GlobalStore) {
+func (e *ScriptEngine) SetGlobalStore(gs store.GlobalStoreBackend) {
 	e.globalStore = gs
 }
 
@@ -52,7 +52,7 @@ func (e *ScriptEngine) RunBindings(
 	ctx context.Context,
 	operationID string,
 	input *ScriptInput,
-	sess *store.Session,
+	sess store.SessionState,
 ) (map[string]any, []models.ScriptTrace) {
 	output := make(map[string]any)
 	var traces []models.ScriptTrace

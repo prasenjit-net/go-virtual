@@ -1,3 +1,5 @@
+//go:build !unit
+
 package main
 
 import (
@@ -5,7 +7,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/fs"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/api"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 	"github.com/prasenjit/go-virtual/internal/stats"
 	"github.com/prasenjit/go-virtual/internal/storage"
@@ -66,6 +68,15 @@ func init() {
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
+	logger, loggingWarnings := logging.Setup(config.LoggingConfig{
+		Level:  viper.GetString("logging.level"),
+		Format: viper.GetString("logging.format"),
+	})
+	serverLog := logger.With("component", "server")
+	for _, warning := range loggingWarnings {
+		serverLog.Warn("Logging configuration fallback applied", "event", "logging_config_warning", "warning", warning)
+	}
+
 	// Get configuration values
 	port := viper.GetInt("server.port")
 	host := viper.GetString("server.host")
@@ -93,17 +104,42 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 
 	// Log the data path being used
-	log.Printf("Using data directory: %s", storagePath)
+	serverLog.Info("Using data directory", "event", "startup_data_directory", "path", storagePath, "storage_type", storageType)
 
 	// Initialize storage
 	var store storage.Storage
 	var err error
-	if storageType == "file" {
+	storageMongoURI := viper.GetString("storage.mongo.uri")
+	storageMongoDatabase := viper.GetString("storage.mongo.database")
+	storageMongoCollectionPrefix := viper.GetString("storage.mongo.collectionPrefix")
+	storageMongoConnectTimeout := viper.GetInt("storage.mongo.connectTimeoutSeconds")
+	if storageMongoDatabase == "" {
+		storageMongoDatabase = config.DefaultMongoDB
+	}
+	if storageMongoCollectionPrefix == "" {
+		storageMongoCollectionPrefix = config.DefaultMongoCollectionPrefix
+	}
+	if storageMongoConnectTimeout <= 0 {
+		storageMongoConnectTimeout = config.DefaultMongoConnectTimeoutSeconds
+	}
+	switch storageType {
+	case config.StorageTypeMongo:
+		mongoCfg := config.MongoConfig{
+			URI:                   storageMongoURI,
+			Database:              storageMongoDatabase,
+			CollectionPrefix:      storageMongoCollectionPrefix,
+			ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		}
+		store, err = newMongoStorageBackend(mongoCfg)
+		if err != nil {
+			return fmt.Errorf("failed to initialize mongo storage: %w", err)
+		}
+	case config.StorageTypeFile:
 		store, err = storage.NewFileStorage(storagePath)
 		if err != nil {
 			return fmt.Errorf("failed to initialize file storage: %w", err)
 		}
-	} else {
+	default:
 		store = storage.NewMemoryStorage()
 	}
 
@@ -113,10 +149,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize tracing service
 	tracingService := tracing.NewService(maxTraces)
 
-	aiGenerator := ai.NewGenerator(ai.Config{
-		APIKey: viper.GetString("ai.openaiApiKey"),
-		Model:  viper.GetString("ai.openaiModel"),
-	})
+	aiGenerator := ai.NewGenerator(loadAIConfig())
 
 	// Initialize proxy engine
 	scriptTimeoutMs := viper.GetInt("scripting.defaultTimeoutMs")
@@ -125,33 +158,52 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize Phase 2 — GlobalStore and SessionManager
 	storePath := storagePath // already resolved above
-	globalStorePath := filepath.Join(storePath, "store.json")
-
-	globalStore, err := gvstore.NewGlobalStore(globalStorePath)
-	if err != nil {
-		log.Printf("Warning: failed to load global store from %s: %v — starting with empty store", globalStorePath, err)
-		globalStore, _ = gvstore.NewGlobalStore(globalStorePath)
+	var globalStore gvstore.GlobalStoreBackend
+	if storageType == config.StorageTypeMongo {
+		mongoCfg := config.MongoConfig{
+			URI:                   storageMongoURI,
+			Database:              storageMongoDatabase,
+			CollectionPrefix:      storageMongoCollectionPrefix,
+			ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		}
+		globalStore, err = newMongoGlobalStoreBackend(mongoCfg)
+		if err != nil {
+			serverLog.Warn("Failed to initialize mongo global store; starting with empty store", "event", "global_store_init_failed", "error", err)
+			globalStore, _ = newMongoGlobalStoreBackend(mongoCfg)
+		}
+	} else {
+		globalStorePath := filepath.Join(storePath, "store.json")
+		var fileGS *gvstore.GlobalStore
+		fileGS, err = gvstore.NewGlobalStore(globalStorePath)
+		if err != nil {
+			serverLog.Warn("Failed to load global store; starting with empty store", "event", "global_store_init_failed", "path", globalStorePath, "error", err)
+			fileGS, _ = gvstore.NewGlobalStore(globalStorePath)
+		}
+		globalStore = fileGS
 	}
 
-	sessionCfg := config.SessionConfig{
-		HeaderName:        viper.GetString("session.headerName"),
-		InactivityTimeout: viper.GetDuration("session.inactivityTimeout"),
-		MaxSessions:       viper.GetInt("session.maxSessions"),
-	}
-	if sessionCfg.HeaderName == "" {
-		sessionCfg.HeaderName = "X-Virtual-Session-Id"
-	}
-	if sessionCfg.InactivityTimeout <= 0 {
-		sessionCfg.InactivityTimeout = 30 * time.Minute
-	}
-	if sessionCfg.MaxSessions <= 0 {
-		sessionCfg.MaxSessions = 10000
-	}
+	sessionCfg := loadSessionConfig()
 
 	sessionCtx, cancelSessions := context.WithCancel(context.Background())
 	defer cancelSessions()
 
-	sessionManager := gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
+	var sessionManager gvstore.SessionRegistry
+	switch sessionCfg.StoreType {
+	case config.SessionStoreRedis:
+		sessionManager, err = gvstore.NewRedisSessionManager(sessionCtx, globalStore, sessionCfg)
+		if err != nil {
+			return fmt.Errorf("failed to initialize redis session store: %w", err)
+		}
+	default:
+		sessionManager = gvstore.NewSessionManager(sessionCtx, globalStore, sessionCfg)
+	}
+	serverLog.Info("Configured session backend",
+		"event", "session_backend_configured",
+		"store_type", sessionCfg.StoreType,
+		"header_name", sessionCfg.HeaderName,
+		"inactivity_timeout", sessionCfg.InactivityTimeout.String(),
+		"max_sessions", sessionCfg.MaxSessions,
+	)
 	proxyEngine.SetSessionManager(sessionManager, sessionCfg.HeaderName)
 
 	// Build the outbound HTTP client used in proxy/recording mode.
@@ -187,12 +239,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Initialize archive manager before creating the router so all deps can
 	// be passed in one shot via RouterConfig.
-	var archiveManager *archive.ArchiveManager
-	archivesDir := filepath.Join(storePath, "archives")
-	if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
-		log.Printf("Warning: failed to init archive manager at %s: %v", archivesDir, err)
-	} else {
-		archiveManager = am
+	var archiveService archive.ArchiveService
+	switch storageType {
+	case config.StorageTypeMongo, config.StorageTypeMemory:
+		archiveService = archive.NewSnapshotArchiveManager(store, globalStore)
+		serverLog.Info("Archive mode: snapshot (no persistent history)", "event", "archive_mode", "mode", "snapshot", "storage_type", storageType)
+	default: // file
+		archivesDir := filepath.Join(storePath, "archives")
+		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
+			serverLog.Warn("Failed to initialize archive manager", "event", "archive_manager_init_failed", "path", archivesDir, "error", err)
+		} else {
+			archiveService = am
+			serverLog.Info("Archive mode: full (persistent history)", "event", "archive_mode", "mode", "full", "path", archivesDir)
+		}
 	}
 
 	// Setup router — all dependencies injected upfront, no post-construction setters.
@@ -203,7 +262,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		ProxyEngine:    proxyEngine,
 		GlobalStore:    globalStore,
 		SessionManager: sessionManager,
-		ArchiveManager: archiveManager,
+		ArchiveManager: archiveService,
 		Branding:       branding,
 		Headless:       headless,
 		ScriptTimeout:  scriptTimeoutMs,
@@ -214,22 +273,22 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if !headless {
 		if devMode {
 			// In dev mode, serve UI and docs from filesystem
-			log.Println("Development mode: Serving UI from ./ui/dist")
+			serverLog.Info("Serving UI from filesystem", "event", "ui_filesystem_mode", "path", "./ui/dist")
 			router.ServeUIFromFS("./ui/dist")
-			log.Println("Development mode: Serving docs from ./docs")
+			serverLog.Info("Serving docs from filesystem", "event", "docs_filesystem_mode", "path", "./docs")
 			router.ServeDocsFromFS("./docs")
 		} else {
 			// In production, serve embedded UI
 			uiFS, err := fs.Sub(govirtual.EmbeddedUI, "ui/dist")
 			if err != nil {
-				log.Printf("Warning: Embedded UI not available: %v", err)
+				serverLog.Warn("Embedded UI not available", "event", "embedded_ui_unavailable", "error", err)
 			} else {
 				router.ServeEmbeddedUI(uiFS)
 			}
 			// Serve embedded docs
 			docsFS, err := fs.Sub(govirtual.EmbeddedDocs, "docs")
 			if err != nil {
-				log.Printf("Warning: Embedded docs not available: %v", err)
+				serverLog.Warn("Embedded docs not available", "event", "embedded_docs_unavailable", "error", err)
 			} else {
 				router.ServeEmbeddedDocs(docsFS)
 			}
@@ -248,7 +307,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Start server
 	var cleanup func(context.Context) error
 	if tlsEnabled {
-		cleanup = startTLSServer(server, addr, headless)
+		cleanup, err = startTLSServer(server, addr, headless)
+		if err != nil {
+			return err
+		}
 	} else {
 		startHTTPServer(server, addr, headless)
 	}
@@ -258,7 +320,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	serverLog.Info("Shutting down server", "event", "server_shutdown_started")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -267,16 +329,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// For TLS mode, close the mux listener first to unblock Accept() calls
 	if cleanup != nil {
 		if err := cleanup(ctx); err != nil {
-			log.Printf("Cleanup error: %v", err)
+			serverLog.Warn("Server cleanup returned an error", "event", "server_cleanup_error", "error", err)
 		}
 	}
 
 	// Shutdown main server
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("Server shutdown error: %v", err)
+		serverLog.Warn("Server shutdown returned an error", "event", "server_shutdown_error", "error", err)
 	}
 
-	log.Println("Server stopped")
+	serverLog.Info("Server stopped", "event", "server_shutdown_complete")
 	return nil
 }
 
@@ -284,23 +346,19 @@ func runServe(cmd *cobra.Command, args []string) error {
 func startHTTPServer(server *http.Server, addr string, headless bool) {
 	server.Addr = addr
 	go func() {
-		log.Printf("Starting Go-Virtual server on %s", addr)
-		if headless {
-			log.Printf("Headless mode: admin API and UI disabled, serving proxy only")
-		} else {
-			log.Printf("Admin UI available at http://%s/_ui/", addr)
-			log.Printf("Admin API available at http://%s/_api/", addr)
-			log.Printf("Documentation available at http://%s/_docs/", addr)
-		}
+		logger := logging.Logger("server")
+		logServerEndpoints(logger, addr, headless, false)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			logger.Error("HTTP server failed", "event", "http_server_failed", "addr", addr, "error", err)
+			os.Exit(1)
 		}
 	}()
 }
 
 // startTLSServer starts a server that handles both HTTP and HTTPS on the same port
 // Returns a cleanup function that should be called during shutdown
-func startTLSServer(server *http.Server, addr string, headless bool) func(context.Context) error {
+func startTLSServer(server *http.Server, addr string, headless bool) (func(context.Context) error, error) {
+	logger := logging.Logger("server")
 	// Get TLS configuration from viper
 	certFile := viper.GetString("server.tls.certFile")
 	keyFile := viper.GetString("server.tls.keyFile")
@@ -323,12 +381,11 @@ func startTLSServer(server *http.Server, addr string, headless bool) func(contex
 
 	cert, err := certManager.GetCertificate(autoGenerate)
 	if err != nil {
-		log.Fatalf("Failed to get TLS certificate: %v", err)
+		return nil, fmt.Errorf("failed to get TLS certificate: %w", err)
 	}
 
 	certPath, keyPath := certManager.GetCertificatePaths()
-	log.Printf("Using TLS certificate: %s", certPath)
-	log.Printf("Using TLS private key: %s", keyPath)
+	logger.Info("Using TLS certificate", "event", "tls_certificate_loaded", "cert_path", certPath, "key_path", keyPath)
 
 	// Create TLS config
 	tlsConfig := &tls.Config{
@@ -339,7 +396,7 @@ func startTLSServer(server *http.Server, addr string, headless bool) func(contex
 	// Create base listener
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		log.Fatalf("Failed to create listener: %v", err)
+		return nil, fmt.Errorf("failed to create listener: %w", err)
 	}
 
 	// Create multiplexed listener for HTTP and HTTPS on same port
@@ -354,25 +411,18 @@ func startTLSServer(server *http.Server, addr string, headless bool) func(contex
 	}
 
 	go func() {
-		log.Printf("Starting Go-Virtual server on %s (HTTP & HTTPS)", addr)
-		if headless {
-			log.Printf("Headless mode: admin API and UI disabled, serving proxy only")
-		} else {
-			log.Printf("Admin UI available at https://%s/_ui/ (or http://%s/_ui/)", addr, addr)
-			log.Printf("Admin API available at https://%s/_api/ (or http://%s/_api/)", addr, addr)
-			log.Printf("Documentation available at https://%s/_docs/ (or http://%s/_docs/)", addr, addr)
-		}
+		logServerEndpoints(logger, addr, headless, true)
 
 		// Serve HTTPS
 		go func() {
 			if err := server.Serve(muxListener.HTTPSListener()); err != nil && err != http.ErrServerClosed {
-				log.Printf("HTTPS server error: %v", err)
+				logger.Error("HTTPS server error", "event", "https_server_error", "addr", addr, "error", err)
 			}
 		}()
 
 		// Serve HTTP
 		if err := httpServer.Serve(muxListener.HTTPListener()); err != nil && err != http.ErrServerClosed {
-			log.Printf("HTTP server error: %v", err)
+			logger.Error("HTTP server error", "event", "http_server_error", "addr", addr, "error", err)
 		}
 	}()
 
@@ -382,5 +432,28 @@ func startTLSServer(server *http.Server, addr string, headless bool) func(contex
 		muxListener.Close()
 		// Shutdown the HTTP server (HTTPS server is shut down by main)
 		return httpServer.Shutdown(ctx)
+	}, nil
+}
+
+func logServerEndpoints(logger interface {
+	Info(string, ...any)
+}, addr string, headless, tls bool) {
+	if tls {
+		logger.Info("Starting Go-Virtual server", "event", "server_start", "addr", addr, "tls", true)
+	} else {
+		logger.Info("Starting Go-Virtual server", "event", "server_start", "addr", addr, "tls", false)
 	}
+	if headless {
+		logger.Info("Headless mode enabled", "event", "headless_mode_enabled", "addr", addr)
+		return
+	}
+	if tls {
+		logger.Info("Admin UI available", "event", "admin_ui_available", "https_url", fmt.Sprintf("https://%s/_ui/", addr), "http_url", fmt.Sprintf("http://%s/_ui/", addr))
+		logger.Info("Admin API available", "event", "admin_api_available", "https_url", fmt.Sprintf("https://%s/_api/", addr), "http_url", fmt.Sprintf("http://%s/_api/", addr))
+		logger.Info("Documentation available", "event", "docs_available", "https_url", fmt.Sprintf("https://%s/_docs/", addr), "http_url", fmt.Sprintf("http://%s/_docs/", addr))
+		return
+	}
+	logger.Info("Admin UI available", "event", "admin_ui_available", "url", fmt.Sprintf("http://%s/_ui/", addr))
+	logger.Info("Admin API available", "event", "admin_api_available", "url", fmt.Sprintf("http://%s/_api/", addr))
+	logger.Info("Documentation available", "event", "docs_available", "url", fmt.Sprintf("http://%s/_docs/", addr))
 }

@@ -3,9 +3,34 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	AIProviderOpenAI        = "openai"
+	AIProviderClaude        = "claude"
+	DefaultOpenAIModel      = "gpt-4o-mini"
+	DefaultClaudeModel      = "claude-sonnet-4-6"
+	DefaultClaudeAPIVersion = "2023-06-01"
+	SessionStoreMemory      = "memory"
+	SessionStoreRedis       = "redis"
+	DefaultRedisAddr        = "127.0.0.1:6379"
+	DefaultRedisKeyPrefix   = "go-virtual:sessions"
+	LogLevelDebug           = "debug"
+	LogLevelInfo            = "info"
+	LogLevelWarn            = "warn"
+	LogLevelError           = "error"
+	LogFormatJSON           = "json"
+	LogFormatText           = "text"
+	StorageTypeFile         = "file"
+	StorageTypeMongo        = "mongo"
+	StorageTypeMemory       = "memory"
+	DefaultMongoDB                    = "go-virtual"
+	DefaultMongoCollectionPrefix      = "gv_"
+	DefaultMongoConnectTimeoutSeconds = 10
 )
 
 // Config holds the application configuration
@@ -23,11 +48,64 @@ type Config struct {
 
 // AIConfig holds configuration for AI-powered response generation.
 type AIConfig struct {
-	// OpenAIAPIKey is the API key used to call the OpenAI API.
-	// Can also be set via the GOVIRTUAL_AI_OPENAIAPIKEY environment variable.
-	OpenAIAPIKey string `yaml:"openaiApiKey"`
-	// OpenAIModel is the model used for response generation. Defaults to "gpt-4o-mini".
-	OpenAIModel string `yaml:"openaiModel"`
+	// Provider selects which provider powers AI features. Supported values:
+	// "openai" and "claude". Defaults to "openai".
+	Provider string `yaml:"provider"`
+	// OpenAI holds OpenAI-compatible provider configuration.
+	OpenAI OpenAIConfig `yaml:"openai"`
+	// Claude holds Anthropic Claude provider configuration.
+	Claude ClaudeConfig `yaml:"claude"`
+	// Legacy OpenAI aliases kept for backwards compatibility with existing
+	// config files and environment variable names.
+	OpenAIAPIKey  string `yaml:"openaiApiKey"`
+	OpenAIModel   string `yaml:"openaiModel"`
+	OpenAIBaseURL string `yaml:"openaiBaseUrl"`
+}
+
+// OpenAIConfig holds settings for OpenAI-compatible providers.
+type OpenAIConfig struct {
+	APIKey  string `yaml:"apiKey"`
+	Model   string `yaml:"model"`
+	BaseURL string `yaml:"baseUrl"`
+}
+
+// ClaudeConfig holds settings for Anthropic Claude.
+type ClaudeConfig struct {
+	APIKey     string `yaml:"apiKey"`
+	Model      string `yaml:"model"`
+	BaseURL    string `yaml:"baseUrl"`
+	APIVersion string `yaml:"apiVersion"`
+}
+
+// Normalize applies defaults and migrates legacy aliases to the provider-aware shape.
+func (c *AIConfig) Normalize() {
+	c.Provider = strings.ToLower(strings.TrimSpace(c.Provider))
+	if c.Provider == "" {
+		c.Provider = AIProviderOpenAI
+	}
+
+	if strings.TrimSpace(c.OpenAI.APIKey) == "" {
+		c.OpenAI.APIKey = strings.TrimSpace(c.OpenAIAPIKey)
+	}
+	if strings.TrimSpace(c.OpenAIModel) != "" && (strings.TrimSpace(c.OpenAI.Model) == "" || c.OpenAI.Model == DefaultOpenAIModel) {
+		c.OpenAI.Model = strings.TrimSpace(c.OpenAIModel)
+	}
+	if strings.TrimSpace(c.OpenAI.Model) == "" {
+		c.OpenAI.Model = strings.TrimSpace(c.OpenAIModel)
+	}
+	if strings.TrimSpace(c.OpenAI.BaseURL) == "" {
+		c.OpenAI.BaseURL = strings.TrimSpace(c.OpenAIBaseURL)
+	}
+	if strings.TrimSpace(c.OpenAI.Model) == "" {
+		c.OpenAI.Model = DefaultOpenAIModel
+	}
+
+	if strings.TrimSpace(c.Claude.Model) == "" {
+		c.Claude.Model = DefaultClaudeModel
+	}
+	if strings.TrimSpace(c.Claude.APIVersion) == "" {
+		c.Claude.APIVersion = DefaultClaudeAPIVersion
+	}
 }
 
 // BrandingConfig holds UI branding configuration
@@ -49,17 +127,47 @@ type ServerConfig struct {
 
 // TLSConfig holds TLS configuration
 type TLSConfig struct {
-	Enabled      bool   `yaml:"enabled"`       // Enable TLS
-	CertFile     string `yaml:"certFile"`      // Path to certificate file
-	KeyFile      string `yaml:"keyFile"`       // Path to private key file
-	AutoGenerate bool   `yaml:"autoGenerate"`  // Auto-generate self-signed cert if not configured
-	StorePath    string `yaml:"storePath"`     // Path to store auto-generated certs
+	Enabled      bool   `yaml:"enabled"`      // Enable TLS
+	CertFile     string `yaml:"certFile"`     // Path to certificate file
+	KeyFile      string `yaml:"keyFile"`      // Path to private key file
+	AutoGenerate bool   `yaml:"autoGenerate"` // Auto-generate self-signed cert if not configured
+	StorePath    string `yaml:"storePath"`    // Path to store auto-generated certs
+}
+
+// MongoConfig holds settings for MongoDB-backed storage.
+type MongoConfig struct {
+	URI                   string `yaml:"uri"`
+	Database              string `yaml:"database"`
+	CollectionPrefix      string `yaml:"collectionPrefix"`
+	ConnectTimeoutSeconds int    `yaml:"connectTimeoutSeconds"`
 }
 
 // StorageConfig holds storage configuration
 type StorageConfig struct {
-	Type string `yaml:"type"` // "memory" or "file"
-	Path string `yaml:"path"` // Path for file storage
+	Type  string      `yaml:"type"`  // "file", "memory", or "mongo"
+	Path  string      `yaml:"path"`  // Path for file storage
+	Mongo MongoConfig `yaml:"mongo"` // MongoDB settings (used when Type is "mongo")
+}
+
+// Normalize applies defaults and normalises the storage configuration.
+func (c *StorageConfig) Normalize() {
+	t := strings.ToLower(strings.TrimSpace(c.Type))
+	switch t {
+	case StorageTypeFile, StorageTypeMongo, StorageTypeMemory:
+		c.Type = t
+	default:
+		c.Type = StorageTypeFile
+	}
+
+	if c.Mongo.Database == "" {
+		c.Mongo.Database = DefaultMongoDB
+	}
+	if c.Mongo.CollectionPrefix == "" {
+		c.Mongo.CollectionPrefix = DefaultMongoCollectionPrefix
+	}
+	if c.Mongo.ConnectTimeoutSeconds <= 0 {
+		c.Mongo.ConnectTimeoutSeconds = DefaultMongoConnectTimeoutSeconds
+	}
 }
 
 // TracingConfig holds tracing configuration
@@ -74,8 +182,34 @@ type LoggingConfig struct {
 	Format string `yaml:"format"`
 }
 
+// Normalize applies supported defaults for logging configuration.
+func (c *LoggingConfig) Normalize() {
+	level := strings.ToLower(strings.TrimSpace(c.Level))
+	switch level {
+	case "", LogLevelInfo:
+		c.Level = LogLevelInfo
+	case LogLevelDebug, LogLevelWarn, LogLevelError:
+		c.Level = level
+	default:
+		c.Level = LogLevelInfo
+	}
+
+	format := strings.ToLower(strings.TrimSpace(c.Format))
+	switch format {
+	case "", LogFormatJSON:
+		c.Format = LogFormatJSON
+	case LogFormatText:
+		c.Format = format
+	default:
+		c.Format = LogFormatJSON
+	}
+}
+
 // SessionConfig controls per-request session behaviour.
 type SessionConfig struct {
+	// StoreType controls where sessions are persisted. Supported values are
+	// "memory" and "redis". Defaults to "memory".
+	StoreType string `yaml:"storeType"`
 	// HeaderName is the HTTP header used to identify the session. Defaults to "X-Virtual-Session-Id".
 	HeaderName string `yaml:"headerName"`
 	// InactivityTimeout is how long a session survives without activity. Defaults to 30 minutes.
@@ -83,6 +217,54 @@ type SessionConfig struct {
 	// MaxSessions is a hard cap on concurrent sessions. When exceeded the
 	// least-recently-active session is evicted. Defaults to 10000.
 	MaxSessions int `yaml:"maxSessions"`
+	// Redis holds Redis-specific settings used when StoreType is "redis".
+	Redis RedisSessionConfig `yaml:"redis"`
+}
+
+// RedisSessionConfig holds settings for Redis-backed session storage.
+type RedisSessionConfig struct {
+	Addr      string `yaml:"addr"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	DB        int    `yaml:"db"`
+	KeyPrefix string `yaml:"keyPrefix"`
+}
+
+// Normalize applies supported defaults for session configuration.
+func (c *SessionConfig) Normalize() {
+	storeType := strings.ToLower(strings.TrimSpace(c.StoreType))
+	switch storeType {
+	case "", SessionStoreMemory:
+		c.StoreType = SessionStoreMemory
+	case SessionStoreRedis:
+		c.StoreType = storeType
+	default:
+		c.StoreType = SessionStoreMemory
+	}
+
+	c.HeaderName = strings.TrimSpace(c.HeaderName)
+	if c.HeaderName == "" {
+		c.HeaderName = "X-Virtual-Session-Id"
+	}
+	if c.InactivityTimeout <= 0 {
+		c.InactivityTimeout = 30 * time.Minute
+	}
+	if c.MaxSessions <= 0 {
+		c.MaxSessions = 10000
+	}
+	c.Redis.Addr = strings.TrimSpace(c.Redis.Addr)
+	if c.Redis.Addr == "" {
+		c.Redis.Addr = DefaultRedisAddr
+	}
+	c.Redis.Username = strings.TrimSpace(c.Redis.Username)
+	c.Redis.Password = strings.TrimSpace(c.Redis.Password)
+	if c.Redis.DB < 0 {
+		c.Redis.DB = 0
+	}
+	c.Redis.KeyPrefix = strings.TrimSpace(c.Redis.KeyPrefix)
+	if c.Redis.KeyPrefix == "" {
+		c.Redis.KeyPrefix = DefaultRedisKeyPrefix
+	}
 }
 
 // ScriptingConfig holds Starlark scripting configuration
@@ -137,6 +319,11 @@ func Default() *Config {
 		Storage: StorageConfig{
 			Type: "file",
 			Path: defaultDataPath,
+			Mongo: MongoConfig{
+				Database:              DefaultMongoDB,
+				CollectionPrefix:      DefaultMongoCollectionPrefix,
+				ConnectTimeoutSeconds: DefaultMongoConnectTimeoutSeconds,
+			},
 		},
 		Tracing: TracingConfig{
 			MaxTraces: 1000,
@@ -154,13 +341,29 @@ func Default() *Config {
 			DefaultTimeoutMs: 100,
 		},
 		Session: SessionConfig{
+			StoreType:         SessionStoreMemory,
 			HeaderName:        "X-Virtual-Session-Id",
 			InactivityTimeout: 30 * time.Minute,
 			MaxSessions:       10000,
+			Redis: RedisSessionConfig{
+				Addr:      DefaultRedisAddr,
+				DB:        0,
+				KeyPrefix: DefaultRedisKeyPrefix,
+			},
 		},
 		Proxy: ProxyConfig{
 			TimeoutSeconds:     30,
 			InsecureSkipVerify: false,
+		},
+		AI: AIConfig{
+			Provider: AIProviderOpenAI,
+			OpenAI: OpenAIConfig{
+				Model: DefaultOpenAIModel,
+			},
+			Claude: ClaudeConfig{
+				Model:      DefaultClaudeModel,
+				APIVersion: DefaultClaudeAPIVersion,
+			},
 		},
 	}
 }
@@ -176,6 +379,10 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
 	}
+	cfg.AI.Normalize()
+	cfg.Logging.Normalize()
+	cfg.Session.Normalize()
+	cfg.Storage.Normalize()
 
 	// Convert relative storage path to absolute using current working directory
 	// This ensures consistent behavior across all platforms

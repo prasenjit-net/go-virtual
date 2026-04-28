@@ -1049,6 +1049,9 @@ func TestExtractOperationInputs_PathAndQueryParams(t *testing.T) {
 	if inputs.QueryParams[0].Name != "format" {
 		t.Errorf("expected query param 'format', got %q", inputs.QueryParams[0].Name)
 	}
+	if len(inputs.HeaderParams) != 0 {
+		t.Errorf("expected no header params, got %d", len(inputs.HeaderParams))
+	}
 }
 
 func TestExtractOperationInputs_BodyFields(t *testing.T) {
@@ -1059,6 +1062,9 @@ func TestExtractOperationInputs_BodyFields(t *testing.T) {
 	}
 	if inputs == nil {
 		t.Fatal("expected non-nil inputs")
+	}
+	if !inputs.HasBody {
+		t.Fatal("expected POST operation to report request body")
 	}
 
 	// Should have flattened body fields: name, category, tags, tags.0, owner.id, owner.email
@@ -1086,6 +1092,67 @@ func TestExtractOperationInputs_NoBody(t *testing.T) {
 	}
 	if len(inputs.BodyFields) != 0 {
 		t.Errorf("GET operation should have no body fields, got %d", len(inputs.BodyFields))
+	}
+	if inputs.HasBody {
+		t.Error("GET operation should not report request body")
+	}
+}
+
+func TestExtractOperationInputs_HeaderParamsAndBodyPresence(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Headers API
+  version: 1.0.0
+paths:
+  /orders/{id}:
+    parameters:
+      - name: X-Tenant
+        in: header
+        required: false
+        schema:
+          type: string
+    put:
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: include
+          in: query
+          schema:
+            type: string
+        - name: X-Trace-Id
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: ok
+`
+	inputs, err := p.ExtractOperationInputs(spec, "PUT", "/orders/{id}")
+	if err != nil {
+		t.Fatalf("ExtractOperationInputs error: %v", err)
+	}
+	if len(inputs.HeaderParams) != 2 {
+		t.Fatalf("expected 2 header params, got %d", len(inputs.HeaderParams))
+	}
+	if inputs.HeaderParams[0].Name != "X-Tenant" && inputs.HeaderParams[1].Name != "X-Tenant" {
+		t.Fatalf("expected X-Tenant header param, got %#v", inputs.HeaderParams)
+	}
+	if !inputs.HasBody {
+		t.Fatal("expected request body to be detected even for non-JSON body")
+	}
+	if len(inputs.BodyFields) != 0 {
+		t.Fatalf("expected non-JSON body to produce no flattened fields, got %d", len(inputs.BodyFields))
 	}
 }
 
@@ -1147,4 +1214,371 @@ func TestSchemaTypeHint_Nil(t *testing.T) {
 	if hint != "" {
 		t.Errorf("schemaTypeHint(nil) should return empty string, got %q", hint)
 	}
+}
+
+func TestSchemaTypeHint_ArrayWithItems(t *testing.T) {
+	schema := &openapi3.Schema{
+		Type: &openapi3.Types{"array"},
+		Items: &openapi3.SchemaRef{
+			Value: &openapi3.Schema{Type: &openapi3.Types{"string"}},
+		},
+	}
+	hint := schemaTypeHint(schema)
+	if !strings.Contains(hint, "array") || !strings.Contains(hint, "string") {
+		t.Errorf("expected 'array of string' hint, got %q", hint)
+	}
+}
+
+func TestSchemaTypeHint_ObjectNoProperties(t *testing.T) {
+	schema := &openapi3.Schema{Type: &openapi3.Types{"object"}}
+	hint := schemaTypeHint(schema)
+	if hint != "object" {
+		t.Errorf("expected 'object', got %q", hint)
+	}
+}
+
+func TestSchemaTypeHint_NoTypeWithProperties(t *testing.T) {
+	// No explicit type but has properties — should behave like an object.
+	schema := &openapi3.Schema{
+		Properties: openapi3.Schemas{
+			"field": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		},
+	}
+	hint := schemaTypeHint(schema)
+	if !strings.Contains(hint, "object") {
+		t.Errorf("expected 'object with fields' hint, got %q", hint)
+	}
+}
+
+func TestSchemaTypeHint_NoTypeNoProperties(t *testing.T) {
+	hint := schemaTypeHint(&openapi3.Schema{})
+	if hint != "" {
+		t.Errorf("expected empty hint for schema with no type and no properties, got %q", hint)
+	}
+}
+
+// ── operationByMethod ─────────────────────────────────────────────────────────
+
+func TestOperationByMethod_HeadAndOptions(t *testing.T) {
+	headOp := &openapi3.Operation{}
+	optionsOp := &openapi3.Operation{}
+	item := &openapi3.PathItem{Head: headOp, Options: optionsOp}
+
+	if got := operationByMethod(item, "HEAD"); got != headOp {
+		t.Errorf("expected HEAD operation")
+	}
+	if got := operationByMethod(item, "OPTIONS"); got != optionsOp {
+		t.Errorf("expected OPTIONS operation")
+	}
+}
+
+func TestOperationByMethod_UnknownMethod(t *testing.T) {
+	item := &openapi3.PathItem{}
+	if got := operationByMethod(item, "TRACE"); got != nil {
+		t.Errorf("expected nil for unknown method TRACE, got %v", got)
+	}
+}
+
+// ── bodyFieldPaths ────────────────────────────────────────────────────────────
+
+func TestBodyFieldPaths_SkipsEmptyPath(t *testing.T) {
+	fields := []BodyFieldDef{
+		{GjsonPath: "name", Type: "string"},
+		{GjsonPath: "", Type: "string"}, // should be skipped
+		{GjsonPath: "email", Type: "string"},
+	}
+	paths := bodyFieldPaths(fields)
+	for _, p := range paths {
+		if p == "" {
+			t.Error("bodyFieldPaths should not include empty GjsonPath entries")
+		}
+	}
+	if len(paths) != 2 {
+		t.Errorf("expected 2 paths, got %d", len(paths))
+	}
+}
+
+// ── flattenSchema ─────────────────────────────────────────────────────────────
+
+func TestFlattenSchema_ArrayWithPrefix(t *testing.T) {
+	schema := &openapi3.Schema{
+		Type: &openapi3.Types{"array"},
+		Items: &openapi3.SchemaRef{
+			Value: &openapi3.Schema{Type: &openapi3.Types{"string"}},
+		},
+	}
+	fields := flattenSchema(schema, "items", 0)
+	if len(fields) == 0 {
+		t.Fatal("expected at least one field from array schema with prefix")
+	}
+	found := false
+	for _, f := range fields {
+		if f.GjsonPath == "items.0" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'items.0' gjson path, got %v", fields)
+	}
+}
+
+func TestFlattenSchema_DepthLimit(t *testing.T) {
+	// Depth > 4 should return nil immediately.
+	schema := &openapi3.Schema{Type: &openapi3.Types{"object"},
+		Properties: openapi3.Schemas{
+			"deep": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		},
+	}
+	fields := flattenSchema(schema, "root", 5)
+	if fields != nil {
+		t.Errorf("expected nil at depth > 4, got %v", fields)
+	}
+}
+
+func TestFlattenSchema_AllOf(t *testing.T) {
+	inner := &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		Properties: openapi3.Schemas{
+			"extra": {Value: &openapi3.Schema{Type: &openapi3.Types{"string"}}},
+		},
+	}
+	schema := &openapi3.Schema{
+		AllOf: openapi3.SchemaRefs{
+			{Value: inner},
+		},
+	}
+	fields := flattenSchema(schema, "", 0)
+	found := false
+	for _, f := range fields {
+		if f.GjsonPath == "extra" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'extra' field from allOf schema, got %v", fields)
+	}
+}
+
+// ── formatExample ─────────────────────────────────────────────────────────────
+
+func TestFormatExample_NonMarshalableFallback(t *testing.T) {
+	// A channel cannot be marshalled to JSON, so the fallback fmt.Sprintf path runs.
+	ch := make(chan int)
+	result := formatExample(ch)
+	if result == "" {
+		t.Error("expected non-empty fallback string for non-marshallable value")
+	}
+}
+
+// ── extractExampleResponseFromOp (named examples & 201 path) ──────────────────
+
+func TestExtractExampleResponseFromOp_NamedExamples(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Named Examples API
+  version: 1.0.0
+paths:
+  /things:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              examples:
+                first:
+                  value:
+                    id: 1
+                    label: first thing
+`
+	result, err := p.Parse(spec, "")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	if len(result.Operations) != 1 {
+		t.Fatalf("expected 1 operation, got %d", len(result.Operations))
+	}
+	ex := result.Operations[0].ExampleResponse
+	if ex == nil {
+		t.Fatal("expected example response from named examples")
+	}
+	if ex.Body == "" {
+		t.Error("expected non-empty body from named example")
+	}
+}
+
+func TestExtractExampleResponseFromOp_201StatusCode(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Created API
+  version: 1.0.0
+paths:
+  /items:
+    post:
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              example:
+                id: "new-item"
+`
+	result, err := p.Parse(spec, "")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	ex := result.Operations[0].ExampleResponse
+	if ex == nil {
+		t.Fatal("expected example response for 201")
+	}
+	if ex.StatusCode != 201 {
+		t.Errorf("expected status 201, got %d", ex.StatusCode)
+	}
+}
+
+func TestExtractExampleResponseFromOp_NilResponses(t *testing.T) {
+	// When op has nil responses, extractExampleResponseFromOp should return nil.
+	op := &openapi3.Operation{}
+	ex := extractExampleResponseFromOp(op)
+	if ex != nil {
+		t.Errorf("expected nil example response for op with nil responses, got %v", ex)
+	}
+}
+
+func TestExtractExampleResponseFromOp_HeaderExample(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Header API
+  version: 1.0.0
+paths:
+  /data:
+    get:
+      responses:
+        '200':
+          description: OK
+          headers:
+            X-Request-Id:
+              schema:
+                type: string
+              example: "abc-123"
+          content:
+            application/json:
+              example:
+                value: 42
+`
+	result, err := p.Parse(spec, "")
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	ex := result.Operations[0].ExampleResponse
+	if ex == nil {
+		t.Fatal("expected example response")
+	}
+	if ex.Headers["X-Request-Id"] != "abc-123" {
+		t.Errorf("expected X-Request-Id header, got %v", ex.Headers)
+	}
+}
+
+// ── ExtractExampleResponse — default response fallback ────────────────────────
+
+func TestExtractExampleResponse_DefaultResponseFallback(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Default Response API
+  version: 1.0.0
+paths:
+  /status:
+    get:
+      responses:
+        default:
+          description: Any status
+          content:
+            application/json:
+              example:
+                status: ok
+`
+	headers, body, err := p.ExtractExampleResponse(spec, "GET", "/status", 200)
+	if err != nil {
+		t.Fatalf("ExtractExampleResponse error: %v", err)
+	}
+	_ = headers
+	_ = body
+}
+
+func TestExtractExampleResponse_NoResponseForStatus(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: No Response API
+  version: 1.0.0
+paths:
+  /items:
+    get:
+      responses:
+        '200':
+          description: OK
+`
+	// Request a status code that doesn't exist and has no default either.
+	_, _, err := p.ExtractExampleResponse(spec, "GET", "/items", 404)
+	if err == nil {
+		t.Error("expected error when no response for status 404 and no default response")
+	}
+}
+
+func TestExtractExampleResponse_OperationNotFound(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Missing Op API
+  version: 1.0.0
+paths:
+  /items:
+    get:
+      responses:
+        '200':
+          description: OK
+`
+	// POST not defined on /items — operationByMethod returns nil.
+	_, _, err := p.ExtractExampleResponse(spec, "POST", "/items", 200)
+	if err == nil {
+		t.Error("expected error when operation not found for method")
+	}
+}
+
+func TestExtractExampleResponse_SchemaBody(t *testing.T) {
+	p := NewParser()
+	spec := `
+openapi: 3.0.0
+info:
+  title: Schema Body API
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+`
+	headers, body, err := p.ExtractExampleResponse(spec, "GET", "/users", 200)
+	if err != nil {
+		t.Fatalf("ExtractExampleResponse error: %v", err)
+	}
+	if headers["Content-Type"] != "application/json" {
+		t.Errorf("expected Content-Type header, got %v", headers)
+	}
+	_ = body
 }

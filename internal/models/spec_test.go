@@ -63,15 +63,45 @@ func TestNormalizeSpecModeAndSetMode(t *testing.T) {
 }
 
 func TestSpecNormalizeModeAndEffectiveModePolicy(t *testing.T) {
-	spec := &Spec{Mode: SpecModeAI}
+	spec := &Spec{Mode: SpecModeAI, SignatureHeaders: []string{" x-tenant ", "X-Virtual-Test", "X-Tenant"}}
 	spec.NormalizeMode()
 
 	if !spec.ModePolicy.AI.Enabled || spec.ModePolicy.Proxy.Enabled {
 		t.Fatalf("NormalizeMode should derive AI policy, got %+v", spec.ModePolicy)
 	}
+	if len(spec.SignatureHeaders) != 1 || spec.SignatureHeaders[0] != "X-Tenant" {
+		t.Fatalf("NormalizeMode should normalize signature headers, got %#v", spec.SignatureHeaders)
+	}
 
 	legacyProxy := (&Spec{ProxyMode: true}).EffectiveModePolicy()
 	if !legacyProxy.Proxy.Enabled || legacyProxy.AI.Enabled {
 		t.Fatalf("EffectiveModePolicy should derive legacy proxy mode, got %+v", legacyProxy)
+	}
+}
+
+func TestNormalizeSignatureConfig(t *testing.T) {
+	includeBody := true
+	cfg := &SignatureConfig{
+		PathParams:        []string{"id", " id ", "tenant"},
+		QueryParams:       []string{"status", "status"},
+		HeadersConfigured: true,
+		Headers:           []string{" x-tenant ", "X-Virtual-Test", "X-Tenant"},
+		IncludeBody:       &includeBody,
+		BodyJsonPaths:     []string{"user.id", " user.id ", "meta.ts"},
+	}
+
+	cfg.Normalize()
+
+	if len(cfg.PathParams) != 2 || cfg.PathParams[0] != "id" || cfg.PathParams[1] != "tenant" {
+		t.Fatalf("unexpected normalized path params: %#v", cfg.PathParams)
+	}
+	if len(cfg.QueryParams) != 1 || cfg.QueryParams[0] != "status" {
+		t.Fatalf("unexpected normalized query params: %#v", cfg.QueryParams)
+	}
+	if len(cfg.Headers) != 1 || cfg.Headers[0] != "X-Tenant" {
+		t.Fatalf("unexpected normalized headers: %#v", cfg.Headers)
+	}
+	if len(cfg.BodyJsonPaths) != 2 {
+		t.Fatalf("unexpected normalized body paths: %#v", cfg.BodyJsonPaths)
 	}
 }

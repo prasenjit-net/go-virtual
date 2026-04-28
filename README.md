@@ -143,6 +143,7 @@ Scripts are written in **Starlark** and attached to operations through ordered s
 
 - **Global store**: persistent application-wide key/value store
 - **Session store**: private per-session copy seeded from the global store
+- **Session backend**: in-memory by default, or Redis when multiple instances need shared sessions
 - **Session header**: configurable, default `X-Virtual-Session-Id`
 - **Script testing**: runs against an ephemeral session snapshot and does not persist mutations
 
@@ -212,10 +213,21 @@ storage:
   type: "file"
   path: "./data"
 
+logging:
+  level: "info"   # debug, info, warn, error
+  format: "json"  # json or text
+
 session:
+  storeType: "memory"  # memory or redis
   headerName: "X-Virtual-Session-Id"
   inactivityTimeout: "30m"
   maxSessions: 10000
+  redis:
+    addr: "127.0.0.1:6379"
+    username: ""
+    password: ""
+    db: 0
+    keyPrefix: "go-virtual:sessions"
 
 proxy:
   timeoutSeconds: 30
@@ -225,12 +237,69 @@ scripting:
   defaultTimeoutMs: 100
 
 ai:
-  openaiApiKey: ""
-  openaiModel: ""
-  openaiBaseUrl: ""
+  provider: "openai"  # or "claude"
+  openai:
+    apiKey: ""
+    model: "gpt-4o-mini"
+    baseUrl: ""
+  claude:
+    apiKey: ""
+    model: "claude-sonnet-4-6"
+    baseUrl: ""
+    apiVersion: "2023-06-01"
 ```
 
-Use environment variables or local config overrides for secrets and provider-specific AI settings.
+Legacy OpenAI aliases (`ai.openaiApiKey`, `ai.openaiModel`, `ai.openaiBaseUrl`) are still supported for backward compatibility. Use environment variables or local config overrides for secrets and provider-specific AI settings.
+
+Use `logging.level: "debug"` during troubleshooting to include debug-level request noise such as health, metrics, and static asset access logs. For production, `info` with `json` is the recommended default.
+
+Use `session.storeType: "redis"` only when you need shared session state across multiple Go-Virtual instances. Specs, responses, archives, and the global store still use the normal `storage.*` configuration; Redis support is scoped to sessions only.
+
+## Storage Backends
+
+Go-Virtual supports three storage backends configured via `storage.type`:
+
+| Type | Description |
+|------|-------------|
+| `file` | (default) Persists specs, responses, scripts, and the global store to the local filesystem under `storage.path`. |
+| `memory` | Keeps all data in RAM. Data is lost on restart. Useful for testing or ephemeral environments. |
+| `mongo` | Uses MongoDB for all persistent data and the global store. Suitable for multi-instance deployments. |
+
+### File storage (default)
+
+```yaml
+storage:
+  type: file
+  path: ./data
+```
+
+### Memory storage
+
+```yaml
+storage:
+  type: memory
+```
+
+### MongoDB storage
+
+```yaml
+storage:
+  type: mongo
+  mongo:
+    uri: "mongodb://localhost:27017"
+    database: "go-virtual"          # default
+    collectionPrefix: "gv_"         # default; prefix for all collection names
+    connectTimeoutSeconds: 10        # default
+```
+
+When `storage.type` is `mongo`, both the entity storage (specs, operations, responses, scripts, bindings, tags, AI scenarios) and the global key-value store are backed by MongoDB. Each entity type has its own prefixed collection (e.g., `gv_specs`, `gv_responses`, `gv_global_store`).
+
+The MongoDB URI, database name, collection prefix, and connection timeout can also be provided via environment variables using the `GOVIRTUAL_` prefix with underscores replacing dots:
+
+```
+GOVIRTUAL_STORAGE_MONGO_URI=mongodb://host:27017
+GOVIRTUAL_STORAGE_MONGO_DATABASE=myapp
+```
 
 ## API Surface
 
@@ -267,7 +336,7 @@ Use environment variables or local config overrides for secrets and provider-spe
 
 ### AI, scripts, store, sessions, and archives
 
-- `GET /_api/ai/status`
+- `GET /_api/ai/status` — returns the selected provider plus whether AI generation is configured
 - `GET /_api/ai-scenarios`
 - `POST /_api/ai-scenarios`
 - `PUT /_api/ai-scenarios/:scenarioId`

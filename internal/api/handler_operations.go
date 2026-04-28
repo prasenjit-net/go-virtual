@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/proxy"
 )
 
 // ListOperations returns all operations for a spec
@@ -68,13 +69,29 @@ func (h *Handler) GetSignatureConfig(c *gin.Context) {
 		return
 	}
 
-	if op.SignatureConfig == nil {
-		// Return default config (nil means "all path params + all query params + full body")
-		c.JSON(http.StatusOK, gin.H{"signatureConfig": nil})
+	spec, err := h.store.GetSpec(op.SpecID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"signatureConfig": op.SignatureConfig})
+	c.JSON(http.StatusOK, gin.H{
+		"signatureConfig": op.SignatureConfig,
+		"defaultSignatureConfig": proxy.ResolveSignatureConfig(spec, &models.Operation{
+			DeclaredPathParams:   op.DeclaredPathParams,
+			DeclaredQueryParams:  op.DeclaredQueryParams,
+			DeclaredHeaderParams: op.DeclaredHeaderParams,
+			HasRequestBody:       op.HasRequestBody,
+		}),
+		"effectiveSignatureConfig": proxy.ResolveSignatureConfig(spec, op),
+		"availableInputs": gin.H{
+			"pathParams":   op.DeclaredPathParams,
+			"queryParams":  op.DeclaredQueryParams,
+			"headerParams": op.DeclaredHeaderParams,
+			"bodyFields":   op.DeclaredBodyFields,
+			"hasBody":      op.HasRequestBody,
+		},
+	})
 }
 
 func (h *Handler) validateModePolicy(spec *models.Spec, policy models.ModePolicy) error {
@@ -93,7 +110,7 @@ func (h *Handler) validateModePolicy(spec *models.Spec, policy models.ModePolicy
 		return fmt.Errorf("invalid proxy conditions: signature conditions are only supported on operation responses")
 	}
 	if policy.AI.Enabled && (h.aiGenerator == nil || !h.aiGenerator.IsConfigured()) {
-		return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
+		return h.aiModeConfigurationError()
 	}
 	if policy.Proxy.Enabled && (spec == nil || spec.BackendURI == "") {
 		return fmt.Errorf("backendUri must be set before enabling proxy mode")
@@ -152,6 +169,9 @@ func (h *Handler) UpdateSignatureConfig(c *gin.Context) {
 		return
 	}
 
+	if input.SignatureConfig != nil {
+		input.SignatureConfig.Normalize()
+	}
 	op.SignatureConfig = input.SignatureConfig
 
 	if err := h.store.UpdateOperation(op); err != nil {
@@ -162,5 +182,14 @@ func (h *Handler) UpdateSignatureConfig(c *gin.Context) {
 	// Reload routes so the engine picks up the new config
 	h.proxyEngine.ReloadRoutes()
 
-	c.JSON(http.StatusOK, gin.H{"signatureConfig": op.SignatureConfig})
+	spec, err := h.store.GetSpec(op.SpecID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Spec not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"signatureConfig":          op.SignatureConfig,
+		"effectiveSignatureConfig": proxy.ResolveSignatureConfig(spec, op),
+	})
 }

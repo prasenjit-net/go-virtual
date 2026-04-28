@@ -4,7 +4,6 @@ import (
 	"hash"
 	"hash/fnv"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/condition"
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/metrics"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/parser"
@@ -36,7 +36,7 @@ type Engine struct {
 	condEvaluator     *condition.Evaluator
 	templateEngine    *template.Engine
 	scriptEngine      *scripting.ScriptEngine
-	sessionManager    *store.SessionManager // nil when Phase 2 is not configured
+	sessionManager    store.SessionRegistry // nil when Phase 2 is not configured
 	sessionHeaderName string
 	recorder          *Recorder
 	aiGenerator       *ai.Generator
@@ -82,7 +82,7 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 
 // SetSessionManager attaches a SessionManager to the engine, enabling Phase 2
 // session tracking. headerName is the HTTP header used to identify sessions.
-func (e *Engine) SetSessionManager(sm *store.SessionManager, headerName string) {
+func (e *Engine) SetSessionManager(sm store.SessionRegistry, headerName string) {
 	e.sessionManager = sm
 	e.sessionHeaderName = headerName
 }
@@ -102,6 +102,7 @@ func (e *Engine) SetAIGenerator(generator *ai.Generator) {
 
 // ReloadRoutes reloads all routes from enabled specs
 func (e *Engine) ReloadRoutes() error {
+	logger := logging.Logger("proxy.routes")
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -112,14 +113,27 @@ func (e *Engine) ReloadRoutes() error {
 	// Get all enabled specs
 	specs, err := e.store.GetEnabledSpecs()
 	if err != nil {
+		logger.Error("Failed to load enabled specs while reloading routes", "event", "routes_reload_specs_failed", "error", err)
 		return err
 	}
 
 	for _, spec := range specs {
 		ops, err := e.store.GetOperationsBySpec(spec.ID)
 		if err != nil {
+			logger.Error("Failed to load operations for enabled spec during route reload",
+				"event", "routes_reload_operations_failed",
+				"spec_id", spec.ID,
+				"spec_name", spec.Name,
+				"error", err,
+			)
 			continue
 		}
+		logger.Debug("Loaded operations for enabled spec",
+			"event", "routes_reload_spec_loaded",
+			"spec_id", spec.ID,
+			"spec_name", spec.Name,
+			"operation_count", len(ops),
+		)
 
 		for _, op := range ops {
 			r := &route{
@@ -141,6 +155,11 @@ func (e *Engine) ReloadRoutes() error {
 
 	// Update active-specs gauge
 	metrics.ActiveSpecsTotal.Set(float64(len(specs)))
+	logger.Info("Reloaded proxy routes",
+		"event", "routes_reloaded",
+		"enabled_specs", len(specs),
+		"registered_methods", len(e.routes),
+	)
 
 	return nil
 }
@@ -195,6 +214,12 @@ func (e *Engine) Handler() http.Handler {
 // ServeHTTP handles incoming requests
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
+	reqLogger := logging.Logger("proxy.request").With(
+		"method", r.Method,
+		"path", r.URL.Path,
+		"query", r.URL.RawQuery,
+	)
+	reqLogger.Debug("Received proxy request", "event", "proxy_request_received")
 
 	// Read request body early for tracing (we need it even for unmatched requests)
 	var requestBody string
@@ -209,21 +234,34 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	e.mu.RUnlock()
 
 	if matchedRoute == nil {
+		reqLogger.Info("No route matched incoming request", "event", "proxy_route_unmatched")
 		// Record trace for unmatched request if any spec has tracing enabled
 		e.recordUnmatchedTrace(r, requestBody, startTime)
 		metrics.UnmatchedRequestsTotal.Inc()
 		http.NotFound(w, r)
 		return
 	}
+	reqLogger = reqLogger.With(
+		"spec_id", matchedRoute.spec.ID,
+		"spec_name", matchedRoute.spec.Name,
+		"operation_id", matchedRoute.operation.ID,
+		"operation_path", matchedRoute.operation.Path,
+	)
+	reqLogger.Debug("Matched proxy route",
+		"event", "proxy_route_matched",
+		"path_params", pathParams,
+	)
 
 	// Compute the request signature (needed for both proxy recording and condition evaluation)
+	effectiveSignatureConfig := ResolveSignatureConfig(matchedRoute.spec, matchedRoute.operation)
 	signature := ComputeSignature(
 		pathParams,
 		r.URL.Query(),
 		r.Header,
 		requestBody,
-		matchedRoute.operation.SignatureConfig,
+		effectiveSignatureConfig,
 	)
+	reqLogger = reqLogger.With("signature", signature)
 
 	// ---- Virtual response mode ----
 	// Build request data for condition evaluation (include pre-computed signature)
@@ -237,6 +275,17 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Get response configs for the operation
 	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
+	if err != nil {
+		reqLogger.Error("Failed to load response configs for operation",
+			"event", "response_configs_load_failed",
+			"error", err,
+		)
+	} else {
+		reqLogger.Debug("Loaded response configs for operation",
+			"event", "response_configs_loaded",
+			"config_count", len(responseConfigs),
+		)
+	}
 	enabledTags := make(map[string]struct{})
 	enabledTags[models.DefaultTagName] = struct{}{}
 	for _, tag := range matchedRoute.spec.EnabledTags {
@@ -249,10 +298,24 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, false)
 		if matchedConfig != nil {
 			responseTier = models.TraceResponseTierConfigured
+			reqLogger.Info("Selected configured response",
+				"event", "response_config_selected",
+				"response_config_id", matchedConfig.ID,
+				"response_config_name", matchedConfig.Name,
+				"response_origin", matchedConfig.EffectiveOrigin(),
+				"response_tier", responseTier,
+			)
 		} else {
 			matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, true)
 			if matchedConfig != nil {
 				responseTier = models.TraceResponseTierRecorded
+				reqLogger.Info("Selected recorded response",
+					"event", "response_config_selected",
+					"response_config_id", matchedConfig.ID,
+					"response_config_name", matchedConfig.Name,
+					"response_origin", matchedConfig.EffectiveOrigin(),
+					"response_tier", responseTier,
+				)
 			}
 		}
 	}
@@ -261,11 +324,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	specMode := modeSelection.Mode
 	requestedScenarioName := strings.TrimSpace(r.Header.Get("X-Virtual-AI-Scenario"))
 	appliedScenario := e.resolveAIScenario(requestedScenarioName)
+	reqLogger.Debug("Resolved fallback mode for request",
+		"event", "fallback_mode_resolved",
+		"mode", specMode,
+		"ai_skipped_reason", modeSelection.AISkippedReason,
+		"proxy_skipped_reason", modeSelection.ProxySkippedReason,
+		"ai_scenario_requested", requestedScenarioName,
+		"ai_scenario_applied", aiScenarioName(appliedScenario),
+	)
 
 	if matchedConfig == nil {
 		switch specMode {
 		case models.SpecModeAI:
+			reqLogger.Info("Using AI fallback for unmatched request", "event", "ai_fallback_selected")
 			opCtx := e.buildAIOperationContext(matchedRoute.operation)
+			reqLogger.Debug("Starting AI runtime response generation", "event", "ai_runtime_generation_started")
 			aiResp, aiErr := e.aiGenerator.GenerateRuntimeResponse(r.Context(), opCtx, ai.RuntimeRequestContext{
 				PathParams:  pathParams,
 				QueryParams: r.URL.Query(),
@@ -275,6 +348,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				Scenario:    appliedScenario,
 			})
 			if aiErr != nil {
+				reqLogger.Error("AI runtime response generation failed",
+					"event", "ai_runtime_generation_failed",
+					"error", aiErr,
+				)
 				statusCode := http.StatusBadGateway
 				respBody := `{"error":"AI response generation failed: ` + aiErr.Error() + `"}`
 				http.Error(w, respBody, statusCode)
@@ -331,6 +408,11 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 				return
 			}
+			reqLogger.Info("AI runtime response generated",
+				"event", "ai_runtime_generation_succeeded",
+				"status_code", aiResp.StatusCode,
+				"headers_count", len(aiResp.Headers),
+			)
 
 			for key, value := range aiResp.Headers {
 				if skipRecordedResponseHeaders[http.CanonicalHeaderKey(key)] {
@@ -402,6 +484,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		case models.SpecModeProxy:
+			reqLogger.Info("Using proxy fallback for unmatched request",
+				"event", "proxy_fallback_selected",
+				"backend_uri", matchedRoute.spec.BackendURI,
+			)
 			statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
 				r.Method,
 				r.URL.Path,
@@ -413,10 +499,20 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				signature,
 			)
 			if proxyErr != nil {
+				reqLogger.Error("Proxy fallback request failed",
+					"event", "proxy_fallback_failed",
+					"backend_uri", matchedRoute.spec.BackendURI,
+					"error", proxyErr,
+				)
 				statusCode = http.StatusBadGateway
 				respBody = `{"error":"proxy backend unavailable: ` + proxyErr.Error() + `"}`
 				http.Error(w, respBody, statusCode)
 			} else {
+				reqLogger.Info("Proxy fallback request succeeded",
+					"event", "proxy_fallback_succeeded",
+					"backend_uri", matchedRoute.spec.BackendURI,
+					"status_code", statusCode,
+				)
 				for key, val := range respHeaders {
 					w.Header().Set(key, val)
 				}
@@ -490,6 +586,10 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Only standard mode falls back to spec examples/defaults.
 	if matchedConfig == nil && specMode == models.SpecModeStandard && matchedRoute.spec.UseExampleFallback && matchedRoute.operation.ExampleResponse != nil {
 		example := matchedRoute.operation.ExampleResponse
+		reqLogger.Info("Using OpenAPI example fallback",
+			"event", "example_fallback_selected",
+			"status_code", example.StatusCode,
+		)
 
 		// Set headers from example
 		for key, value := range example.Headers {
@@ -566,24 +666,49 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// If still no match and no example, return error
 	if matchedConfig == nil {
+		reqLogger.Info("No response configuration matched request",
+			"event", "response_config_not_found",
+			"mode", specMode,
+		)
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"error": "No matching response configuration for this request"}`))
 		return
 	}
 
 	// Resolve session and run scripts only once we know we are serving a virtual response.
-	var sess *store.Session
+	var sess store.SessionState
 	var sessionIsNew bool
 	if e.sessionManager != nil {
 		rawSessionID := r.Header.Get(e.sessionHeaderName)
-		sess, sessionIsNew = e.sessionManager.GetOrCreate(rawSessionID)
-		w.Header().Set(e.sessionHeaderName, sess.ID)
+		var err error
+		sess, sessionIsNew, err = e.sessionManager.GetOrCreate(rawSessionID)
+		if err != nil {
+			reqLogger.Error("Failed to resolve request session",
+				"event", "session_resolve_failed",
+				"header_name", e.sessionHeaderName,
+				"error", err,
+			)
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error": "Failed to resolve session"}`))
+			return
+		}
+		sessionInfo := sess.Info(false)
+		w.Header().Set(e.sessionHeaderName, sessionInfo.ID)
+		reqLogger.Debug("Resolved request session",
+			"event", "session_resolved",
+			"session_id", sessionInfo.ID,
+			"session_is_new", sessionIsNew,
+		)
 	}
 
 	var scriptOutput map[string]any
 	var scriptTraces []models.ScriptTrace
 	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
 	scriptOutput, scriptTraces = e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
+	reqLogger.Debug("Executed script bindings",
+		"event", "script_bindings_executed",
+		"binding_count", len(scriptTraces),
+	)
 
 	// Apply delay if configured
 	if matchedConfig.Delay > 0 {
@@ -619,6 +744,12 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Process body with advanced templating
 	responseBody, err := e.templateEngine.RenderBodyTemplate(matchedConfig.Body, templateCtx)
 	if err != nil {
+		reqLogger.Error("Failed to render response template; using raw body",
+			"event", "response_template_render_failed",
+			"response_config_id", matchedConfig.ID,
+			"response_config_name", matchedConfig.Name,
+			"error", err,
+		)
 		responseBody = matchedConfig.Body
 	}
 
@@ -654,13 +785,22 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		matchedRoute.operation.ID,
 		matchedConfig.Name,
 	).Inc()
+	reqLogger.Info("Served configured response",
+		"event", "configured_response_served",
+		"response_config_id", matchedConfig.ID,
+		"response_config_name", matchedConfig.Name,
+		"response_origin", matchedConfig.EffectiveOrigin(),
+		"status_code", matchedConfig.StatusCode,
+		"duration_ms", duration.Milliseconds(),
+	)
 
 	// Record trace if tracing is enabled
 	if matchedRoute.spec.Tracing {
 		var sessionTrace *models.SessionTrace
 		if sess != nil {
+			sessionInfo := sess.Info(false)
 			sessionTrace = &models.SessionTrace{
-				ID:    sess.ID,
+				ID:    sessionInfo.ID,
 				IsNew: sessionIsNew,
 			}
 		}
@@ -772,7 +912,13 @@ func (e *Engine) warnModeUnavailable(spec *models.Spec, mode, reason string) {
 	e.runtimeWarnings[key] = struct{}{}
 	e.warningMu.Unlock()
 
-	log.Printf("proxy: %s fallback enabled for spec %q (%s) but skipped: %s", mode, spec.Name, spec.ID, reason)
+	logging.Logger("proxy").Warn("Fallback mode skipped",
+		"event", "fallback_mode_skipped",
+		"mode", strings.ToLower(mode),
+		"spec_id", spec.ID,
+		"spec_name", spec.Name,
+		"reason", reason,
+	)
 }
 
 func (e *Engine) resetRuntimeWarnings() {

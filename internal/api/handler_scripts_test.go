@@ -441,3 +441,129 @@ func TestReorderScriptBindings_Success(t *testing.T) {
 		t.Fatalf("Expected 2 bindings in response, got %d", len(result))
 	}
 }
+
+func TestDeleteScriptBinding_NotFound(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.DELETE("/operations/:id/scripts/:bindingId", handler.DeleteScriptBinding)
+
+	req := httptest.NewRequest("DELETE", "/operations/op-1/scripts/nonexistent", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestDeleteAIScenario_NotFound2(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.DELETE("/ai/scenarios/:scenarioId", handler.DeleteAIScenario)
+
+	req := httptest.NewRequest("DELETE", "/ai/scenarios/nonexistent", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestUpdateAIScenario_NotFound2(t *testing.T) {
+	handler, _, r := setupTestHandler(t)
+	r.PUT("/ai/scenarios/:scenarioId", handler.UpdateAIScenario)
+
+	body := `{"scenario":{"name":"updated","prompt":"test"}}`
+	req := httptest.NewRequest("PUT", "/ai/scenarios/nonexistent", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", w.Code)
+	}
+}
+
+func TestListScriptBindings_OperationNotFound(t *testing.T) {
+_, _, r := setupScriptTest(t)
+
+req := httptest.NewRequest("GET", "/operations/nonexistent/scripts", nil)
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusNotFound {
+t.Errorf("expected 404, got %d", w.Code)
+}
+}
+
+func TestCreateScriptBinding_OperationNotFound(t *testing.T) {
+_, _, r := setupScriptTest(t)
+
+body := `{"scriptId":"s1","outputKey":"result","order":0,"enabled":true}`
+req := httptest.NewRequest("POST", "/operations/nonexistent/scripts", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusNotFound {
+t.Errorf("expected 404, got %d", w.Code)
+}
+}
+
+func TestCreateScriptBinding_MissingOutputKey(t *testing.T) {
+_, store, r := setupScriptTest(t)
+store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1", Method: "GET", Path: "/test", FullPath: "/test"})
+store.CreateScript(&models.Script{ID: "s1", Name: "S1", Source: "def run(req): return 1", Enabled: true})
+
+body := `{"scriptId":"s1","outputKey":"","order":0,"enabled":true}`
+req := httptest.NewRequest("POST", "/operations/op-1/scripts", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusBadRequest {
+t.Errorf("expected 400, got %d", w.Code)
+}
+}
+
+func TestCreateScriptBinding_ScriptNotFound(t *testing.T) {
+_, store, r := setupScriptTest(t)
+store.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1", Method: "GET", Path: "/test", FullPath: "/test"})
+
+body := `{"scriptId":"nonexistent","outputKey":"result","order":0,"enabled":true}`
+req := httptest.NewRequest("POST", "/operations/op-1/scripts", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusBadRequest {
+t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+}
+}
+
+func TestUpdateScriptBinding_NotFound(t *testing.T) {
+_, _, r := setupScriptTest(t)
+
+body := `{"outputKey":"new","order":1,"enabled":true}`
+req := httptest.NewRequest("PUT", "/operations/op-1/scripts/nonexistent", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusNotFound {
+t.Errorf("expected 404, got %d", w.Code)
+}
+}
+
+func TestReorderScriptBindings_OperationNotFound(t *testing.T) {
+_, _, r := setupScriptTest(t)
+
+body := `[{"id":"b1","order":1}]`
+req := httptest.NewRequest("PUT", "/operations/nonexistent/scripts/reorder", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusNotFound {
+t.Errorf("expected 404, got %d", w.Code)
+}
+}

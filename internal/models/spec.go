@@ -22,6 +22,7 @@ type Spec struct {
 	Tracing            bool         `json:"tracing"`            // Enable request tracing
 	UseExampleFallback bool         `json:"useExampleFallback"` // Use spec examples as fallback responses
 	EnabledTags        []string     `json:"enabledTags"`
+	SignatureHeaders   []string     `json:"signatureHeaders,omitempty"`
 	Mode               string       `json:"mode"`
 	BackendURI         string       `json:"backendUri"` // Upstream backend URI for proxy recording mode
 	ProxyMode          bool         `json:"proxyMode"`  // Forward requests to backend and record responses
@@ -48,6 +49,7 @@ type SpecUpdate struct {
 	Enabled            *bool       `json:"enabled,omitempty"`
 	Tracing            *bool       `json:"tracing,omitempty"`
 	UseExampleFallback *bool       `json:"useExampleFallback,omitempty"`
+	SignatureHeaders   *[]string   `json:"signatureHeaders,omitempty"`
 	Mode               *string     `json:"mode,omitempty"`
 	BackendURI         *string     `json:"backendUri,omitempty"`
 	ProxyMode          *bool       `json:"proxyMode,omitempty"`
@@ -67,6 +69,7 @@ func (s *Spec) NormalizeMode() {
 	if s == nil {
 		return
 	}
+	s.SignatureHeaders = NormalizeSignatureHeaderNames(s.SignatureHeaders)
 	s.ModePolicy = s.EffectiveModePolicy()
 	s.Mode = s.EffectiveMode()
 	s.ProxyMode = s.Mode == SpecModeProxy

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/storage"
 	"github.com/prasenjit/go-virtual/internal/store"
 )
@@ -46,16 +47,17 @@ type RestoreResponse struct {
 }
 
 // ArchiveManager owns the archives directory and provides CRUD + restore.
+// It implements ArchiveService in full mode.
 type ArchiveManager struct {
 	dir   string
 	stor  storage.Storage
-	gs    *store.GlobalStore
+	gs    store.GlobalStoreBackend
 	mu    sync.Mutex
 	index []*ArchiveMeta
 }
 
 // NewArchiveManager creates (or opens) the archives directory and loads the index.
-func NewArchiveManager(dir string, stor storage.Storage, gs *store.GlobalStore) (*ArchiveManager, error) {
+func NewArchiveManager(dir string, stor storage.Storage, gs store.GlobalStoreBackend) (*ArchiveManager, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("archive: create dir %s: %w", dir, err)
 	}
@@ -221,6 +223,12 @@ func (m *ArchiveManager) Save(r io.Reader, size int64, label string) (*ArchiveMe
 // If CreateBackupFirst is set, a snapshot of the current state is created
 // first and its metadata is included in the response.
 func (m *ArchiveManager) Restore(id string, input RestoreInput) (*RestoreResponse, error) {
+	logger := logging.Logger("archive.restore").With(
+		"archive_id", id,
+		"create_backup_first", input.CreateBackupFirst,
+		"wipe_first", input.WipeFirst,
+	)
+	logger.Info("Starting archive restore", "event", "archive_restore_started")
 	var backupMeta *ArchiveMeta
 
 	if input.CreateBackupFirst {
@@ -230,27 +238,73 @@ func (m *ArchiveManager) Restore(id string, input RestoreInput) (*RestoreRespons
 		}
 		bm, err := m.Create(backupLabel)
 		if err != nil {
+			logger.Error("Failed to create backup before restore",
+				"event", "archive_restore_backup_failed",
+				"backup_label", backupLabel,
+				"error", err,
+			)
 			return nil, fmt.Errorf("archive: pre-restore backup failed: %w", err)
 		}
 		backupMeta = bm
+		logger.Info("Created backup before restore",
+			"event", "archive_restore_backup_created",
+			"backup_archive_id", bm.ID,
+			"backup_label", bm.Label,
+		)
 	}
 
 	// Read the ZIP from disk.
 	path, err := m.FilePath(id)
 	if err != nil {
+		logger.Error("Failed to resolve archive path for restore", "event", "archive_restore_path_failed", "error", err)
 		return nil, err
 	}
 	zipBytes, err := os.ReadFile(path)
 	if err != nil {
+		logger.Error("Failed to read archive zip for restore",
+			"event", "archive_restore_read_failed",
+			"path", path,
+			"error", err,
+		)
 		return nil, fmt.Errorf("archive: read zip for restore: %w", err)
 	}
 
 	result, err := ApplyZIP(zipBytes, RestoreOptions{WipeFirst: input.WipeFirst}, m.stor, m.gs)
 	if err != nil {
+		logger.Error("Archive restore failed",
+			"event", "archive_restore_failed",
+			"path", path,
+			"result_errors", len(result.Errors),
+			"error", err,
+		)
 		return &RestoreResponse{BackupCreated: backupMeta, Result: result}, err
 	}
+	logger.Info("Archive restore completed",
+		"event", "archive_restore_completed",
+		"path", path,
+		"created_specs", result.Created["specs"],
+		"updated_specs", result.Updated["specs"],
+		"created_responses", result.Created["responses"],
+		"updated_responses", result.Updated["responses"],
+		"result_errors", len(result.Errors),
+	)
 
 	return &RestoreResponse{BackupCreated: backupMeta, Result: result}, nil
+}
+
+// ── ArchiveService implementation ────────────────────────────────────────────
+
+// Mode returns ModeFull — ArchiveManager supports full archive history.
+func (m *ArchiveManager) Mode() ArchiveMode { return ModeFull }
+
+// DownloadSnapshot is not supported in full mode.
+func (m *ArchiveManager) DownloadSnapshot() ([]byte, *ArchiveMeta, error) {
+	return nil, nil, ErrFullMode
+}
+
+// RestoreSnapshot is not supported in full mode.
+func (m *ArchiveManager) RestoreSnapshot(_ []byte) (*RestoreResponse, error) {
+	return nil, ErrFullMode
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

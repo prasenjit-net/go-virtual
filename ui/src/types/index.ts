@@ -3,6 +3,12 @@ export type SpecMode = 'standard' | 'ai' | 'proxy';
 export type ResponseOrigin = 'manual' | 'proxy' | 'ai';
 export type ResponseTier = 'configured' | 'recorded' | 'fallback';
 
+export interface AIStatus {
+    configured: boolean;
+    provider: string;
+    model?: string;
+}
+
 export interface Spec {
     id: string;
     name: string;
@@ -14,6 +20,7 @@ export interface Spec {
     tracing: boolean;
     useExampleFallback: boolean;
     enabledTags?: string[];
+    signatureHeaders?: string[];
     mode: SpecMode;
     backendUri: string;
     proxyMode: boolean;
@@ -44,6 +51,11 @@ export interface Operation {
     responses?: ResponseConfig[];
     exampleResponse?: ExampleResponse;
     signatureConfig?: SignatureConfig | null;
+    declaredPathParams?: string[];
+    declaredQueryParams?: string[];
+    declaredHeaderParams?: string[];
+    declaredBodyFields?: string[];
+    hasRequestBody?: boolean;
 }
 
 export interface ConditionalModeConfig {
@@ -78,12 +90,29 @@ export interface SignatureConfig {
     pathParams: string[];
     // Specific query parameter names to include. Empty = include ALL.
     queryParams: string[];
-    // Specific header names to include. Empty = include NONE.
+    // Whether the header list explicitly overrides default declared/spec headers.
+    headersConfigured?: boolean;
+    // Specific header names to include. Empty + headersConfigured=true = include NONE.
     headers: string[];
-    // Whether the request body contributes to the signature.
-    includeBody: boolean;
+    // Whether the request body contributes to the signature. Null/undefined = use default.
+    includeBody?: boolean | null;
     // Specific gjson paths within the body to include. Empty + includeBody = full body.
     bodyJsonPaths: string[];
+}
+
+export interface SignatureAvailableInputs {
+    pathParams: string[];
+    queryParams: string[];
+    headerParams: string[];
+    bodyFields: string[];
+    hasBody: boolean;
+}
+
+export interface SignatureConfigResponse {
+    signatureConfig: SignatureConfig | null;
+    defaultSignatureConfig: SignatureConfig;
+    effectiveSignatureConfig: SignatureConfig;
+    availableInputs: SignatureAvailableInputs;
 }
 
 export interface ExampleResponse {

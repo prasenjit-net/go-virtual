@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -130,16 +131,22 @@ func (p *Parser) extractOperations(doc *openapi3.T, specID, basePath string) []*
 				operationID = fmt.Sprintf("%s_%s", strings.ToLower(method), sanitizePath(pathPattern))
 			}
 
+			declaredInputs := extractOperationInputs(pathItem, op)
 			operation := &models.Operation{
-				ID:          opID,
-				SpecID:      specID,
-				Method:      method,
-				Path:        pathPattern,
-				FullPath:    path.Join(basePath, pathPattern),
-				OperationID: operationID,
-				Summary:     op.Summary,
-				Description: op.Description,
-				Tags:        op.Tags,
+				ID:                   opID,
+				SpecID:               specID,
+				Method:               method,
+				Path:                 pathPattern,
+				FullPath:             path.Join(basePath, pathPattern),
+				OperationID:          operationID,
+				Summary:              op.Summary,
+				Description:          op.Description,
+				Tags:                 op.Tags,
+				DeclaredPathParams:   paramNames(declaredInputs.PathParams),
+				DeclaredQueryParams:  paramNames(declaredInputs.QueryParams),
+				DeclaredHeaderParams: paramNames(declaredInputs.HeaderParams),
+				DeclaredBodyFields:   bodyFieldPaths(declaredInputs.BodyFields),
+				HasRequestBody:       declaredInputs.HasBody,
 			}
 
 			// Extract example response from spec (try 200, 201, then default)
@@ -347,7 +354,7 @@ type SpecResponseDef struct {
 // ParamDef describes a single path or query parameter.
 type ParamDef struct {
 	Name        string
-	In          string // "path" or "query"
+	In          string // "path", "query", or "header"
 	Required    bool
 	Type        string // "string", "integer", "boolean", etc.
 	Description string
@@ -362,9 +369,11 @@ type BodyFieldDef struct {
 
 // OperationInputs aggregates all input metadata for an operation.
 type OperationInputs struct {
-	PathParams  []ParamDef
-	QueryParams []ParamDef
-	BodyFields  []BodyFieldDef // nil when no request body
+	PathParams   []ParamDef
+	QueryParams  []ParamDef
+	HeaderParams []ParamDef
+	BodyFields   []BodyFieldDef // nil when no request body or no JSON fields can be flattened
+	HasBody      bool
 }
 
 // ExtractOperationInputs extracts path params, query params, and request body
@@ -386,9 +395,13 @@ func (p *Parser) ExtractOperationInputs(content string, method, pathPattern stri
 		return nil, nil
 	}
 
+	return extractOperationInputs(pathItem, op), nil
+}
+
+func extractOperationInputs(pathItem *openapi3.PathItem, op *openapi3.Operation) *OperationInputs {
 	inputs := &OperationInputs{}
 
-	// Path and query parameters (merge path-level + operation-level)
+	// Path, query, and header parameters (merge path-level + operation-level)
 	allParams := make(openapi3.Parameters, 0)
 	allParams = append(allParams, pathItem.Parameters...)
 	allParams = append(allParams, op.Parameters...)
@@ -415,11 +428,14 @@ func (p *Parser) ExtractOperationInputs(content string, method, pathPattern stri
 			inputs.PathParams = append(inputs.PathParams, pd)
 		case "query":
 			inputs.QueryParams = append(inputs.QueryParams, pd)
+		case "header":
+			inputs.HeaderParams = append(inputs.HeaderParams, pd)
 		}
 	}
 
 	// Request body
 	if op.RequestBody != nil && op.RequestBody.Value != nil {
+		inputs.HasBody = true
 		for mediaType, mt := range op.RequestBody.Value.Content {
 			if !strings.Contains(mediaType, "json") || mt == nil || mt.Schema == nil || mt.Schema.Value == nil {
 				continue
@@ -429,7 +445,7 @@ func (p *Parser) ExtractOperationInputs(content string, method, pathPattern stri
 		}
 	}
 
-	return inputs, nil
+	return inputs
 }
 
 // flattenSchema recursively walks a JSON schema and returns gjson-path field defs.
@@ -496,6 +512,28 @@ func flattenSchema(s *openapi3.Schema, prefix string, depth int) []BodyFieldDef 
 	}
 
 	return fields
+}
+
+func paramNames(params []ParamDef) []string {
+	names := make([]string, 0, len(params))
+	for _, param := range params {
+		if param.Name != "" {
+			names = append(names, param.Name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+func bodyFieldPaths(fields []BodyFieldDef) []string {
+	paths := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.GjsonPath != "" {
+			paths = append(paths, field.GjsonPath)
+		}
+	}
+	sort.Strings(paths)
+	return paths
 }
 
 // ExtractAllResponses extracts every response definition from the spec for the given operation.

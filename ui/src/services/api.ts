@@ -212,16 +212,16 @@ export const operationsApi = {
 
     getSignatureConfig: async (id: string) => {
         const response = await fetch(`${API_BASE}/operations/${id}/signature`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').SignatureConfigResponse>(response);
     },
 
-    updateSignatureConfig: async (id: string, signatureConfig: any) => {
+    updateSignatureConfig: async (id: string, signatureConfig: import('../types').SignatureConfig | null) => {
         const response = await fetch(`${API_BASE}/operations/${id}/signature`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ signatureConfig }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ signatureConfig: import('../types').SignatureConfig | null; effectiveSignatureConfig: import('../types').SignatureConfig }>(response);
     },
 
 };
@@ -296,6 +296,10 @@ export const statsApi = {
     getGlobal: async () => {
         const response = await fetch(`${API_BASE}/stats`);
         return handleResponse<any>(response);
+    },
+
+    createStream: () => {
+        return new EventSource(`${API_BASE}/stats/stream`);
     },
 
     getBySpec: async (specId: string) => {
@@ -553,6 +557,11 @@ export const sessionsApi = {
 };
 // Archives API
 export const archivesApi = {
+    info: async () => {
+        const response = await fetch(`${API_BASE}/archives/info`);
+        return handleResponse<{ mode: 'full' | 'snapshot' }>(response);
+    },
+
     list: async () => {
         const response = await fetch(`${API_BASE}/archives`);
         return handleResponse<import('../types').ArchiveMeta[]>(response);
@@ -582,6 +591,8 @@ export const archivesApi = {
 
     downloadUrl: (id: string) => `${API_BASE}/archives/${id}/download`,
 
+    snapshotDownloadUrl: () => `${API_BASE}/archives/snapshot`,
+
     upload: async (file: File, label?: string) => {
         const form = new FormData();
         form.append('archive', file);
@@ -591,6 +602,16 @@ export const archivesApi = {
             body: form,
         });
         return handleResponse<import('../types').ArchiveMeta>(response);
+    },
+
+    restoreSnapshot: async (file: File) => {
+        const form = new FormData();
+        form.append('archive', file);
+        const response = await fetch(`${API_BASE}/archives/snapshot/restore`, {
+            method: 'POST',
+            body: form,
+        });
+        return handleResponse<import('../types').RestoreResponse>(response);
     },
 
     restore: async (id: string, opts: {
@@ -639,10 +660,16 @@ export const aiApi = {
         return handleResponse<{ source: string }>(response);
     },
 
-    isConfigured: async (): Promise<boolean> => {
+    getStatus: async (): Promise<import('../types').AIStatus> => {
         const response = await fetch(`${API_BASE}/ai/status`);
-        if (!response.ok) return false;
-        const data = await response.json();
+        if (!response.ok) {
+            return { configured: false, provider: 'openai' };
+        }
+        return handleResponse<import('../types').AIStatus>(response);
+    },
+
+    isConfigured: async (): Promise<boolean> => {
+        const data = await aiApi.getStatus();
         return data.configured === true;
     },
 };

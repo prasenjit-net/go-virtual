@@ -258,3 +258,90 @@ func TestInvalidateAllSessions_Success(t *testing.T) {
 		t.Errorf("expected 204, got %d", w.Code)
 	}
 }
+
+func TestUpsertStoreEntry_InvalidJSON(t *testing.T) {
+	handler, _, _, r := setupTestHandlerWithStore(t)
+	r.PUT("/store/:key", handler.UpsertStoreEntry)
+
+	req := httptest.NewRequest("PUT", "/store/mykey", bytes.NewBufferString("not-json"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestClearStore_MissingConfirm(t *testing.T) {
+	handler, _, _, r := setupTestHandlerWithStore(t)
+	r.DELETE("/store", handler.ClearStore)
+
+	req := httptest.NewRequest("DELETE", "/store?confirm=false", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestGetSession_Success(t *testing.T) {
+	handler, _, sm, r := setupTestHandlerWithStore(t)
+	r.GET("/sessions/:id", handler.GetSession)
+
+	// Create a session
+	sess, _, err := sm.GetOrCreate("test-session-id")
+	if err != nil {
+		t.Fatalf("GetOrCreate: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/sessions/"+sess.Info(false).ID, nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeleteStoreEntry_NoStore(t *testing.T) {
+handler, _, r := setupTestHandler(t)
+r.DELETE("/store/:key", handler.DeleteStoreEntry)
+
+req := httptest.NewRequest("DELETE", "/store/somekey", nil)
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusServiceUnavailable {
+t.Errorf("expected 503, got %d", w.Code)
+}
+}
+
+func TestUpsertStoreEntry_NoStore(t *testing.T) {
+handler, _, r := setupTestHandler(t)
+r.PUT("/store/:key", handler.UpsertStoreEntry)
+
+body := `{"value": "test"}`
+req := httptest.NewRequest("PUT", "/store/somekey", bytes.NewBufferString(body))
+req.Header.Set("Content-Type", "application/json")
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusServiceUnavailable {
+t.Errorf("expected 503, got %d", w.Code)
+}
+}
+
+func TestClearStore_NoStore(t *testing.T) {
+handler, _, r := setupTestHandler(t)
+r.DELETE("/store", handler.ClearStore)
+
+req := httptest.NewRequest("DELETE", "/store?confirm=true", nil)
+w := httptest.NewRecorder()
+r.ServeHTTP(w, req)
+
+if w.Code != http.StatusServiceUnavailable {
+t.Errorf("expected 503, got %d", w.Code)
+}
+}

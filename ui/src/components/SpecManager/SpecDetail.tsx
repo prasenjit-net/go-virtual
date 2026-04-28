@@ -10,12 +10,14 @@ import {
     Radio,
     Save,
     Globe,
+    Fingerprint,
     Plus,
     Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
 import type {
+    AIStatus,
     Condition,
     ConditionOperator,
     ModePolicy,
@@ -174,6 +176,7 @@ export default function SpecDetail() {
     const [backendURIInput, setBackendURIInput] = useState<string | null>(null)
     const [draftPolicy, setDraftPolicy] = useState<ModePolicy | null>(null)
     const [policyError, setPolicyError] = useState('')
+    const [newSignatureHeader, setNewSignatureHeader] = useState('')
 
     const { data: spec, isLoading: specLoading } = useQuery<Spec>({
         queryKey: ['spec', specId],
@@ -192,11 +195,13 @@ export default function SpecDetail() {
         queryFn: tagsApi.list,
     })
 
-    const { data: aiConfigured = false, isLoading: aiConfigLoading } = useQuery<boolean>({
-        queryKey: ['ai-configured'],
-        queryFn: () => aiApi.isConfigured(),
+    const { data: aiStatus = { configured: false, provider: 'openai' }, isLoading: aiConfigLoading } = useQuery<AIStatus>({
+        queryKey: ['ai-status'],
+        queryFn: () => aiApi.getStatus(),
         staleTime: 60_000,
     })
+    const aiConfigured = aiStatus.configured
+    const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
     const updateTagsMutation = useMutation({
         mutationFn: (enabledTags: string[]) => specsApi.updateTags(specId!, enabledTags),
@@ -222,6 +227,14 @@ export default function SpecDetail() {
         },
         onError: (error: Error) => {
             setPolicyError(error.message)
+        },
+    })
+
+    const updateSignatureHeadersMutation = useMutation({
+        mutationFn: (signatureHeaders: string[]) => specsApi.update(specId!, { signatureHeaders }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['spec', specId] })
+            setNewSignatureHeader('')
         },
     })
 
@@ -258,6 +271,18 @@ export default function SpecDetail() {
             next.add(tagName)
         }
         updateTagsMutation.mutate(Array.from(next))
+    }
+
+    const signatureHeaders = spec.signatureHeaders || []
+
+    const addSignatureHeader = () => {
+        const next = newSignatureHeader.trim()
+        if (!next) return
+        updateSignatureHeadersMutation.mutate([...signatureHeaders, next])
+    }
+
+    const removeSignatureHeader = (header: string) => {
+        updateSignatureHeadersMutation.mutate(signatureHeaders.filter((item) => item !== header))
     }
 
     const groupedOps = (operations || []).reduce((acc, op) => {
@@ -382,7 +407,7 @@ export default function SpecDetail() {
                             </div>
                             {!aiConfigured && (
                                 <p className="text-xs text-fuchsia-600 dark:text-fuchsia-400">
-                                    Configure an OpenAI API key to enable AI fallback.
+                                    Configure {aiProviderLabel} to enable AI fallback.
                                 </p>
                             )}
                             <ConditionsEditor
@@ -522,6 +547,62 @@ export default function SpecDetail() {
                         No operations found in this specification
                     </div>
                 )}
+            </div>
+
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">
+                    <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
+                        <Fingerprint className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Default Signature Headers</h2>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+                            These headers are included by default in request signatures across all operations in this spec unless an operation explicitly overrides its header set.
+                        </p>
+                    </div>
+                </div>
+                <div className="p-6">
+                    <div className="flex flex-wrap gap-2 mb-4">
+                        {signatureHeaders.length > 0 ? signatureHeaders.map((header) => (
+                            <span key={header} className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 font-mono">
+                                {header}
+                                <button
+                                    type="button"
+                                    onClick={() => removeSignatureHeader(header)}
+                                    className="hover:text-red-500"
+                                    disabled={updateSignatureHeadersMutation.isPending}
+                                >
+                                    <Trash2 className="w-3 h-3" />
+                                </button>
+                            </span>
+                        )) : (
+                            <p className="text-sm text-gray-400 dark:text-slate-500 italic">No spec-level signature headers configured</p>
+                        )}
+                    </div>
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            value={newSignatureHeader}
+                            onChange={(e) => setNewSignatureHeader(e.target.value)}
+                            placeholder="Add header name…"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    addSignatureHeader()
+                                }
+                            }}
+                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        />
+                        <button
+                            type="button"
+                            onClick={addSignatureHeader}
+                            disabled={updateSignatureHeadersMutation.isPending}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Add Header
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">

@@ -8,6 +8,8 @@ import (
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
+var _ SessionState = (*Session)(nil)
+
 // Session holds one active session and its private store copy.
 // All methods are safe for concurrent use.
 type Session struct {
@@ -20,6 +22,9 @@ type Session struct {
 }
 
 func newSession(id string, snapshot map[string]any) *Session {
+	if snapshot == nil {
+		snapshot = make(map[string]any)
+	}
 	return &Session{
 		ID:         id,
 		CreatedAt:  time.Now(),
@@ -50,11 +55,12 @@ func (s *Session) Get(key string) (any, bool) {
 }
 
 // Set stores a value under the given key (session-local, never propagates to global).
-func (s *Session) Set(key string, value any) {
+func (s *Session) Set(key string, value any) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.store[key] = value
+	return nil
 }
 
 // Has returns true if the key exists in the session store.
@@ -67,11 +73,12 @@ func (s *Session) Has(key string) bool {
 }
 
 // Delete removes a key from the session store.
-func (s *Session) Delete(key string) {
+func (s *Session) Delete(key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	delete(s.store, key)
+	return nil
 }
 
 // Keys returns all keys in the session store, sorted.

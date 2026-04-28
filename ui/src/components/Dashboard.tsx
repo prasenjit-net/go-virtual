@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import {
     Activity,
     FileCode2,
@@ -64,11 +64,41 @@ function buildLatencyData(ops: OperationStat[]) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-    const { data: stats, isLoading, error } = useQuery<GlobalStats>({
-        queryKey: ['globalStats'],
-        queryFn: statsApi.getGlobal,
-        refetchInterval: 5000,
-    })
+    const [stats, setStats] = useState<GlobalStats | null>(null)
+    const [error, setError] = useState<string | null>(null)
+
+    useEffect(() => {
+        const stream = statsApi.createStream()
+        let hasReceivedStats = false
+
+        const handleStats = (event: Event) => {
+            const message = event as MessageEvent<string>
+            try {
+                const next = JSON.parse(message.data) as GlobalStats
+                hasReceivedStats = true
+                setStats(next)
+                setError(null)
+            } catch {
+                setError('Failed to parse live statistics stream')
+            }
+        }
+
+        const handleError = () => {
+            if (!hasReceivedStats) {
+                setError('Failed to connect to live statistics stream')
+            }
+        }
+
+        stream.addEventListener('stats', handleStats)
+        stream.onerror = handleError
+
+        return () => {
+            stream.removeEventListener('stats', handleStats)
+            stream.close()
+        }
+    }, [])
+
+    const isLoading = !stats && !error
 
     if (isLoading) {
         return (
@@ -93,7 +123,7 @@ export default function Dashboard() {
         return (
             <div className="p-8">
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 dark:bg-red-950/40 dark:border-red-900/40 dark:text-red-300">
-                    Failed to load statistics: {(error as Error).message}
+                    Failed to load statistics: {error}
                 </div>
             </div>
         )

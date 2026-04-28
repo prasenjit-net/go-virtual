@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -13,7 +13,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
-import type { Operation, ResponseConfig, Spec, SignatureConfig } from '../types'
+import type { AIStatus, Operation, ResponseConfig, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 import ResponseConfigList from './ResponseDesigner/ResponseConfigList'
@@ -24,6 +24,44 @@ const methodColors: Record<string, string> = {
     PUT: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300',
     DELETE: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     PATCH: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+}
+
+const emptySignatureInputs: SignatureAvailableInputs = {
+    pathParams: [],
+    queryParams: [],
+    headerParams: [],
+    bodyFields: [],
+    hasBody: false,
+}
+
+function createSignatureDraft(config: SignatureConfig | null | undefined): SignatureConfig {
+    return {
+        pathParams: [...(config?.pathParams ?? [])],
+        queryParams: [...(config?.queryParams ?? [])],
+        headersConfigured: config?.headersConfigured ?? false,
+        headers: [...(config?.headers ?? [])],
+        includeBody: config?.includeBody ?? null,
+        bodyJsonPaths: [...(config?.bodyJsonPaths ?? [])],
+    }
+}
+
+function normalizeSignatureDraftForSave(draft: SignatureConfig | null): SignatureConfig | null {
+    if (!draft) return null
+    const normalized: SignatureConfig = {
+        pathParams: [...draft.pathParams],
+        queryParams: [...draft.queryParams],
+        headersConfigured: draft.headersConfigured ?? false,
+        headers: draft.headersConfigured ? [...draft.headers] : [],
+        includeBody: draft.includeBody ?? null,
+        bodyJsonPaths: draft.includeBody === false ? [] : [...draft.bodyJsonPaths],
+    }
+    const hasOverride =
+        normalized.pathParams.length > 0 ||
+        normalized.queryParams.length > 0 ||
+        normalized.headersConfigured ||
+        normalized.includeBody !== null && normalized.includeBody !== undefined ||
+        normalized.bodyJsonPaths.length > 0
+    return hasOverride ? normalized : null
 }
 
 export default function OperationDetail() {
@@ -56,17 +94,19 @@ export default function OperationDetail() {
     const [newQueryParam, setNewQueryParam] = useState('')
     const [newBodyPath, setNewBodyPath] = useState('')
 
-    const signatureQuery = useQuery({
+    const signatureQuery = useQuery<SignatureConfigResponse>({
         queryKey: ['signature', operationId],
         queryFn: () => operationsApi.getSignatureConfig(operationId!),
         enabled: !!operationId,
     })
 
-    const { data: aiConfigured = true } = useQuery<boolean>({
-        queryKey: ['ai-configured'],
-        queryFn: () => aiApi.isConfigured(),
+    const { data: aiStatus = { configured: true, provider: 'openai' } } = useQuery<AIStatus>({
+        queryKey: ['ai-status'],
+        queryFn: () => aiApi.getStatus(),
         staleTime: 60_000,
     })
+    const aiConfigured = aiStatus.configured
+    const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
     const updateSignatureMutation = useMutation({
         mutationFn: (cfg: SignatureConfig | null) =>
@@ -78,13 +118,17 @@ export default function OperationDetail() {
         },
     })
 
-    // Extract path params from operation path (e.g. /pets/{id} → ['id'])
-    const pathParamNames = operation
-        ? [...(operation.path.matchAll(/\{([^}]+)\}/g))].map(m => m[1])
-        : []
+    const signatureData = signatureQuery.data
+    const availableInputs = signatureData?.availableInputs ?? emptySignatureInputs
+    const defaultSignatureConfig = signatureData?.defaultSignatureConfig
+    const effectiveSignatureConfig = signatureData?.effectiveSignatureConfig
+    const bodyIncluded = useMemo(
+        () => sigConfig?.includeBody ?? availableInputs.hasBody,
+        [sigConfig?.includeBody, availableInputs.hasBody]
+    )
 
     const openSigEdit = () => {
-        setSigConfig(signatureQuery.data?.signatureConfig ?? null)
+        setSigConfig(createSignatureDraft(signatureData?.signatureConfig))
         setSigEditMode(true)
     }
 
@@ -197,7 +241,7 @@ export default function OperationDetail() {
                             </button>
                             {!aiConfigured && (
                                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1.5 text-xs text-white bg-gray-900 dark:bg-slate-700 rounded-lg whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
-                                    OpenAI API key is not configured
+                                    {aiProviderLabel} is not configured
                                     <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900 dark:border-t-slate-700" />
                                 </div>
                             )}
@@ -251,113 +295,103 @@ export default function OperationDetail() {
 
                 <div className="p-6">
                     {!sigEditMode ? (
-                        /* Read-only summary */
-                        <div className="flex flex-wrap gap-2 text-sm">
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
-                                Path params: {(signatureQuery.data?.signatureConfig?.pathParams?.length ?? 0) === 0 ? 'All' : signatureQuery.data?.signatureConfig?.pathParams?.join(', ')}
-                            </span>
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
-                                Query params: {(signatureQuery.data?.signatureConfig?.queryParams?.length ?? 0) === 0 ? 'All' : signatureQuery.data?.signatureConfig?.queryParams?.join(', ')}
-                            </span>
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
-                                Headers: {(signatureQuery.data?.signatureConfig?.headers?.length ?? 0) === 0 ? 'None' : signatureQuery.data?.signatureConfig?.headers?.join(', ')}
-                            </span>
-                            <span className={clsx(
-                                'inline-flex items-center px-2.5 py-1 rounded-full text-xs',
-                                (signatureQuery.data?.signatureConfig?.includeBody ?? true)
-                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                    : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
-                            )}>
-                                Body: {(signatureQuery.data?.signatureConfig?.includeBody ?? true) ? 'Included' : 'Excluded'}
-                            </span>
-                            {(signatureQuery.data?.signatureConfig?.bodyJsonPaths?.length ?? 0) > 0 && (
+                        <div className="space-y-3">
+                            <div className="flex flex-wrap gap-2 text-sm">
                                 <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
-                                    Body paths: {signatureQuery.data?.signatureConfig?.bodyJsonPaths?.join(', ')}
+                                    Path params: {(effectiveSignatureConfig?.pathParams?.length ?? 0) === 0 ? 'None' : effectiveSignatureConfig?.pathParams?.join(', ')}
                                 </span>
-                            )}
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
+                                    Query params: {(effectiveSignatureConfig?.queryParams?.length ?? 0) === 0 ? 'None' : effectiveSignatureConfig?.queryParams?.join(', ')}
+                                </span>
+                                <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
+                                    Headers: {(effectiveSignatureConfig?.headers?.length ?? 0) === 0 ? 'None' : effectiveSignatureConfig?.headers?.join(', ')}
+                                </span>
+                                <span className={clsx(
+                                    'inline-flex items-center px-2.5 py-1 rounded-full text-xs',
+                                    (effectiveSignatureConfig?.includeBody ?? false)
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                        : 'bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-slate-400'
+                                )}>
+                                    Body: {(effectiveSignatureConfig?.includeBody ?? false) ? ((effectiveSignatureConfig?.bodyJsonPaths?.length ?? 0) > 0 ? 'Selected paths' : 'Full body') : 'Excluded'}
+                                </span>
+                                {(effectiveSignatureConfig?.bodyJsonPaths?.length ?? 0) > 0 && (
+                                    <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 dark:bg-slate-800 text-gray-700 dark:text-slate-300 text-xs">
+                                        Body paths: {effectiveSignatureConfig?.bodyJsonPaths?.join(', ')}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="rounded-lg border border-dashed border-gray-200 dark:border-slate-700 px-3 py-2 text-xs text-gray-500 dark:text-slate-400">
+                                {(signatureData?.signatureConfig?.headersConfigured ?? false)
+                                    ? 'Headers are explicitly overridden for this operation.'
+                                    : `Headers are using defaults from declared operation headers and spec-level signature headers (${(defaultSignatureConfig?.headers ?? []).join(', ') || 'none'}).`}
+                            </div>
                         </div>
-                    ) : (
-                        /* Edit form */
+                    ) : sigConfig ? (
                         <div className="space-y-5">
-                            {/* Path Params */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                                     Path Parameters
                                 </label>
-                                {pathParamNames.length > 0 ? (
-                                    <div className="flex flex-wrap gap-2">
+                                {availableInputs.pathParams.length > 0 ? (
+                                    <>
+                                        <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
+                                            Leave this empty to include all declared path parameters.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {availableInputs.pathParams.map((param) => (
+                                                <button
+                                                    key={param}
+                                                    type="button"
+                                                    onClick={() => setSigConfig((current) => current ? ({
+                                                        ...current,
+                                                        pathParams: current.pathParams.includes(param)
+                                                            ? current.pathParams.filter((item) => item !== param)
+                                                            : [...current.pathParams, param],
+                                                    }) : current)}
+                                                    className={clsx(
+                                                        'px-3 py-1 rounded-full text-xs border font-mono transition-colors',
+                                                        sigConfig.pathParams.includes(param)
+                                                            ? 'bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/40 dark:border-violet-700 dark:text-violet-300'
+                                                            : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                                                    )}
+                                                >
+                                                    {param}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <p className="text-sm text-gray-400 dark:text-slate-500 italic">No declared path parameters for this operation</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
+                                    Query Parameters
+                                </label>
+                                <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
+                                    Leave this empty to include all declared query parameters.
+                                </p>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    {availableInputs.queryParams.map((param) => (
                                         <button
+                                            key={param}
                                             type="button"
-                                            onClick={() => setSigConfig(c => ({ ...(c ?? { queryParams: [], headers: [], includeBody: true, bodyJsonPaths: [] }), pathParams: [] }))}
+                                            onClick={() => setSigConfig((current) => current ? ({
+                                                ...current,
+                                                queryParams: current.queryParams.includes(param)
+                                                    ? current.queryParams.filter((item) => item !== param)
+                                                    : [...current.queryParams, param],
+                                            }) : current)}
                                             className={clsx(
-                                                'px-3 py-1 rounded-full text-xs border transition-colors',
-                                                (sigConfig?.pathParams?.length ?? 0) === 0
+                                                'px-3 py-1 rounded-full text-xs border font-mono transition-colors',
+                                                sigConfig.queryParams.includes(param)
                                                     ? 'bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/40 dark:border-violet-700 dark:text-violet-300'
                                                     : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
                                             )}
                                         >
-                                            All
+                                            {param}
                                         </button>
-                                        {pathParamNames.map(p => (
-                                            <button
-                                                key={p}
-                                                type="button"
-                                                onClick={() => setSigConfig(c => {
-                                                    const base: SignatureConfig = c ?? { pathParams: [], queryParams: [], headers: [], includeBody: true, bodyJsonPaths: [] }
-                                                    const current = base.pathParams ?? []
-                                                    return {
-                                                        ...base,
-                                                        pathParams: current.includes(p)
-                                                            ? current.filter((x: string) => x !== p)
-                                                            : [...current, p]
-                                                    }
-                                                })}
-                                                className={clsx(
-                                                    'px-3 py-1 rounded-full text-xs border font-mono transition-colors',
-                                                    sigConfig?.pathParams?.includes(p)
-                                                        ? 'bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/40 dark:border-violet-700 dark:text-violet-300'
-                                                        : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
-                                                )}
-                                            >
-                                                {p}
-                                            </button>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-gray-400 dark:text-slate-500 italic">No path parameters in this operation</p>
-                                )}
-                            </div>
-
-                            {/* Query Params */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
-                                        Query Parameters
-                                    </label>
-                                    <button
-                                        type="button"
-                                        onClick={() => setSigConfig(c => ({ ...(c ?? { pathParams: [], headers: [], includeBody: true, bodyJsonPaths: [] }), queryParams: [] }))}
-                                        className={clsx(
-                                            'px-2 py-0.5 rounded text-xs border transition-colors',
-                                            (sigConfig?.queryParams?.length ?? 0) === 0
-                                                ? 'bg-violet-100 border-violet-300 text-violet-700 dark:bg-violet-900/40 dark:border-violet-700 dark:text-violet-300'
-                                                : 'bg-white border-gray-200 text-gray-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
-                                        )}
-                                    >
-                                        Include All
-                                    </button>
-                                </div>
-                                <div className="flex flex-wrap gap-2 mb-2">
-                                    {(sigConfig?.queryParams ?? []).map(q => (
-                                        <span key={q} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 font-mono">
-                                            {q}
-                                            <button
-                                                onClick={() => setSigConfig(c => ({ ...c!, queryParams: (c?.queryParams ?? []).filter(x => x !== q) }))}
-                                                className="hover:text-red-500"
-                                            >
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </span>
                                     ))}
                                 </div>
                                 <div className="flex gap-2">
@@ -365,10 +399,13 @@ export default function OperationDetail() {
                                         type="text"
                                         value={newQueryParam}
                                         onChange={e => setNewQueryParam(e.target.value)}
-                                        placeholder="Add query param…"
+                                        placeholder="Add custom query param…"
                                         onKeyDown={e => {
                                             if (e.key === 'Enter' && newQueryParam.trim()) {
-                                                setSigConfig(c => ({ ...(c ?? { pathParams: [], headers: [], includeBody: true, bodyJsonPaths: [] }), queryParams: [...(c?.queryParams ?? []), newQueryParam.trim()] }))
+                                                setSigConfig(current => current ? ({
+                                                    ...current,
+                                                    queryParams: [...current.queryParams, newQueryParam.trim()]
+                                                }) : current)
                                                 setNewQueryParam('')
                                             }
                                         }}
@@ -378,7 +415,10 @@ export default function OperationDetail() {
                                         type="button"
                                         onClick={() => {
                                             if (newQueryParam.trim()) {
-                                                setSigConfig(c => ({ ...(c ?? { pathParams: [], headers: [], includeBody: true, bodyJsonPaths: [] }), queryParams: [...(c?.queryParams ?? []), newQueryParam.trim()] }))
+                                                setSigConfig(current => current ? ({
+                                                    ...current,
+                                                    queryParams: [...current.queryParams, newQueryParam.trim()]
+                                                }) : current)
                                                 setNewQueryParam('')
                                             }
                                         }}
@@ -389,78 +429,170 @@ export default function OperationDetail() {
                                 </div>
                             </div>
 
-                            {/* Headers */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-                                    Headers <span className="text-xs text-gray-400 dark:text-slate-500 font-normal">(empty = none included)</span>
-                                </label>
-                                <div className="flex flex-wrap gap-2 mb-2">
-                                    {(sigConfig?.headers ?? []).map(h => (
-                                        <span key={h} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-mono">
-                                            {h}
-                                            <button
-                                                onClick={() => setSigConfig(c => ({ ...c!, headers: (c?.headers ?? []).filter(x => x !== h) }))}
-                                                className="hover:text-red-500"
-                                            >
-                                                <X className="w-3 h-3" />
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="flex gap-2">
-                                    <input
-                                        type="text"
-                                        value={newHeader}
-                                        onChange={e => setNewHeader(e.target.value)}
-                                        placeholder="Add header name…"
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter' && newHeader.trim()) {
-                                                setSigConfig(c => ({ ...(c ?? { pathParams: [], queryParams: [], includeBody: true, bodyJsonPaths: [] }), headers: [...(c?.headers ?? []), newHeader.trim()] }))
-                                                setNewHeader('')
-                                            }
-                                        }}
-                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                                    />
+                                <div className="flex items-center justify-between gap-3 mb-2">
+                                    <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
+                                        Headers
+                                    </label>
                                     <button
                                         type="button"
-                                        onClick={() => {
-                                            if (newHeader.trim()) {
-                                                setSigConfig(c => ({ ...(c ?? { pathParams: [], queryParams: [], includeBody: true, bodyJsonPaths: [] }), headers: [...(c?.headers ?? []), newHeader.trim()] }))
-                                                setNewHeader('')
-                                            }
-                                        }}
-                                        className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600"
+                                        onClick={() => setSigConfig((current) => current ? ({
+                                            ...current,
+                                            headersConfigured: !(current.headersConfigured ?? false),
+                                            headers: current.headersConfigured ? [] : current.headers,
+                                        }) : current)}
+                                        className="px-2.5 py-1 text-xs rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
                                     >
-                                        <Plus className="w-4 h-4" />
+                                        {sigConfig.headersConfigured ? 'Use defaults' : 'Customize headers'}
                                     </button>
                                 </div>
+                                {!sigConfig.headersConfigured ? (
+                                    <div className="rounded-lg border border-dashed border-gray-200 dark:border-slate-700 px-3 py-2 text-xs text-gray-500 dark:text-slate-400">
+                                        Default headers: {(defaultSignatureConfig?.headers ?? []).join(', ') || 'none'}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
+                                            Explicit override. Leave the list empty to include no headers for this operation.
+                                        </p>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(sigConfig.headers ?? []).map(h => (
+                                                <span key={h} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 font-mono">
+                                                    {h}
+                                                    <button
+                                                        onClick={() => setSigConfig(current => current ? ({ ...current, headers: current.headers.filter(x => x !== h) }) : current)}
+                                                        className="hover:text-red-500"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 mb-3">
+                                            {availableInputs.headerParams.map((header) => (
+                                                <button
+                                                    key={header}
+                                                    type="button"
+                                                    onClick={() => setSigConfig((current) => current ? ({
+                                                        ...current,
+                                                        headers: current.headers.includes(header)
+                                                            ? current.headers.filter((item) => item !== header)
+                                                            : [...current.headers, header],
+                                                    }) : current)}
+                                                    className={clsx(
+                                                        'px-3 py-1 rounded-full text-xs border font-mono transition-colors',
+                                                        sigConfig.headers.includes(header)
+                                                            ? 'bg-blue-100 border-blue-300 text-blue-700 dark:bg-blue-900/40 dark:border-blue-700 dark:text-blue-300'
+                                                            : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                                                    )}
+                                                >
+                                                    {header}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newHeader}
+                                                onChange={e => setNewHeader(e.target.value)}
+                                                placeholder="Add header name…"
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter' && newHeader.trim()) {
+                                                        setSigConfig(current => current ? ({
+                                                            ...current,
+                                                            headers: [...current.headers, newHeader.trim()]
+                                                        }) : current)
+                                                        setNewHeader('')
+                                                    }
+                                                }}
+                                                className="flex-1 px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (newHeader.trim()) {
+                                                        setSigConfig(current => current ? ({
+                                                            ...current,
+                                                            headers: [...current.headers, newHeader.trim()]
+                                                        }) : current)
+                                                        setNewHeader('')
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 text-sm bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 rounded-lg hover:bg-gray-200 dark:hover:bg-slate-600"
+                                            >
+                                                <Plus className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
-                            {/* Body */}
                             <div>
                                 <label className="flex items-center gap-2 cursor-pointer select-none">
                                     <input
                                         type="checkbox"
-                                        checked={sigConfig?.includeBody ?? true}
-                                        onChange={e => setSigConfig(c => ({ ...(c ?? { pathParams: [], queryParams: [], headers: [], bodyJsonPaths: [] }), includeBody: e.target.checked }))}
+                                        checked={bodyIncluded}
+                                        disabled={!availableInputs.hasBody}
+                                        onChange={e => setSigConfig(current => current ? ({
+                                            ...current,
+                                            includeBody: e.target.checked ? true : false,
+                                            bodyJsonPaths: e.target.checked ? current.bodyJsonPaths : [],
+                                        }) : current)}
                                         className="w-4 h-4 text-violet-600 border-gray-300 rounded focus:ring-violet-500"
                                     />
                                     <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Include request body in signature</span>
                                 </label>
+                                {!availableInputs.hasBody && (
+                                    <p className="mt-2 text-sm text-gray-400 dark:text-slate-500 italic">This operation does not declare a request body</p>
+                                )}
                             </div>
 
-                            {/* Body JSON Paths (only shown when includeBody is true) */}
-                            {(sigConfig?.includeBody ?? true) && (
+                            {availableInputs.hasBody && bodyIncluded && (
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
-                                        Body JSON Paths <span className="text-xs text-gray-400 dark:text-slate-500 font-normal">(empty = use full body)</span>
-                                    </label>
+                                    <div className="flex items-center justify-between gap-3 mb-2">
+                                        <label className="text-sm font-medium text-gray-700 dark:text-slate-300">
+                                            Body JSON Paths
+                                        </label>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSigConfig(current => current ? ({ ...current, includeBody: true, bodyJsonPaths: [] }) : current)}
+                                            className="px-2.5 py-1 text-xs rounded border border-gray-200 dark:border-slate-700 text-gray-600 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                                        >
+                                            Use full body
+                                        </button>
+                                    </div>
+                                    <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
+                                        Leave this empty to hash the full body. Add paths to hash only selected values.
+                                    </p>
+                                    <div className="flex flex-wrap gap-2 mb-3">
+                                        {availableInputs.bodyFields.map((path) => (
+                                            <button
+                                                key={path}
+                                                type="button"
+                                                onClick={() => setSigConfig((current) => current ? ({
+                                                    ...current,
+                                                    includeBody: true,
+                                                    bodyJsonPaths: current.bodyJsonPaths.includes(path)
+                                                        ? current.bodyJsonPaths.filter((item) => item !== path)
+                                                        : [...current.bodyJsonPaths, path],
+                                                }) : current)}
+                                                className={clsx(
+                                                    'px-3 py-1 rounded-full text-xs border font-mono transition-colors',
+                                                    sigConfig.bodyJsonPaths.includes(path)
+                                                        ? 'bg-green-100 border-green-300 text-green-700 dark:bg-green-900/40 dark:border-green-700 dark:text-green-300'
+                                                        : 'bg-white border-gray-200 text-gray-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                                                )}
+                                            >
+                                                {path}
+                                            </button>
+                                        ))}
+                                    </div>
                                     <div className="flex flex-wrap gap-2 mb-2">
-                                        {(sigConfig?.bodyJsonPaths ?? []).map(p => (
+                                        {(sigConfig.bodyJsonPaths ?? []).map(p => (
                                             <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 font-mono">
                                                 {p}
                                                 <button
-                                                    onClick={() => setSigConfig(c => ({ ...c!, bodyJsonPaths: (c?.bodyJsonPaths ?? []).filter(x => x !== p) }))}
+                                                    onClick={() => setSigConfig(current => current ? ({ ...current, bodyJsonPaths: current.bodyJsonPaths.filter(x => x !== p) }) : current)}
                                                     className="hover:text-red-500"
                                                 >
                                                     <X className="w-3 h-3" />
@@ -476,7 +608,11 @@ export default function OperationDetail() {
                                             placeholder="e.g. user.id or items.0.name"
                                             onKeyDown={e => {
                                                 if (e.key === 'Enter' && newBodyPath.trim()) {
-                                                    setSigConfig(c => ({ ...(c ?? { pathParams: [], queryParams: [], headers: [], includeBody: true }), bodyJsonPaths: [...(c?.bodyJsonPaths ?? []), newBodyPath.trim()] }))
+                                                    setSigConfig(current => current ? ({
+                                                        ...current,
+                                                        includeBody: true,
+                                                        bodyJsonPaths: [...current.bodyJsonPaths, newBodyPath.trim()]
+                                                    }) : current)
                                                     setNewBodyPath('')
                                                 }
                                             }}
@@ -486,7 +622,11 @@ export default function OperationDetail() {
                                             type="button"
                                             onClick={() => {
                                                 if (newBodyPath.trim()) {
-                                                    setSigConfig(c => ({ ...(c ?? { pathParams: [], queryParams: [], headers: [], includeBody: true }), bodyJsonPaths: [...(c?.bodyJsonPaths ?? []), newBodyPath.trim()] }))
+                                                    setSigConfig(current => current ? ({
+                                                        ...current,
+                                                        includeBody: true,
+                                                        bodyJsonPaths: [...current.bodyJsonPaths, newBodyPath.trim()]
+                                                    }) : current)
                                                     setNewBodyPath('')
                                                 }
                                             }}
@@ -498,10 +638,9 @@ export default function OperationDetail() {
                                 </div>
                             )}
 
-                            {/* Actions */}
                             <div className="flex gap-3 pt-2 border-t border-gray-100 dark:border-slate-800">
                                 <button
-                                    onClick={() => updateSignatureMutation.mutate(sigConfig)}
+                                    onClick={() => updateSignatureMutation.mutate(normalizeSignatureDraftForSave(sigConfig))}
                                     disabled={updateSignatureMutation.isPending}
                                     className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors text-sm"
                                 >
@@ -522,6 +661,10 @@ export default function OperationDetail() {
                                     Reset to defaults
                                 </button>
                             </div>
+                        </div>
+                    ) : (
+                        <div className="text-sm text-gray-500 dark:text-slate-400">
+                            Loading signature configuration…
                         </div>
                     )}
                 </div>
@@ -607,18 +750,21 @@ export default function OperationDetail() {
                 </div>
             )}
 
-            {/* Response Priority Info */}
+            {/* Response Matching Info */}
             <div className="mt-6 bg-blue-50 border border-blue-200 dark:bg-blue-950/30 dark:border-blue-900/40 rounded-xl p-4">
                 <div className="flex items-start">
                     <Info className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
                     <div className="text-sm text-blue-700 dark:text-blue-300">
                         <strong>Response Matching Order:</strong>
                         <ol className="list-decimal list-inside mt-1 space-y-0.5">
-                            <li>First enabled response with matching conditions (by priority)</li>
+                            <li>Enabled configured responses are checked first, lowest priority number first; the first condition match wins.</li>
+                            <li>If none match, recorded proxy responses are checked next using the same order.</li>
+                            <li>In AI mode, if nothing matches, a response can be generated from the operation and active AI scenario.</li>
+                            <li>In proxy mode, if nothing matches, the request is sent to the backend and the response may be recorded for reuse.</li>
                             {operation.exampleResponse && spec?.useExampleFallback && (
-                                <li>Example response from OpenAPI spec (status {operation.exampleResponse.statusCode})</li>
+                                <li>In standard mode, the OpenAPI example response is used next (status {operation.exampleResponse.statusCode}).</li>
                             )}
-                            <li>404 Not Found</li>
+                            <li>If nothing matches, the operation returns 404.</li>
                         </ol>
                     </div>
                 </div>

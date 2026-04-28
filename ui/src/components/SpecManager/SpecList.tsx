@@ -82,11 +82,16 @@ export default function SpecList() {
     return (
         <div className="p-8">
             <div className="flex items-center justify-between mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">API Specifications</h1>
-                    <p className="text-gray-500 dark:text-slate-400 mt-1">
-                        Manage your OpenAPI 3 specifications and configure virtual responses
-                    </p>
+                <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-primary-100 p-3 dark:bg-primary-900/30">
+                        <FileCode2 className="h-6 w-6 text-primary-600 dark:text-primary-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100">API Specifications</h1>
+                        <p className="mt-1 text-gray-500 dark:text-slate-400 text-sm">
+                            Manage your OpenAPI 3 specifications and configure virtual responses
+                        </p>
+                    </div>
                 </div>
                 <button
                     onClick={() => setShowUploadModal(true)}

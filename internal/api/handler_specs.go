@@ -23,6 +23,7 @@ func specResponse(spec *models.Spec, operationCount int) map[string]any {
 		"tracing":            spec.Tracing,
 		"useExampleFallback": spec.UseExampleFallback,
 		"enabledTags":        spec.EnabledTags,
+		"signatureHeaders":   spec.SignatureHeaders,
 		"mode":               spec.Mode,
 		"backendUri":         spec.BackendURI,
 		"proxyMode":          spec.ProxyMode,
@@ -152,6 +153,9 @@ func (h *Handler) UpdateSpec(c *gin.Context) {
 	}
 	if update.UseExampleFallback != nil {
 		spec.UseExampleFallback = *update.UseExampleFallback
+	}
+	if update.SignatureHeaders != nil {
+		spec.SignatureHeaders = append([]string{}, (*update.SignatureHeaders)...)
 	}
 	if update.BackendURI != nil {
 		spec.BackendURI = *update.BackendURI
@@ -467,7 +471,7 @@ func (h *Handler) applySpecMode(spec *models.Spec, mode string) error {
 		policy.Proxy.Enabled = true
 	case models.SpecModeAI:
 		if h.aiGenerator == nil || !h.aiGenerator.IsConfigured() {
-			return fmt.Errorf("OpenAI API key must be configured before enabling AI mode")
+			return h.aiModeConfigurationError()
 		}
 		policy.Configured = true
 		policy.AI.Enabled = true

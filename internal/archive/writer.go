@@ -23,7 +23,7 @@ type storeFileFormat struct {
 
 // BuildZIP creates an archive ZIP from the current state of the storage and
 // global store. Returns the raw ZIP bytes and the manifest embedded in it.
-func BuildZIP(label string, stor storage.Storage, gs *store.GlobalStore) ([]byte, *Manifest, error) {
+func BuildZIP(label string, stor storage.Storage, gs store.GlobalStoreBackend) ([]byte, *Manifest, error) {
 	id := shortID()
 	checksums := make(map[string]string)
 	counts := Counts{}
