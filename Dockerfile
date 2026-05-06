@@ -1,0 +1,37 @@
+# ── Stage 1: build UI ────────────────────────────────────────────────────────
+FROM node:20-alpine AS ui-builder
+WORKDIR /app/ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+# ── Stage 2: build Go binary ──────────────────────────────────────────────────
+FROM golang:1.22-alpine AS go-builder
+WORKDIR /app
+
+# Build args injected by docker buildx / release workflow
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+COPY --from=ui-builder /app/ui/dist ./ui/dist
+
+RUN CGO_ENABLED=0 go build \
+    -ldflags="-s -w \
+      -X github.com/prasenjit/go-virtual/internal/version.Version=${VERSION} \
+      -X github.com/prasenjit/go-virtual/internal/version.Commit=${COMMIT} \
+      -X github.com/prasenjit/go-virtual/internal/version.BuildDate=${BUILD_DATE}" \
+    -o /go-virtual ./cmd/server
+
+# ── Stage 3: minimal runtime image ───────────────────────────────────────────
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=go-builder /go-virtual /go-virtual
+
+EXPOSE 8080
+ENTRYPOINT ["/go-virtual", "serve"]
