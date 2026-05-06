@@ -309,7 +309,29 @@ GOVIRTUAL_STORAGE_MONGO_SYNC_MODE=auto
 
 ## Horizontal Scaling
 
-When multiple go-virtual instances share a MongoDB backend, they must stay in sync. Two in-memory caches are kept by each instance:
+Two clustering patterns are supported:
+
+### Pattern 1: Read-Only Headless (no MongoDB required)
+
+If specs and responses do not change during a deployment, run all instances with `server.headless: true` and `storage.type: file`. In headless mode the entire `/_api/` and `/_ui/` are not registered — no mutations can reach the storage layer, so every instance's in-memory route table is permanently consistent with the baked-in data.
+
+```yaml
+server:
+  headless: true
+storage:
+  type: file
+  path: /app/data        # pre-populated at image build time
+session:
+  storeType: redis       # only needed if using X-Virtual-Session-Id
+  redis:
+    addr: redis:6379
+```
+
+Workflow: author locally → export `data/` → bake into container image → roll out N headless replicas.
+
+### Pattern 2: MongoDB Live Sync
+
+When specs and responses need to be updated at runtime across all instances without a redeploy, use MongoDB storage with the sync subsystem enabled.
 
 - **Route table** (`proxy.Engine.routes`) — built from specs/operations at startup. Without sync, uploading a spec to Instance A leaves Instance B serving 404 for the new routes.
 - **Global store cache** (`MongoGlobalStore.cache`) — write-through in-memory map. Without sync, values written by scripts on Instance A are invisible on Instance B.

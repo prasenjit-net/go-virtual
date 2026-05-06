@@ -60,13 +60,15 @@
     <div class="page-header">
       <div class="breadcrumb"><a href="index.html">go-virtual</a> / Clustering</div>
       <h1>Clustering &amp; Horizontal Scaling</h1>
-      <p class="lead">Run multiple go-virtual instances behind a load balancer, all sharing a single MongoDB database, with automatic cross-instance synchronisation via MongoDB change streams or polling fallback.</p>
+      <p class="lead">Run multiple go-virtual instances behind a load balancer. Two patterns are supported: a <strong>read-only / headless</strong> pattern using file storage (simple, no MongoDB required) and a <strong>live-sync</strong> pattern using MongoDB with change streams or polling (supports runtime admin mutations).</p>
     </div>
 
     <div class="toc">
       <div class="toc-title">On this page</div>
       <ul>
-        <li><a href="#overview">Overview</a></li>
+        <li><a href="#patterns">Choosing a Pattern</a></li>
+        <li><a href="#read-only">Pattern 1: Read-Only Headless</a></li>
+        <li><a href="#overview">Pattern 2: MongoDB Live Sync</a></li>
         <li><a href="#architecture">Architecture</a></li>
         <li><a href="#prerequisites">Prerequisites</a></li>
         <li><a href="#sync-mechanism">Sync Mechanism</a></li>
@@ -80,10 +82,102 @@
       </ul>
     </div>
 
-    <!-- Overview -->
+    <!-- Pattern comparison -->
+    <div class="section" id="patterns">
+      <h2>Choosing a Pattern</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Read-only / Headless</th><th>MongoDB Live Sync</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Storage</strong></td><td>File (<code>storage.type: file</code>)</td><td>MongoDB (<code>storage.type: mongo</code>)</td></tr>
+            <tr><td><strong>Admin UI / API at runtime</strong></td><td>❌ Disabled (<code>headless: true</code>)</td><td>✅ Available on all instances</td></tr>
+            <tr><td><strong>Runtime spec/response changes</strong></td><td>❌ Requires redeploy</td><td>✅ Immediate, synced to all instances</td></tr>
+            <tr><td><strong>MongoDB required</strong></td><td>❌ No</td><td>✅ Yes</td></tr>
+            <tr><td><strong>Redis required</strong></td><td>Only if using sessions</td><td>Only if using sessions</td></tr>
+            <tr><td><strong>Complexity</strong></td><td>Low — bake data into image or mount volume</td><td>Medium — MongoDB + sync watcher</td></tr>
+            <tr><td><strong>Best for</strong></td><td>Stable mocks, CI/CD pipelines, staging environments with infrequent updates</td><td>Shared development environments, dynamic mocks updated by multiple teams</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Pattern 1: Read-only headless -->
+    <div class="section" id="read-only">
+      <h2>Pattern 1: Read-Only Headless</h2>
+      <p>If your specs and responses are configured once and do not change during the lifetime of a deployment, you do not need MongoDB or any cross-instance synchronisation. Every instance starts with the same data and serves requests identically — there are no writes to propagate.</p>
+
+      <h3>How it works</h3>
+      <p>In headless mode (<code>server.headless: true</code>) the entire admin API (<code>/_api/</code>) and admin UI (<code>/_ui/</code>) are <strong>not registered</strong> — not just protected, but completely absent from the router. The only routes mounted are <code>/_prometheus</code> and the catch-all proxy handler. This means:</p>
+      <ul>
+        <li>No mutation can reach the storage layer at runtime — the route table and global store cache are built once at startup and never change.</li>
+        <li>Any number of instances reading the same data directory (or image layer) will always agree on routes.</li>
+        <li>No sync mechanism, no change stream, no polling is needed.</li>
+      </ul>
+
+      <h3>Workflow</h3>
+      <ol>
+        <li><strong>Author</strong> — configure specs, responses, scripts, and global store values using the Admin UI on a local or admin-only instance (non-headless).</li>
+        <li><strong>Export</strong> — copy the <code>data/</code> directory (or export an archive) into your container image or deployment artifact.</li>
+        <li><strong>Deploy</strong> — start N replicas with <code>server.headless: true</code> pointing at the baked-in data directory. Each instance is identical and stateless with respect to mock data.</li>
+        <li><strong>Update</strong> — when specs change, repeat from step 1 and roll out a new image/deployment.</li>
+      </ol>
+
+      <pre><code><span class="key">server</span><span class="op">:</span>
+  <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>
+  <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>
+  <span class="key">headless</span><span class="op">:</span> <span class="kw">true</span>         <span class="cm"># disables /_api/ and /_ui/ entirely</span>
+
+<span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>
+  <span class="key">path</span><span class="op">:</span> <span class="str">"/app/data"</span>       <span class="cm"># read-only at runtime; baked into the image</span>
+
+<span class="cm"># Redis sessions — required only if your tests use X-Virtual-Session-Id</span>
+<span class="key">session</span><span class="op">:</span>
+  <span class="key">storeType</span><span class="op">:</span> <span class="str">"redis"</span>
+  <span class="key">redis</span><span class="op">:</span>
+    <span class="key">addr</span><span class="op">:</span> <span class="str">"redis:6379"</span>
+</code></pre>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Keep one non-headless admin instance separate</strong>
+          Run a single non-headless instance (not behind the load balancer) for authoring and exporting. It never receives production traffic and is the only place mutations happen.
+        </div>
+      </div>
+
+      <h3>Docker Compose (read-only headless)</h3>
+      <pre><code>version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+
+  gv-1:
+    image: your-registry/go-virtual-configured:latest  <span class="cm"># image with data/ baked in</span>
+    environment:
+      GOVIRTUAL_SERVER_HEADLESS: "true"
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+    ports:
+      - "8081:8080"
+
+  gv-2:
+    image: your-registry/go-virtual-configured:latest
+    environment:
+      GOVIRTUAL_SERVER_HEADLESS: "true"
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+    ports:
+      - "8082:8080"
+</code></pre>
+    </div>
+
+    <!-- Pattern 2 header -->
     <div class="section" id="overview">
-      <h2>Overview</h2>
-      <p>The default file and memory storage backends are single-instance only — they cannot be shared across processes. When you need:</p>
+      <h2>Pattern 2: MongoDB Live Sync</h2>
+      <p>Use this pattern when specs and responses need to be updated at runtime — by multiple teams, via the Admin UI, or through automated pipelines — and all instances must reflect changes immediately without a redeploy.</p>
+      <p>The default file and memory storage backends are single-instance only. When you need:</p>
       <ul>
         <li><strong>High availability</strong> — survive instance crashes without downtime</li>
         <li><strong>Load distribution</strong> — spread mock traffic across multiple pods/containers</li>
@@ -506,15 +600,16 @@ spec:
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Item</th><th>Requirement</th><th>Notes</th></tr></thead>
+          <thead><tr><th>Item</th><th>Read-only headless</th><th>MongoDB live sync</th></tr></thead>
           <tbody>
-            <tr><td>Storage backend</td><td><strong>Required:</strong> <code>storage.type: mongo</code></td><td>File and memory storage are single-instance only.</td></tr>
-            <tr><td>MongoDB topology</td><td><strong>Recommended:</strong> replica set</td><td>Required for change streams. Use <code>mode: polling</code> for standalone.</td></tr>
-            <tr><td>Sync mode</td><td><strong>Required:</strong> <code>mode: auto</code>, <code>change_stream</code>, or <code>polling</code></td><td><code>mode: off</code> means no cross-instance sync — avoid in clusters.</td></tr>
-            <tr><td>Session backend</td><td><strong>Required if sessions used:</strong> <code>session.storeType: redis</code></td><td>In-memory sessions are per-instance. Without Redis, sessions are lost on load-balanced requests.</td></tr>
-            <tr><td>Admin UI access</td><td><strong>Optional:</strong> expose Admin UI on one designated instance</td><td>Consider <code>server.headless: true</code> on worker replicas.</td></tr>
-            <tr><td>Prometheus scrape</td><td><strong>Recommended:</strong> scrape all instances</td><td>Metrics are per-instance. Add all instances as scrape targets.</td></tr>
-            <tr><td>MongoDB connection pool</td><td>Default is sufficient</td><td>The sync watcher opens a separate connection; it does not consume from the storage pool.</td></tr>
+            <tr><td>Storage backend</td><td><code>storage.type: file</code></td><td><code>storage.type: mongo</code></td></tr>
+            <tr><td>Headless mode</td><td><strong>Required:</strong> <code>server.headless: true</code></td><td>Optional (recommended for worker replicas)</td></tr>
+            <tr><td>MongoDB</td><td>Not required</td><td><strong>Required</strong></td></tr>
+            <tr><td>MongoDB topology</td><td>Not applicable</td><td>Replica set recommended; standalone works with <code>mode: polling</code></td></tr>
+            <tr><td>Sync mode</td><td>Not applicable (no runtime writes)</td><td><strong>Required:</strong> <code>mode: auto</code>, <code>change_stream</code>, or <code>polling</code></td></tr>
+            <tr><td>Session backend</td><td><code>redis</code> if sessions are used</td><td><code>redis</code> if sessions are used</td></tr>
+            <tr><td>Admin UI access</td><td>Separate admin instance only</td><td>Available on any instance</td></tr>
+            <tr><td>Prometheus scrape</td><td>Scrape all instances</td><td>Scrape all instances</td></tr>
           </tbody>
         </table>
       </div>
