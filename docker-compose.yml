@@ -1,15 +1,20 @@
-# go-virtual — full example stack
+# go-virtual — example stack
 #
-# Services:
-#   go-virtual    http://localhost:8080        mock server + admin UI at /_ui/
-#   mongo         localhost:27017              MongoDB (single-node replica set)
-#   mongo-express http://localhost:8081        MongoDB admin UI  (admin / pass)
-#   redis         localhost:6379               Redis
-#   redis-insight http://localhost:8082        Redis admin UI
+# Exposed ports (host):
+#   8080  go-virtual   mock server + Admin UI at /_ui/
+#   8081  mongo-express  MongoDB admin UI  (admin / pass)
+#   8082  redis-insight  Redis admin UI
 #
-# Usage:
+# MongoDB and Redis are internal only — no host port binding.
+#
+# Compatible with both:
 #   docker compose up -d
-#   docker compose down -v   # stop and remove volumes
+#   docker stack deploy -c docker-compose.yml go-virtual
+#
+# Note for Docker Stack: mongo-init runs once to initialise the replica set.
+# If mongo is not yet ready when mongo-init starts, it will retry up to 10
+# times (5 s apart) before giving up. On subsequent stack deployments the
+# rs.initiate() call is a no-op.
 
 services:
 
@@ -17,28 +22,44 @@ services:
   mongo:
     image: mongo:7
     command: mongod --replSet rs0 --bind_ip_all
-    ports:
-      - "27017:27017"
+    # No host port — accessible inside the stack network as "mongo:27017"
     volumes:
       - mongo-data:/data/db
+    networks:
+      - gv-net
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
-  # One-shot container that initialises the replica set on first boot.
-  # It exits immediately once rs.initiate() succeeds (idempotent on subsequent runs).
+  # One-shot service that initialises the replica set on first boot.
+  # Retries until mongo is ready, then exits. Idempotent on re-runs.
   mongo-init:
     image: mongo:7
-    depends_on:
-      mongo:
-        condition: service_healthy
-    entrypoint: >
-      mongosh --host mongo:27017 --quiet --eval
-      "try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0', members:[{_id:0,host:'mongo:27017'}]}) }"
-    restart: "no"
+    networks:
+      - gv-net
+    entrypoint:
+      - bash
+      - -c
+      - |
+        for i in $(seq 1 10); do
+          mongosh --host mongo:27017 --quiet --eval \
+            "try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }" \
+            && echo "Replica set ready" && exit 0
+          echo "Waiting for mongo... ($i/10)"
+          sleep 5
+        done
+        echo "ERROR: mongo did not become ready in time" && exit 1
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none          # run once and stop — required for Docker Stack
 
   # ── Mongo Express (MongoDB admin UI) ──────────────────────────────────────
   mongo-express:
@@ -50,24 +71,31 @@ services:
       ME_CONFIG_BASICAUTH_USERNAME: admin
       ME_CONFIG_BASICAUTH_PASSWORD: pass
       ME_CONFIG_OPTIONS_EDITORTHEME: dracula
-    depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
   # ── Redis ─────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     command: redis-server --save 60 1 --loglevel warning
-    ports:
-      - "6379:6379"
+    # No host port — accessible inside the stack network as "redis:6379"
     volumes:
       - redis-data:/data
+    networks:
+      - gv-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
   # ── RedisInsight (Redis admin UI) ─────────────────────────────────────────
   redis-insight:
@@ -76,10 +104,12 @@ services:
       - "8082:5540"
     volumes:
       - redis-insight-data:/data
-    depends_on:
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
   # ── go-virtual ────────────────────────────────────────────────────────────
   go-virtual:
@@ -100,12 +130,17 @@ services:
       # Logging
       GOVIRTUAL_LOGGING_LEVEL: info
       GOVIRTUAL_LOGGING_FORMAT: json
-    depends_on:
-      mongo-init:
-        condition: service_completed_successfully
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+networks:
+  gv-net:
+    driver: overlay
+    attachable: true   # allows plain "docker compose up" to attach containers
 
 volumes:
   mongo-data:
