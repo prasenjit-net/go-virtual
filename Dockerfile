@@ -7,7 +7,7 @@ COPY ui/ ./
 RUN npm run build
 
 # ── Stage 2: build Go binary ──────────────────────────────────────────────────
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 WORKDIR /app
 
 # Build args injected by docker buildx / release workflow
