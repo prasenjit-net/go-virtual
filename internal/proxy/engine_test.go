@@ -1520,3 +1520,101 @@ func TestServeHTTP_DisabledResponseConfig(t *testing.T) {
 		t.Errorf("expected 404 for disabled config, got %d", w.Code)
 	}
 }
+
+// --- StartRouteSync / debounce tests ----------------------------------------
+
+// TestStartRouteSync_ReloadsOnNotification verifies that sending on the
+// notification channel causes ReloadRoutes to be invoked (observed via a new
+// route becoming reachable).
+func TestStartRouteSync_ReloadsOnNotification(t *testing.T) {
+engine, st := setupTestEngine(t)
+
+ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+defer cancel()
+
+notifyCh := make(chan struct{}, 8)
+engine.StartRouteSync(ctx, notifyCh)
+
+// Verify route is not reachable yet.
+req := httptest.NewRequest("GET", "/sync-test", nil)
+w := httptest.NewRecorder()
+engine.ServeHTTP(w, req)
+if w.Code != http.StatusNotFound {
+t.Fatalf("expected 404 before spec load, got %d", w.Code)
+}
+
+// Add a spec + operation while the engine is running (simulates another
+// instance uploading a spec).
+spec := &models.Spec{ID: "sync-spec", Name: "Sync", Enabled: true}
+st.CreateSpec(spec)
+op := &models.Operation{
+ID:       "sync-op",
+SpecID:   "sync-spec",
+Method:   "GET",
+Path:     "/sync-test",
+FullPath: "/sync-test",
+}
+st.CreateOperation(op)
+st.CreateResponseConfig(&models.ResponseConfig{
+ID:          "sync-cfg",
+OperationID: "sync-op",
+Name:        "sync response",
+StatusCode:  200,
+Body:        `{"synced":true}`,
+Priority:    1,
+Enabled:     true,
+})
+
+// Trigger sync notification.
+notifyCh <- struct{}{}
+
+// Wait for the debounced reload (debounce is 200 ms, give 1 s headroom).
+deadline := time.Now().Add(1 * time.Second)
+for time.Now().Before(deadline) {
+req2 := httptest.NewRequest("GET", "/sync-test", nil)
+w2 := httptest.NewRecorder()
+engine.ServeHTTP(w2, req2)
+if w2.Code == http.StatusOK {
+return // ✓ route became reachable after sync
+}
+time.Sleep(50 * time.Millisecond)
+}
+
+t.Fatal("route did not become reachable within timeout after sync notification")
+}
+
+// TestStartRouteSync_DebouncesRapidBurst verifies that sending many
+// notifications in quick succession does not result in a reload count equal
+// to the burst size (they should be collapsed).
+func TestStartRouteSync_DebouncesRapidBurst(t *testing.T) {
+engine, _ := setupTestEngine(t)
+
+ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+defer cancel()
+
+notifyCh := make(chan struct{}, 64)
+engine.StartRouteSync(ctx, notifyCh)
+
+// Send a burst of 50 notifications at once.
+const burst = 50
+for i := 0; i < burst; i++ {
+select {
+case notifyCh <- struct{}{}:
+default:
+}
+}
+
+// Allow the debounce window + some margin to settle.
+time.Sleep(routeReloadDebounce + 300*time.Millisecond)
+
+// We can't introspect the reload count directly, but we can assert the
+// channel drains without deadlock and the engine is still healthy.
+req := httptest.NewRequest("GET", "/healthcheck-debounce", nil)
+w := httptest.NewRecorder()
+engine.ServeHTTP(w, req)
+// No route registered → 404 is expected. The test passes if we get here
+// without hanging.
+if w.Code != http.StatusNotFound {
+t.Errorf("unexpected status code %d", w.Code)
+}
+}

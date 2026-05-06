@@ -290,16 +290,66 @@ storage:
     database: "go-virtual"          # default
     collectionPrefix: "gv_"         # default; prefix for all collection names
     connectTimeoutSeconds: 10        # default
+    sync:
+      mode: "auto"                  # auto | change_stream | polling | off
+      pollIntervalSeconds: 10       # used by polling and auto-fallback
 ```
 
 When `storage.type` is `mongo`, both the entity storage (specs, operations, responses, scripts, bindings, tags, AI scenarios) and the global key-value store are backed by MongoDB. Each entity type has its own prefixed collection (e.g., `gv_specs`, `gv_responses`, `gv_global_store`).
+
+The `sync` subsection controls cross-instance synchronisation. See [Horizontal Scaling](#horizontal-scaling) below for details.
 
 The MongoDB URI, database name, collection prefix, and connection timeout can also be provided via environment variables using the `GOVIRTUAL_` prefix with underscores replacing dots:
 
 ```
 GOVIRTUAL_STORAGE_MONGO_URI=mongodb://host:27017
 GOVIRTUAL_STORAGE_MONGO_DATABASE=myapp
+GOVIRTUAL_STORAGE_MONGO_SYNC_MODE=auto
 ```
+
+## Horizontal Scaling
+
+Two clustering patterns are supported:
+
+### Pattern 1: Read-Only Headless (no MongoDB required)
+
+If specs and responses do not change during a deployment, run all instances with `server.headless: true` and `storage.type: file`. In headless mode the entire `/_api/` and `/_ui/` are not registered — no mutations can reach the storage layer, so every instance's in-memory route table is permanently consistent with the baked-in data.
+
+```yaml
+server:
+  headless: true
+storage:
+  type: file
+  path: /app/data        # pre-populated at image build time
+session:
+  storeType: redis       # only needed if using X-Virtual-Session-Id
+  redis:
+    addr: redis:6379
+```
+
+Workflow: author locally → export `data/` → bake into container image → roll out N headless replicas.
+
+### Pattern 2: MongoDB Live Sync
+
+When specs and responses need to be updated at runtime across all instances without a redeploy, use MongoDB storage with the sync subsystem enabled.
+
+- **Route table** (`proxy.Engine.routes`) — built from specs/operations at startup. Without sync, uploading a spec to Instance A leaves Instance B serving 404 for the new routes.
+- **Global store cache** (`MongoGlobalStore.cache`) — write-through in-memory map. Without sync, values written by scripts on Instance A are invisible on Instance B.
+
+The `storage.mongo.sync` subsystem solves both by watching MongoDB for changes:
+
+| Sync mode | Mechanism | Latency | MongoDB requirement |
+|-----------|-----------|---------|---------------------|
+| `change_stream` | MongoDB change stream cursors | Sub-second | Replica set or Atlas |
+| `polling` | SHA-256 fingerprint scan | Up to `pollIntervalSeconds` | Any deployment |
+| `auto` | Change streams, fallback to polling | Sub-second (or poll interval) | Any deployment |
+| `off` | No sync | — | Single-instance only |
+
+**Session state** is not synced through MongoDB. Use `session.storeType: redis` for shared sessions across instances.
+
+**Tracing and metrics** are per-instance by design. Point Prometheus at all instances to aggregate metrics.
+
+See the full [Clustering guide](docs/clustering.html) for architecture details, Docker Compose and Kubernetes examples, and a deployment checklist.
 
 ## API Surface
 

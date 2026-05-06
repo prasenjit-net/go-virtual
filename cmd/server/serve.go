@@ -113,6 +113,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	storageMongoDatabase := viper.GetString("storage.mongo.database")
 	storageMongoCollectionPrefix := viper.GetString("storage.mongo.collectionPrefix")
 	storageMongoConnectTimeout := viper.GetInt("storage.mongo.connectTimeoutSeconds")
+	storageMongoSyncMode := config.MongoSyncMode(viper.GetString("storage.mongo.sync.mode"))
+	storageMongoSyncPollInterval := viper.GetInt("storage.mongo.sync.pollIntervalSeconds")
 	if storageMongoDatabase == "" {
 		storageMongoDatabase = config.DefaultMongoDB
 	}
@@ -122,14 +124,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if storageMongoConnectTimeout <= 0 {
 		storageMongoConnectTimeout = config.DefaultMongoConnectTimeoutSeconds
 	}
+
+	// Build a single reusable MongoConfig for this run (used by storage,
+	// global store, and the sync watcher).
+	mongoCfg := config.MongoConfig{
+		URI:                   storageMongoURI,
+		Database:              storageMongoDatabase,
+		CollectionPrefix:      storageMongoCollectionPrefix,
+		ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		Sync: config.MongoSyncConfig{
+			Mode:                storageMongoSyncMode,
+			PollIntervalSeconds: storageMongoSyncPollInterval,
+		},
+	}
+	mongoCfg.Sync.Normalize()
+
 	switch storageType {
 	case config.StorageTypeMongo:
-		mongoCfg := config.MongoConfig{
-			URI:                   storageMongoURI,
-			Database:              storageMongoDatabase,
-			CollectionPrefix:      storageMongoCollectionPrefix,
-			ConnectTimeoutSeconds: storageMongoConnectTimeout,
-		}
 		store, err = newMongoStorageBackend(mongoCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize mongo storage: %w", err)
@@ -160,12 +171,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	storePath := storagePath // already resolved above
 	var globalStore gvstore.GlobalStoreBackend
 	if storageType == config.StorageTypeMongo {
-		mongoCfg := config.MongoConfig{
-			URI:                   storageMongoURI,
-			Database:              storageMongoDatabase,
-			CollectionPrefix:      storageMongoCollectionPrefix,
-			ConnectTimeoutSeconds: storageMongoConnectTimeout,
-		}
 		globalStore, err = newMongoGlobalStoreBackend(mongoCfg)
 		if err != nil {
 			serverLog.Warn("Failed to initialize mongo global store; starting with empty store", "event", "global_store_init_failed", "error", err)
@@ -224,6 +229,16 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to build proxy HTTP client: %w", err)
 	}
 	proxyEngine.SetProxyHTTPClient(proxyHTTPClient)
+
+	// Start cross-instance synchronisation for MongoDB deployments.
+	// This must happen after all engine dependencies are configured
+	// (session manager, AI generator, proxy client) so the first debounced
+	// ReloadRoutes() call runs with a fully-initialised engine.
+	if storageType == config.StorageTypeMongo {
+		syncCtx, cancelSync := context.WithCancel(context.Background())
+		defer cancelSync()
+		startMongoSync(syncCtx, mongoCfg, proxyEngine, globalStore)
+	}
 
 	// Resolve headless mode (flag overrides config)
 	headless := viper.GetBool("server.headless")

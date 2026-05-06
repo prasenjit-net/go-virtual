@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -98,6 +99,64 @@ func (e *Engine) SetProxyHTTPClient(client *http.Client) {
 func (e *Engine) SetAIGenerator(generator *ai.Generator) {
 	e.aiGenerator = generator
 	e.resetRuntimeWarnings()
+}
+
+// StartRouteSync starts a background goroutine that listens on notifyCh for
+// route-change signals and calls ReloadRoutes() with a debounce period to
+// collapse bursts (e.g. uploading a spec with many operations) into a single
+// reload.  The goroutine stops when ctx is cancelled.
+//
+// Call this once after the engine has been fully configured (session manager,
+// AI generator, proxy client, etc.).  Typical usage in the Mongo multi-
+// instance path:
+//
+//	notifyCh := make(chan struct{}, 8)
+//	engine.StartRouteSync(serverCtx, notifyCh)
+//	// ... wire notifyCh to the ChangeWatcher handler
+func (e *Engine) StartRouteSync(ctx context.Context, notifyCh <-chan struct{}) {
+	go e.routeSyncLoop(ctx, notifyCh)
+}
+
+const routeReloadDebounce = 200 * time.Millisecond
+
+// routeSyncLoop drains notifyCh and calls ReloadRoutes after a quiet period.
+func (e *Engine) routeSyncLoop(ctx context.Context, notifyCh <-chan struct{}) {
+	logger := logging.Logger("proxy.route_sync")
+	var timer *time.Timer
+
+	for {
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+
+		case _, ok := <-notifyCh:
+			if !ok {
+				return
+			}
+			// Reset (or start) the debounce timer.
+			if timer != nil {
+				timer.Stop()
+			}
+			timer = time.AfterFunc(routeReloadDebounce, func() {
+				if ctx.Err() != nil {
+					return
+				}
+				if err := e.ReloadRoutes(); err != nil {
+					logger.Error("Route sync reload failed",
+						"event", "route_sync_reload_error",
+						"error", err,
+					)
+				} else {
+					logger.Info("Routes reloaded via sync notification",
+						"event", "route_sync_reloaded",
+					)
+				}
+			})
+		}
+	}
 }
 
 // ReloadRoutes reloads all routes from enabled specs

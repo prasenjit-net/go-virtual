@@ -46,6 +46,10 @@
       <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
     </div>
     <div class="nav-section">
+      <div class="nav-section-label">Deployment</div>
+      <a href="clustering.html"><span class="nav-icon">☁️</span>Clustering</a>
+    </div>
+    <div class="nav-section">
       <div class="nav-section-label">Reference</div>
       <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
       <a href="configuration.html" class="active"><span class="nav-icon">⚙️</span>Configuration</a>
@@ -66,6 +70,8 @@
         <li><a href="#server">server</a></li>
         <li><a href="#tls">server.tls</a></li>
         <li><a href="#storage">storage</a></li>
+        <li><a href="#storage-mongo">storage.mongo</a></li>
+        <li><a href="#storage-mongo-sync">storage.mongo.sync</a></li>
         <li><a href="#tracing-config">tracing</a></li>
         <li><a href="#logging">logging</a></li>
         <li><a href="#scripting-config">scripting</a></li>
@@ -162,7 +168,7 @@
       <h2>storage</h2>
       <p>Configure where go-virtual persists its data.</p>
       <pre><code><span class="key">storage</span><span class="op">:</span>
-  <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>         <span class="cm"># "file" or "memory"</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>         <span class="cm"># "file", "memory", or "mongo"</span>
   <span class="key">path</span><span class="op">:</span> <span class="str">"./data"</span>      <span class="cm"># Base directory (only used with type: file)</span>
 </code></pre>
 
@@ -170,8 +176,8 @@
         <table>
           <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td>storage.type</td><td>string</td><td>"file"</td><td><code>"file"</code> for persistent JSON storage, <code>"memory"</code> for ephemeral in-memory storage.</td></tr>
-            <tr><td>storage.path</td><td>string</td><td>"./data"</td><td>Root directory for file storage. Created automatically if it doesn't exist.</td></tr>
+            <tr><td>storage.type</td><td>string</td><td>"file"</td><td><code>"file"</code> for persistent JSON storage, <code>"memory"</code> for ephemeral in-memory storage, <code>"mongo"</code> for MongoDB-backed storage.</td></tr>
+            <tr><td>storage.path</td><td>string</td><td>"./data"</td><td>Root directory for file storage. Created automatically if it doesn't exist. Unused when type is <code>mongo</code> or <code>memory</code>.</td></tr>
           </tbody>
         </table>
       </div>
@@ -189,6 +195,98 @@
       <pre><code><span class="key">storage</span><span class="op">:</span>
   <span class="key">type</span><span class="op">:</span> <span class="str">"memory"</span>
 </code></pre>
+
+      <h3>MongoDB storage</h3>
+      <p>MongoDB backs all entity storage (specs, operations, responses, scripts, AI scenarios, bindings, tags) and the global key-value store. Required for horizontally-scaled deployments. See the <a href="clustering.html">Clustering guide</a> for full details.</p>
+      <pre><code><span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"mongo"</span>
+  <span class="key">mongo</span><span class="op">:</span>
+    <span class="key">uri</span><span class="op">:</span> <span class="str">"mongodb://localhost:27017"</span>
+    <span class="key">database</span><span class="op">:</span> <span class="str">"go-virtual"</span>
+    <span class="key">collectionPrefix</span><span class="op">:</span> <span class="str">"gv_"</span>
+    <span class="key">connectTimeoutSeconds</span><span class="op">:</span> <span class="num">10</span>
+</code></pre>
+    </div>
+
+    <!-- storage.mongo -->
+    <div class="section" id="storage-mongo">
+      <h2>storage.mongo</h2>
+      <p>MongoDB connection settings. Only used when <code>storage.type</code> is <code>"mongo"</code>.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>storage.mongo.uri</td><td>string</td><td>""</td><td>MongoDB connection URI. E.g. <code>mongodb://localhost:27017</code> or a full Atlas connection string.</td></tr>
+            <tr><td>storage.mongo.database</td><td>string</td><td>"go-virtual"</td><td>Name of the MongoDB database to use.</td></tr>
+            <tr><td>storage.mongo.collectionPrefix</td><td>string</td><td>"gv_"</td><td>Prefix applied to all collection names so multiple go-virtual environments can share one database.</td></tr>
+            <tr><td>storage.mongo.connectTimeoutSeconds</td><td>integer</td><td>10</td><td>Timeout in seconds for the initial MongoDB connection and ping.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Collections created automatically</strong>
+          go-virtual creates all required collections and indexes on startup. You do not need to pre-create them.
+          Collections: <code>gv_specs</code>, <code>gv_operations</code>, <code>gv_responses</code>, <code>gv_scripts</code>, <code>gv_script_bindings</code>, <code>gv_ai_scenarios</code>, <code>gv_tags</code>, <code>gv_global_store</code>.
+        </div>
+      </div>
+    </div>
+
+    <!-- storage.mongo.sync -->
+    <div class="section" id="storage-mongo-sync">
+      <h2>storage.mongo.sync</h2>
+      <p>Controls how go-virtual instances synchronise their in-memory caches when multiple instances share the same MongoDB database. Without synchronisation, a spec uploaded to Instance A would not be visible on Instance B until a restart.</p>
+      <p>See the <a href="clustering.html">Clustering guide</a> for a full architectural explanation.</p>
+
+      <pre><code><span class="key">storage</span><span class="op">:</span>
+  <span class="key">mongo</span><span class="op">:</span>
+    <span class="key">sync</span><span class="op">:</span>
+      <span class="key">mode</span><span class="op">:</span> <span class="str">"auto"</span>              <span class="cm"># auto | change_stream | polling | off</span>
+      <span class="key">pollIntervalSeconds</span><span class="op">:</span> <span class="num">10</span>  <span class="cm"># polling cadence (used in "polling" and "auto" fallback)</span>
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>storage.mongo.sync.mode</td><td>string</td><td>"auto"</td><td>
+              Synchronisation strategy:
+              <ul>
+                <li><code>"auto"</code> — tries MongoDB change streams first; falls back to polling if the deployment does not support them (standalone mongod without <code>--replSet</code>).</li>
+                <li><code>"change_stream"</code> — forces change stream mode. Returns an error on standalone deployments.</li>
+                <li><code>"polling"</code> — periodic full-scan polling regardless of deployment type.</li>
+                <li><code>"off"</code> — disables synchronisation entirely. Only suitable for single-instance deployments.</li>
+              </ul>
+            </td></tr>
+            <tr><td>storage.mongo.sync.pollIntervalSeconds</td><td>integer</td><td>10</td><td>Polling interval in seconds. Used when <code>mode</code> is <code>"polling"</code> or as the fallback interval when <code>mode</code> is <code>"auto"</code> and change streams are unavailable.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Synchronisation modes explained</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Mode</th><th>Mechanism</th><th>Latency</th><th>Requirement</th></tr></thead>
+          <tbody>
+            <tr><td><code>change_stream</code></td><td>MongoDB change stream cursor on specs, operations, and global_store collections</td><td>Sub-second</td><td>Replica set or sharded cluster (Atlas always works)</td></tr>
+            <tr><td><code>polling</code></td><td>Periodic SHA-256 fingerprint scan of all watched documents</td><td>Up to <code>pollIntervalSeconds</code></td><td>Any MongoDB deployment including standalone</td></tr>
+            <tr><td><code>auto</code></td><td>Tries change streams; falls back to polling on error</td><td>Sub-second (or up to poll interval on fallback)</td><td>Works with any deployment</td></tr>
+            <tr><td><code>off</code></td><td>No synchronisation</td><td>Never</td><td>Single-instance only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Replica set required for change streams</strong>
+          A standalone <code>mongod</code> does not support change streams. Either use <code>mode: "auto"</code> (which falls back to polling) or start <code>mongod</code> with <code>--replSet rs0</code> and initialise the replica set.
+          MongoDB Atlas and replica-set clusters support change streams natively.
+        </div>
+      </div>
     </div>
 
     <!-- Tracing config -->
@@ -379,6 +477,16 @@
 <span class="key">storage</span><span class="op">:</span>
   <span class="key">type</span><span class="op">:</span> <span class="str">"file"</span>
   <span class="key">path</span><span class="op">:</span> <span class="str">"./data"</span>
+  <span class="cm"># MongoDB storage (uncomment to use)</span>
+  <span class="cm"># type: "mongo"</span>
+  <span class="cm"># mongo:</span>
+  <span class="cm">#   uri: "mongodb://localhost:27017"</span>
+  <span class="cm">#   database: "go-virtual"</span>
+  <span class="cm">#   collectionPrefix: "gv_"</span>
+  <span class="cm">#   connectTimeoutSeconds: 10</span>
+  <span class="cm">#   sync:</span>
+  <span class="cm">#     mode: "auto"              # auto | change_stream | polling | off</span>
+  <span class="cm">#     pollIntervalSeconds: 10</span>
 
 <span class="key">tracing</span><span class="op">:</span>
   <span class="key">maxTraces</span><span class="op">:</span> <span class="num">1000</span>
@@ -430,6 +538,11 @@
             <tr><td>GOVIRTUAL_SERVER_TLS_KEYFILE</td><td>server.tls.keyFile</td></tr>
             <tr><td>GOVIRTUAL_STORAGE_TYPE</td><td>storage.type</td></tr>
             <tr><td>GOVIRTUAL_STORAGE_PATH</td><td>storage.path</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_MONGO_URI</td><td>storage.mongo.uri</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_MONGO_DATABASE</td><td>storage.mongo.database</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_MONGO_COLLECTIONPREFIX</td><td>storage.mongo.collectionPrefix</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_MONGO_SYNC_MODE</td><td>storage.mongo.sync.mode</td></tr>
+            <tr><td>GOVIRTUAL_STORAGE_MONGO_SYNC_POLLINTERVALSECONDS</td><td>storage.mongo.sync.pollIntervalSeconds</td></tr>
             <tr><td>GOVIRTUAL_LOGGING_LEVEL</td><td>logging.level</td></tr>
             <tr><td>GOVIRTUAL_LOGGING_FORMAT</td><td>logging.format</td></tr>
             <tr><td>GOVIRTUAL_SESSION_HEADERNAME</td><td>session.headerName</td></tr>

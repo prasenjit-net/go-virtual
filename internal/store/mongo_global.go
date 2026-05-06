@@ -226,3 +226,49 @@ func (g *MongoGlobalStore) Snapshot() map[string]any {
 	}
 	return snapshot
 }
+
+// ApplyChangeEvent updates the in-memory cache in response to an external
+// mutation event delivered by the sync watcher.  It is used exclusively by
+// the cross-instance synchronisation path: the watcher detects a change in
+// MongoDB (either via a change stream or polling), fetches the affected
+// document (for inserts / replaces), and calls this method so that the local
+// cache reflects the authoritative state stored in MongoDB without requiring a
+// full reload.
+//
+// For insert and replace operations the method re-reads the document from
+// MongoDB to get the definitive value.  For delete operations it removes the
+// key from the cache.  All other operation types are ignored.
+func (g *MongoGlobalStore) ApplyChangeEvent(op, key string) {
+	switch op {
+	case "insert", "update", "replace":
+		ctx, cancel := g.ctxTimeout()
+		defer cancel()
+
+		var doc storeEntryDoc
+		err := g.collection.FindOne(ctx, bson.M{"_id": key}).Decode(&doc)
+		if err != nil {
+			// Document may have been deleted already; skip silently.
+			return
+		}
+		var val any
+		if err := json.Unmarshal([]byte(doc.Value), &val); err != nil {
+			val = doc.Value
+		}
+		entry := models.StoreEntry{
+			Key:       doc.Key,
+			Value:     val,
+			CreatedAt: doc.CreatedAt,
+			UpdatedAt: doc.UpdatedAt,
+		}
+
+		g.mu.Lock()
+		g.cache[key] = entry
+		g.mu.Unlock()
+
+	case "delete":
+		g.mu.Lock()
+		delete(g.cache, key)
+		g.mu.Unlock()
+	}
+}
+

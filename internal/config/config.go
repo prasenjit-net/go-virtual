@@ -134,12 +134,57 @@ type TLSConfig struct {
 	StorePath    string `yaml:"storePath"`    // Path to store auto-generated certs
 }
 
+// MongoSyncMode controls how this instance detects external changes made by
+// other instances sharing the same MongoDB database.
+type MongoSyncMode string
+
+const (
+	// MongoSyncModeAuto tries change streams first and falls back to polling
+	// when the deployment does not support them (standalone mongod).
+	MongoSyncModeAuto MongoSyncMode = "auto"
+	// MongoSyncModeChangeStream forces change-stream mode; returns an error on
+	// deployments that do not support it.
+	MongoSyncModeChangeStream MongoSyncMode = "change_stream"
+	// MongoSyncModePolling uses periodic polling regardless of deployment type.
+	MongoSyncModePolling MongoSyncMode = "polling"
+	// MongoSyncModeOff disables cross-instance synchronisation entirely.
+	// Only suitable for single-instance deployments.
+	MongoSyncModeOff MongoSyncMode = "off"
+
+	DefaultMongoSyncPollIntervalSeconds = 10
+)
+
+// MongoSyncConfig holds settings for cross-instance synchronisation when
+// MongoDB is the storage backend.
+type MongoSyncConfig struct {
+	// Mode controls the synchronisation strategy. Defaults to "auto".
+	Mode MongoSyncMode `yaml:"mode"`
+	// PollIntervalSeconds is the polling cadence used in "polling" and "auto"
+	// (fallback) modes. Defaults to 10.
+	PollIntervalSeconds int `yaml:"pollIntervalSeconds"`
+}
+
+// Normalize applies defaults.
+func (c *MongoSyncConfig) Normalize() {
+	switch c.Mode {
+	case MongoSyncModeChangeStream, MongoSyncModePolling, MongoSyncModeOff:
+		// valid — keep as-is
+	default:
+		c.Mode = MongoSyncModeAuto
+	}
+	if c.PollIntervalSeconds <= 0 {
+		c.PollIntervalSeconds = DefaultMongoSyncPollIntervalSeconds
+	}
+}
+
 // MongoConfig holds settings for MongoDB-backed storage.
 type MongoConfig struct {
-	URI                   string `yaml:"uri"`
-	Database              string `yaml:"database"`
-	CollectionPrefix      string `yaml:"collectionPrefix"`
-	ConnectTimeoutSeconds int    `yaml:"connectTimeoutSeconds"`
+	URI                   string          `yaml:"uri"`
+	Database              string          `yaml:"database"`
+	CollectionPrefix      string          `yaml:"collectionPrefix"`
+	ConnectTimeoutSeconds int             `yaml:"connectTimeoutSeconds"`
+	// Sync controls cross-instance route and store synchronisation.
+	Sync                  MongoSyncConfig `yaml:"sync"`
 }
 
 // StorageConfig holds storage configuration
@@ -168,6 +213,7 @@ func (c *StorageConfig) Normalize() {
 	if c.Mongo.ConnectTimeoutSeconds <= 0 {
 		c.Mongo.ConnectTimeoutSeconds = DefaultMongoConnectTimeoutSeconds
 	}
+	c.Mongo.Sync.Normalize()
 }
 
 // TracingConfig holds tracing configuration
