@@ -46,6 +46,10 @@
       <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
     </div>
     <div class="nav-section">
+      <div class="nav-section-label">Deployment</div>
+      <a href="clustering.html"><span class="nav-icon">☁️</span>Clustering</a>
+    </div>
+    <div class="nav-section">
       <div class="nav-section-label">Reference</div>
       <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
       <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
@@ -89,7 +93,8 @@
         <span class="feature-pill"><span class="dot"></span>Generated response management</span>
         <span class="feature-pill"><span class="dot"></span>TLS &amp; mTLS support</span>
         <span class="feature-pill"><span class="dot"></span>React admin UI</span>
-        <span class="feature-pill"><span class="dot"></span>File &amp; in-memory storage</span>
+        <span class="feature-pill"><span class="dot"></span>File, memory &amp; MongoDB storage</span>
+        <span class="feature-pill"><span class="dot"></span>Horizontal scaling with live sync</span>
         <span class="feature-pill"><span class="dot"></span>Docker ready</span>
       </div>
     </div>
@@ -178,6 +183,11 @@
           <div class="card-icon">⚙️</div>
           <div class="card-title">Configuration</div>
           <div class="card-desc">Full reference for <code>config.yaml</code>, CLI flags, TLS setup, and storage options.</div>
+        </a>
+        <a href="clustering.html" class="card">
+          <div class="card-icon">☁️</div>
+          <div class="card-title">Clustering</div>
+          <div class="card-desc">Deploy multiple go-virtual instances backed by MongoDB with live cross-instance synchronisation via change streams or polling.</div>
         </a>
       </div>
     </div>

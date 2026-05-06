@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clustering — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Deployment</div>
+      <a href="clustering.html" class="active"><span class="nav-icon">☁️</span>Clustering</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Clustering</div>
+      <h1>Clustering &amp; Horizontal Scaling</h1>
+      <p class="lead">Run multiple go-virtual instances behind a load balancer, all sharing a single MongoDB database, with automatic cross-instance synchronisation via MongoDB change streams or polling fallback.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#overview">Overview</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#sync-mechanism">Sync Mechanism</a></li>
+        <li><a href="#configuration">Configuration</a></li>
+        <li><a href="#sessions">Session State</a></li>
+        <li><a href="#global-store">Global Store Consistency</a></li>
+        <li><a href="#tracing-metrics">Tracing &amp; Metrics</a></li>
+        <li><a href="#docker-compose">Docker Compose Example</a></li>
+        <li><a href="#kubernetes">Kubernetes Example</a></li>
+        <li><a href="#checklist">Deployment Checklist</a></li>
+      </ul>
+    </div>
+
+    <!-- Overview -->
+    <div class="section" id="overview">
+      <h2>Overview</h2>
+      <p>The default file and memory storage backends are single-instance only — they cannot be shared across processes. When you need:</p>
+      <ul>
+        <li><strong>High availability</strong> — survive instance crashes without downtime</li>
+        <li><strong>Load distribution</strong> — spread mock traffic across multiple pods/containers</li>
+        <li><strong>Shared admin operations</strong> — upload a spec once and have it visible on all instances immediately</li>
+      </ul>
+      <p>… you need MongoDB storage with cross-instance synchronisation enabled.</p>
+
+      <h3>The synchronisation problem</h3>
+      <p>go-virtual keeps two critical in-memory caches that make it fast:</p>
+      <ol>
+        <li>
+          <strong>Route table</strong> (<code>proxy.Engine.routes</code>) — built from MongoDB at startup and used for every request to determine which spec/operation a request belongs to. Without synchronisation, uploading a spec to Instance A leaves Instance B serving <em>404 Not Found</em> for the new routes until it restarts.
+        </li>
+        <li>
+          <strong>Global store cache</strong> (<code>MongoGlobalStore.cache</code>) — an in-memory write-through map. Scripts that call <code>store.get()</code> read from this map. Without synchronisation, a value written by a script running on Instance A is invisible to scripts running on Instance B until the next startup.
+        </li>
+      </ol>
+      <p>The sync subsystem solves both problems by watching MongoDB for external writes and propagating changes to every instance in real time.</p>
+    </div>
+
+    <!-- Architecture -->
+    <div class="section" id="architecture">
+      <h2>Architecture</h2>
+      <p>All instances connect to the same MongoDB database. Admin API mutations (spec upload, response creation, store writes) persist directly to MongoDB. Each instance independently watches MongoDB for changes and updates its local caches.</p>
+
+      <pre><code>                Load Balancer
+               ┌──────┴───────┐
+          Instance A       Instance B
+          ┌──────────┐     ┌──────────┐
+          │ routes   │     │ routes   │ ← both reload on change
+          │ cache    │     │ cache    │ ← both patch on write
+          └────┬─────┘     └────┬─────┘
+               │                │
+               └───────┬────────┘
+                       │ shared
+                  ┌────▼──────────────────┐
+                  │      MongoDB          │
+                  │ ┌───────────────────┐ │
+                  │ │ gv_specs          │ │ ── Change Stream ──► all instances
+                  │ │ gv_operations     │ │ ── Change Stream ──► all instances
+                  │ │ gv_global_store   │ │ ── Change Stream ──► all instances
+                  │ └───────────────────┘ │
+                  └───────────────────────┘
+</code></pre>
+
+      <h3>Event flow when a spec is uploaded</h3>
+      <ol>
+        <li>Client calls <code>POST /_api/specs</code> on Instance A.</li>
+        <li>Instance A writes the spec document to <code>gv_specs</code> and all operation documents to <code>gv_operations</code> in MongoDB.</li>
+        <li>Instance A immediately calls <code>engine.ReloadRoutes()</code> on its own engine.</li>
+        <li>MongoDB emits <code>insert</code> change events on both collections.</li>
+        <li>Instance B's change stream goroutines receive the events and trigger a debounced route reload (200 ms quiet period).</li>
+        <li>Within ~200 ms of the write, all instances serve the new routes.</li>
+      </ol>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Debounce prevents burst reloads</strong>
+          Uploading a spec with 50 operations generates 51 MongoDB write events (1 spec + 50 operations). The 200 ms debounce window collapses these into a single <code>ReloadRoutes()</code> call per instance.
+        </div>
+      </div>
+    </div>
+
+    <!-- Prerequisites -->
+    <div class="section" id="prerequisites">
+      <h2>Prerequisites</h2>
+
+      <h3>MongoDB replica set (recommended)</h3>
+      <p>MongoDB change streams — the lowest-latency sync mechanism — require a replica set or a sharded cluster. A standalone <code>mongod</code> process does not support them.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Deployment type</th><th>Change streams</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>MongoDB Atlas (any tier)</td><td>✅ Yes</td><td>Replica set by default</td></tr>
+            <tr><td>Replica set (self-hosted)</td><td>✅ Yes</td><td>One primary, one or more secondaries</td></tr>
+            <tr><td>Sharded cluster</td><td>✅ Yes</td><td>Connect to mongos</td></tr>
+            <tr><td>Standalone <code>mongod</code></td><td>❌ No</td><td>Use <code>mode: polling</code> or add <code>--replSet rs0</code></td></tr>
+            <tr><td>Standalone with <code>--replSet rs0</code> + <code>rs.initiate()</code></td><td>✅ Yes</td><td>Single-node replica set, common in dev/CI</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Starting a single-node replica set (dev / CI)</h3>
+      <pre><code><span class="cm"># Start mongod with replica set name</span>
+mongod --replSet rs0 --port 27017 --dbpath /data/db
+
+<span class="cm"># In a mongo shell, initialise the set (once only)</span>
+mongosh --eval "rs.initiate()"
+</code></pre>
+
+      <p>Or use the Docker image:</p>
+      <pre><code>docker run -d --name mongo \
+  -p 27017:27017 \
+  mongo:7 \
+  mongod --replSet rs0 --bind_ip_all
+
+<span class="cm"># Initialise once</span>
+docker exec mongo mongosh --eval "rs.initiate()"
+</code></pre>
+
+      <h3>Using polling mode (no replica set)</h3>
+      <p>If you cannot configure a replica set, use <code>mode: polling</code>. Propagation will lag by up to <code>pollIntervalSeconds</code> (default 10 s), but no MongoDB configuration changes are needed.</p>
+    </div>
+
+    <!-- Sync mechanism -->
+    <div class="section" id="sync-mechanism">
+      <h2>Sync Mechanism</h2>
+
+      <h3>Change streams</h3>
+      <p>When <code>mode</code> is <code>"change_stream"</code> or <code>"auto"</code> on a replica set, go-virtual opens a long-lived change stream cursor on each watched collection using a dedicated MongoDB connection (separate from the storage connection pool). A goroutine per collection decodes incoming events and dispatches them:</p>
+      <ul>
+        <li><code>gv_specs</code> / <code>gv_operations</code> → signals the route reload channel</li>
+        <li><code>gv_global_store</code> → patches the in-memory store cache (re-reads the document for insert/update; removes the key for delete)</li>
+      </ul>
+      <p>The route reload channel is consumed by a debounce goroutine that waits for a 200 ms quiet period before calling <code>engine.ReloadRoutes()</code>. This collapses rapid burst events (e.g. bulk spec upload) into a single reload.</p>
+      <p>Transient cursor errors (network blip, cursor expiry) are retried with exponential back-off (1 s → 2 s → 4 s → … up to 60 s).</p>
+
+      <h3>Polling</h3>
+      <p>When <code>mode</code> is <code>"polling"</code> or as the fallback in <code>"auto"</code> mode on a standalone deployment, go-virtual runs a periodic scan every <code>pollIntervalSeconds</code> seconds. Each document is fingerprinted with SHA-256 of its data payload. Documents whose fingerprints have changed since the last scan are dispatched as synthetic change events using the same handler path as change streams.</p>
+      <p>The initial scan at startup records fingerprints without emitting events, preventing a flood of false-positive reloads on boot.</p>
+
+      <h3>What is watched</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Collection</th><th>Event types</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>gv_specs</code></td><td>insert, replace, update, delete</td><td>Debounced route table reload</td></tr>
+            <tr><td><code>gv_operations</code></td><td>insert, replace, update, delete</td><td>Debounced route table reload</td></tr>
+            <tr><td><code>gv_global_store</code></td><td>insert, replace, update, delete</td><td>In-memory store cache patch</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="section" id="configuration">
+      <h2>Configuration</h2>
+
+      <h3>Minimal clustered config</h3>
+      <pre><code><span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"mongo"</span>
+  <span class="key">mongo</span><span class="op">:</span>
+    <span class="key">uri</span><span class="op">:</span> <span class="str">"mongodb://mongo:27017/?replicaSet=rs0"</span>
+    <span class="key">database</span><span class="op">:</span> <span class="str">"go-virtual"</span>
+    <span class="key">sync</span><span class="op">:</span>
+      <span class="key">mode</span><span class="op">:</span> <span class="str">"auto"</span>
+</code></pre>
+
+      <h3>Full clustered config with all options</h3>
+      <pre><code><span class="key">server</span><span class="op">:</span>
+  <span class="key">port</span><span class="op">:</span> <span class="num">8080</span>
+  <span class="key">host</span><span class="op">:</span> <span class="str">"0.0.0.0"</span>
+
+<span class="key">storage</span><span class="op">:</span>
+  <span class="key">type</span><span class="op">:</span> <span class="str">"mongo"</span>
+  <span class="key">mongo</span><span class="op">:</span>
+    <span class="key">uri</span><span class="op">:</span> <span class="str">"mongodb://mongo:27017/?replicaSet=rs0"</span>
+    <span class="key">database</span><span class="op">:</span> <span class="str">"go-virtual"</span>
+    <span class="key">collectionPrefix</span><span class="op">:</span> <span class="str">"gv_"</span>
+    <span class="key">connectTimeoutSeconds</span><span class="op">:</span> <span class="num">10</span>
+    <span class="key">sync</span><span class="op">:</span>
+      <span class="key">mode</span><span class="op">:</span> <span class="str">"auto"</span>          <span class="cm"># auto | change_stream | polling | off</span>
+      <span class="key">pollIntervalSeconds</span><span class="op">:</span> <span class="num">10</span>
+
+<span class="cm"># Required for shared session state across instances</span>
+<span class="key">session</span><span class="op">:</span>
+  <span class="key">storeType</span><span class="op">:</span> <span class="str">"redis"</span>
+  <span class="key">headerName</span><span class="op">:</span> <span class="str">"X-Virtual-Session-Id"</span>
+  <span class="key">redis</span><span class="op">:</span>
+    <span class="key">addr</span><span class="op">:</span> <span class="str">"redis:6379"</span>
+    <span class="key">keyPrefix</span><span class="op">:</span> <span class="str">"go-virtual:sessions"</span>
+
+<span class="key">logging</span><span class="op">:</span>
+  <span class="key">level</span><span class="op">:</span> <span class="str">"info"</span>
+  <span class="key">format</span><span class="op">:</span> <span class="str">"json"</span>
+</code></pre>
+
+      <h3>Environment variable overrides</h3>
+      <pre><code>GOVIRTUAL_STORAGE_TYPE=mongo
+GOVIRTUAL_STORAGE_MONGO_URI=mongodb://mongo:27017/?replicaSet=rs0
+GOVIRTUAL_STORAGE_MONGO_DATABASE=go-virtual
+GOVIRTUAL_STORAGE_MONGO_SYNC_MODE=auto
+GOVIRTUAL_STORAGE_MONGO_SYNC_POLLINTERVALSECONDS=10
+</code></pre>
+    </div>
+
+    <!-- Session state -->
+    <div class="section" id="sessions">
+      <h2>Session State</h2>
+      <p>go-virtual sessions (per-client script state seeded from the global store) are <em>not</em> stored in MongoDB. The two supported session backends are:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Session backend</th><th>Multi-instance</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>memory</code> (default)</td><td>❌ No</td><td>Sessions are per-instance. A client routed to a different instance sees no session state.</td></tr>
+            <tr><td><code>redis</code></td><td>✅ Yes</td><td>Sessions are stored in Redis and shared across all instances.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
+        <div class="callout-body">
+          <strong>Use Redis sessions in clustered deployments</strong>
+          If your application under test uses the session header (<code>X-Virtual-Session-Id</code>) to maintain state across requests, you must configure <code>session.storeType: redis</code>. Without it, sessions are silently lost whenever a request lands on a different instance.
+        </div>
+      </div>
+
+      <pre><code><span class="key">session</span><span class="op">:</span>
+  <span class="key">storeType</span><span class="op">:</span> <span class="str">"redis"</span>
+  <span class="key">headerName</span><span class="op">:</span> <span class="str">"X-Virtual-Session-Id"</span>
+  <span class="key">inactivityTimeout</span><span class="op">:</span> <span class="str">"30m"</span>
+  <span class="key">maxSessions</span><span class="op">:</span> <span class="num">10000</span>
+  <span class="key">redis</span><span class="op">:</span>
+    <span class="key">addr</span><span class="op">:</span> <span class="str">"redis:6379"</span>
+    <span class="key">username</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">password</span><span class="op">:</span> <span class="str">""</span>
+    <span class="key">db</span><span class="op">:</span> <span class="num">0</span>
+    <span class="key">keyPrefix</span><span class="op">:</span> <span class="str">"go-virtual:sessions"</span>
+</code></pre>
+    </div>
+
+    <!-- Global store consistency -->
+    <div class="section" id="global-store">
+      <h2>Global Store Consistency</h2>
+      <p>The global key-value store is backed by MongoDB (<code>gv_global_store</code> collection) when using MongoDB storage. All instances share the same data.</p>
+
+      <h3>Write propagation</h3>
+      <p>When a Starlark script calls <code>store.set("key", value)</code> on Instance A:</p>
+      <ol>
+        <li>The value is written to the in-memory cache on Instance A immediately.</li>
+        <li>The write is persisted to MongoDB.</li>
+        <li>MongoDB emits a change event on <code>gv_global_store</code>.</li>
+        <li>All other instances receive the event via their change stream (or pick it up on the next poll cycle) and update their in-memory caches.</li>
+      </ol>
+
+      <h3>Consistency model</h3>
+      <p>The global store uses <strong>last-write-wins</strong> semantics. If two instances write the same key concurrently, MongoDB determines the winner (the last write to reach the primary). The change stream delivers the winning value to all instance caches.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Admin writes also sync</strong>
+          Global store entries set via the Admin UI or admin API (<code>PUT /_api/store/:key</code>) are also propagated to all instances through the same change stream mechanism.
+        </div>
+      </div>
+    </div>
+
+    <!-- Tracing and metrics -->
+    <div class="section" id="tracing-metrics">
+      <h2>Tracing &amp; Metrics</h2>
+      <p>Traces and statistics are kept <strong>in-memory per instance</strong> and are not shared across the cluster. This is intentional — cross-instance trace aggregation would require additional infrastructure (e.g. a distributed tracing backend).</p>
+      <p>Implications for clustered deployments:</p>
+      <ul>
+        <li>The Admin UI on Instance A shows only traces from Instance A. Route requests to a specific instance if you need to observe a particular request's trace.</li>
+        <li>Prometheus metrics (<code>/_prometheus</code>) are per-instance. Aggregate them with a Prometheus scrape job that targets all instances (e.g. via Kubernetes service discovery or static scrape targets).</li>
+        <li>The trace WebSocket stream (<code>/_api/traces/stream</code>) is per-instance.</li>
+      </ul>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Headless mode for worker instances</strong>
+          Worker instances that should not expose the Admin UI can run with <code>server.headless: true</code>. This disables <code>/_ui/</code> and <code>/_api/</code>. Proxy routing and <code>/_prometheus</code> remain available.
+        </div>
+      </div>
+    </div>
+
+    <!-- Docker Compose -->
+    <div class="section" id="docker-compose">
+      <h2>Docker Compose Example</h2>
+      <p>A full clustered setup with two go-virtual instances, MongoDB replica set, and Redis:</p>
+      <pre><code>version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    command: mongod --replSet rs0 --bind_ip_all
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      retries: 10
+
+  mongo-init:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: mongosh --host mongo:27017 --eval "rs.initiate()"
+    restart: "no"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  gv-1:
+    image: ghcr.io/prasenjit-net/go-virtual:latest
+    environment:
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: auto
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+    ports:
+      - "8081:8080"
+    depends_on:
+      - mongo-init
+      - redis
+
+  gv-2:
+    image: ghcr.io/prasenjit-net/go-virtual:latest
+    environment:
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: auto
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+    ports:
+      - "8082:8080"
+    depends_on:
+      - mongo-init
+      - redis
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - gv-1
+      - gv-2
+</code></pre>
+
+      <h3>Minimal nginx.conf for the load balancer</h3>
+      <pre><code>events {}
+http {
+  upstream go_virtual {
+    server gv-1:8080;
+    server gv-2:8080;
+  }
+  server {
+    listen 80;
+    location / {
+      proxy_pass http://go_virtual;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+    }
+  }
+}
+</code></pre>
+    </div>
+
+    <!-- Kubernetes -->
+    <div class="section" id="kubernetes">
+      <h2>Kubernetes Example</h2>
+      <pre><code>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-virtual
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: go-virtual
+  template:
+    metadata:
+      labels:
+        app: go-virtual
+    spec:
+      containers:
+        - name: go-virtual
+          image: ghcr.io/prasenjit-net/go-virtual:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GOVIRTUAL_STORAGE_TYPE
+              value: "mongo"
+            - name: GOVIRTUAL_STORAGE_MONGO_URI
+              valueFrom:
+                secretKeyRef:
+                  name: go-virtual-secrets
+                  key: mongo-uri
+            - name: GOVIRTUAL_STORAGE_MONGO_SYNC_MODE
+              value: "auto"
+            - name: GOVIRTUAL_SESSION_STORETYPE
+              value: "redis"
+            - name: GOVIRTUAL_SESSION_REDIS_ADDR
+              value: "redis-service:6379"
+          readinessProbe:
+            httpGet:
+              path: /_api/stats/summary
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-virtual
+spec:
+  selector:
+    app: go-virtual
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+</code></pre>
+    </div>
+
+    <!-- Checklist -->
+    <div class="section" id="checklist">
+      <h2>Deployment Checklist</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Requirement</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Storage backend</td><td><strong>Required:</strong> <code>storage.type: mongo</code></td><td>File and memory storage are single-instance only.</td></tr>
+            <tr><td>MongoDB topology</td><td><strong>Recommended:</strong> replica set</td><td>Required for change streams. Use <code>mode: polling</code> for standalone.</td></tr>
+            <tr><td>Sync mode</td><td><strong>Required:</strong> <code>mode: auto</code>, <code>change_stream</code>, or <code>polling</code></td><td><code>mode: off</code> means no cross-instance sync — avoid in clusters.</td></tr>
+            <tr><td>Session backend</td><td><strong>Required if sessions used:</strong> <code>session.storeType: redis</code></td><td>In-memory sessions are per-instance. Without Redis, sessions are lost on load-balanced requests.</td></tr>
+            <tr><td>Admin UI access</td><td><strong>Optional:</strong> expose Admin UI on one designated instance</td><td>Consider <code>server.headless: true</code> on worker replicas.</td></tr>
+            <tr><td>Prometheus scrape</td><td><strong>Recommended:</strong> scrape all instances</td><td>Metrics are per-instance. Add all instances as scrape targets.</td></tr>
+            <tr><td>MongoDB connection pool</td><td>Default is sufficient</td><td>The sync watcher opens a separate connection; it does not consume from the storage pool.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout success">
+        <span class="callout-icon">✅</span>
+        <div class="callout-body">
+          <strong>Ready to scale</strong>
+          With MongoDB storage, Redis sessions, and <code>sync.mode: auto</code>, go-virtual is fully horizontally scalable. Uploading a spec, modifying a response, or updating the global store on any instance propagates to all others within milliseconds (change streams) or within <code>pollIntervalSeconds</code> (polling fallback).
+        </div>
+      </div>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="configuration.html">&#8592; Configuration</a>
+        <a href="index.html">Back to Overview &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>
