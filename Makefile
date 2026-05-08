@@ -28,6 +28,7 @@ LD_FLAGS   := -s -w \
         lint lint-ui fmt \
         install-deps clean clean-build \
         docker-build docker-run \
+        compose-up compose-up-build compose-down compose-logs compose-ps \
         help
 
 # ── Default ───────────────────────────────────────────────────────────────────
@@ -158,6 +159,30 @@ docker-build:
 ## docker-run: Run the Docker image
 docker-run:
 	docker run --rm -p 8080:8080 $(BINARY):latest
+
+# ── Docker Compose (local dev) ────────────────────────────────────────────────
+
+DEV_COMPOSE_FILE ?= docker-compose.yml
+
+## compose-up: Start local dev stack (uses cached image if present)
+compose-up:
+	docker compose -f $(DEV_COMPOSE_FILE) up -d
+
+## compose-up-build: Build image from source and start local dev stack
+compose-up-build:
+	docker compose -f $(DEV_COMPOSE_FILE) up -d --build
+
+## compose-down: Stop and remove local dev containers (keeps data volume)
+compose-down:
+	docker compose -f $(DEV_COMPOSE_FILE) down
+
+## compose-logs: Tail logs from the local dev stack
+compose-logs:
+	docker compose -f $(DEV_COMPOSE_FILE) logs -f
+
+## compose-ps: Show status of local dev containers
+compose-ps:
+	docker compose -f $(DEV_COMPOSE_FILE) ps
 
 # ── Docker Swarm ──────────────────────────────────────────────────────────────
 
