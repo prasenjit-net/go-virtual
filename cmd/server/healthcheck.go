@@ -20,7 +20,15 @@ Intended for use as a Docker HEALTHCHECK instruction.`,
 		if port <= 0 {
 			port = 8080
 		}
-		url := fmt.Sprintf("http://127.0.0.1:%d/_health", port)
+
+		host := viper.GetString("server.host")
+		// The bind address 0.0.0.0 (or empty) means "all interfaces" —
+		// not a valid destination. Fall back to loopback for the probe.
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+
+		url := fmt.Sprintf("http://%s:%d/_health", host, port)
 
 		client := &http.Client{Timeout: 4 * time.Second}
 		resp, err := client.Get(url)
