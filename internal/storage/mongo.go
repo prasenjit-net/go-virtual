@@ -56,24 +56,42 @@ func NewMongoStorage(cfg config.MongoConfig) (*MongoStorage, error) {
 	if cfg.URI == "" {
 		return nil, fmt.Errorf("mongo storage: URI must not be empty")
 	}
-	timeout := time.Duration(cfg.ConnectTimeoutSeconds) * time.Second
-	if timeout <= 0 {
-		timeout = 10 * time.Second
+	pingTimeout := time.Duration(cfg.ConnectTimeoutSeconds) * time.Second
+	if pingTimeout <= 0 {
+		pingTimeout = 10 * time.Second
 	}
+	retryBudget := time.Duration(cfg.StartupRetrySeconds) * time.Second
 
-	opts := options.Client().ApplyURI(cfg.URI).SetConnectTimeout(timeout)
+	opts := options.Client().ApplyURI(cfg.URI).SetConnectTimeout(pingTimeout)
 	client, err := mongo.Connect(opts)
 	if err != nil {
 		return nil, fmt.Errorf("mongo storage: connect: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	if err := client.Ping(ctx, nil); err != nil {
-		_ = client.Disconnect(context.Background())
-		return nil, fmt.Errorf("mongo storage: ping: %w", err)
+	// Retry the initial ping until the replica set has elected a primary.
+	// This is required in Docker Swarm / Kubernetes where mongo-init may not
+	// have finished rs.initiate() by the time this container starts.
+	deadline := time.Now().Add(retryBudget)
+	attempt := 0
+	for {
+		attempt++
+		ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+		pingErr := client.Ping(ctx, nil)
+		cancel()
+		if pingErr == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = client.Disconnect(context.Background())
+			return nil, fmt.Errorf("mongo storage: ping: %w (gave up after %d attempt(s) over %s)", pingErr, attempt, retryBudget)
+		}
+		retryIn := 3 * time.Second
+		fmt.Printf("mongo storage: ping attempt %d failed (%v) — retrying in %s\n", attempt, pingErr, retryIn)
+		time.Sleep(retryIn)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
+	defer cancel()
 	s := &MongoStorage{
 		client: client,
 		db:     client.Database(cfg.Database),

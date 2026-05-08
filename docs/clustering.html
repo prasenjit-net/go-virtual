@@ -340,6 +340,10 @@ docker exec mongo mongosh --eval "rs.initiate()"
     <span class="key">database</span><span class="op">:</span> <span class="str">"go-virtual"</span>
     <span class="key">collectionPrefix</span><span class="op">:</span> <span class="str">"gv_"</span>
     <span class="key">connectTimeoutSeconds</span><span class="op">:</span> <span class="num">10</span>
+    <span class="cm"># Time budget for retrying the initial ping until the replica set is ready.</span>
+    <span class="cm"># Prevents startup failures in Docker Swarm / Kubernetes where rs.initiate()</span>
+    <span class="cm"># may complete after this container starts.</span>
+    <span class="key">startupRetrySeconds</span><span class="op">:</span> <span class="num">90</span>
     <span class="key">sync</span><span class="op">:</span>
       <span class="key">mode</span><span class="op">:</span> <span class="str">"auto"</span>          <span class="cm"># auto | change_stream | polling | off</span>
       <span class="key">pollIntervalSeconds</span><span class="op">:</span> <span class="num">10</span>
@@ -361,6 +365,7 @@ docker exec mongo mongosh --eval "rs.initiate()"
       <pre><code>GOVIRTUAL_STORAGE_TYPE=mongo
 GOVIRTUAL_STORAGE_MONGO_URI=mongodb://mongo:27017/?replicaSet=rs0
 GOVIRTUAL_STORAGE_MONGO_DATABASE=go-virtual
+GOVIRTUAL_STORAGE_MONGO_STARTUPRETRY_SECONDS=90
 GOVIRTUAL_STORAGE_MONGO_SYNC_MODE=auto
 GOVIRTUAL_STORAGE_MONGO_SYNC_POLLINTERVALSECONDS=10
 </code></pre>
