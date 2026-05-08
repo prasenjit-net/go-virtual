@@ -122,6 +122,8 @@ services:
       GOVIRTUAL_STORAGE_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
       GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
       GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: auto
+      # Allow up to 90 s for the replica set to elect a primary on first boot
+      GOVIRTUAL_STORAGE_MONGO_STARTUPRETRY_SECONDS: "90"
 
       # Sessions — shared across replicas via Redis
       GOVIRTUAL_SESSION_STORETYPE: redis
@@ -132,10 +134,18 @@ services:
       GOVIRTUAL_LOGGING_FORMAT: json
     networks:
       - gv-net
+    healthcheck:
+      test: ["CMD", "/go-virtual", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     deploy:
       replicas: 1
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 5
 
 networks:
   gv-net:

@@ -113,6 +113,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	storageMongoDatabase := viper.GetString("storage.mongo.database")
 	storageMongoCollectionPrefix := viper.GetString("storage.mongo.collectionPrefix")
 	storageMongoConnectTimeout := viper.GetInt("storage.mongo.connectTimeoutSeconds")
+	storageMongoStartupRetry := viper.GetInt("storage.mongo.startupRetrySeconds")
 	storageMongoSyncMode := config.MongoSyncMode(viper.GetString("storage.mongo.sync.mode"))
 	storageMongoSyncPollInterval := viper.GetInt("storage.mongo.sync.pollIntervalSeconds")
 	if storageMongoDatabase == "" {
@@ -132,6 +133,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		Database:              storageMongoDatabase,
 		CollectionPrefix:      storageMongoCollectionPrefix,
 		ConnectTimeoutSeconds: storageMongoConnectTimeout,
+		StartupRetrySeconds:   storageMongoStartupRetry,
 		Sync: config.MongoSyncConfig{
 			Mode:                storageMongoSyncMode,
 			PollIntervalSeconds: storageMongoSyncPollInterval,

@@ -159,6 +159,45 @@ docker-build:
 docker-run:
 	docker run --rm -p 8080:8080 $(BINARY):latest
 
+# ── Docker Swarm ──────────────────────────────────────────────────────────────
+
+STACK_NAME ?= go-virtual
+COMPOSE_FILE ?= docker-compose.yml
+
+## swarm-init: Initialise Docker Swarm on this node (skip if already active)
+swarm-init:
+	@docker info --format '{{.Swarm.LocalNodeState}}' | grep -q active \
+		&& echo "✓ Swarm already active" \
+		|| (docker swarm init && echo "✓ Swarm initialised")
+
+## swarm-deploy: Deploy (or update) the stack on the Swarm
+swarm-deploy: swarm-init
+	docker stack deploy --with-registry-auth -c $(COMPOSE_FILE) $(STACK_NAME)
+	@echo "✓ Stack '$(STACK_NAME)' deployed"
+	@echo "  Services:"
+	@docker stack services $(STACK_NAME)
+
+## swarm-status: Show stack services and their replica status
+swarm-status:
+	docker stack services $(STACK_NAME)
+
+## swarm-logs: Tail logs for a service  (usage: make swarm-logs SVC=go-virtual)
+SVC ?= go-virtual
+swarm-logs:
+	docker service logs --follow --tail 100 $(STACK_NAME)_$(SVC)
+
+## swarm-rm: Remove the stack (containers + networks, keeps volumes)
+swarm-rm:
+	docker stack rm $(STACK_NAME)
+	@echo "✓ Stack '$(STACK_NAME)' removed (volumes preserved)"
+
+## swarm-rm-volumes: Remove the stack AND its named volumes
+swarm-rm-volumes: swarm-rm
+	@echo "Waiting for stack to settle before removing volumes…"
+	@sleep 5
+	docker volume rm $(STACK_NAME)_mongo-data $(STACK_NAME)_redis-data $(STACK_NAME)_redis-insight-data 2>/dev/null || true
+	@echo "✓ Volumes removed"
+
 # ── Help ──────────────────────────────────────────────────────────────────────
 
 ## help: Print this help message

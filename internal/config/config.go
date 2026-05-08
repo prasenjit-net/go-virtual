@@ -31,6 +31,7 @@ const (
 	DefaultMongoDB                    = "go-virtual"
 	DefaultMongoCollectionPrefix      = "gv_"
 	DefaultMongoConnectTimeoutSeconds = 10
+	DefaultMongoStartupRetrySeconds   = 60
 )
 
 // Config holds the application configuration
@@ -183,8 +184,13 @@ type MongoConfig struct {
 	Database              string          `yaml:"database"`
 	CollectionPrefix      string          `yaml:"collectionPrefix"`
 	ConnectTimeoutSeconds int             `yaml:"connectTimeoutSeconds"`
+	// StartupRetrySeconds is the total time budget go-virtual will spend
+	// retrying the initial MongoDB ping. Useful in Docker Swarm / Kubernetes
+	// where the replica set may not be ready when this container first starts.
+	// 0 means a single attempt only (no retry). Default: 60.
+	StartupRetrySeconds int `yaml:"startupRetrySeconds"`
 	// Sync controls cross-instance route and store synchronisation.
-	Sync                  MongoSyncConfig `yaml:"sync"`
+	Sync MongoSyncConfig `yaml:"sync"`
 }
 
 // StorageConfig holds storage configuration
@@ -212,6 +218,12 @@ func (c *StorageConfig) Normalize() {
 	}
 	if c.Mongo.ConnectTimeoutSeconds <= 0 {
 		c.Mongo.ConnectTimeoutSeconds = DefaultMongoConnectTimeoutSeconds
+	}
+	if c.Mongo.StartupRetrySeconds < 0 {
+		c.Mongo.StartupRetrySeconds = 0
+	}
+	if c.Mongo.StartupRetrySeconds == 0 {
+		c.Mongo.StartupRetrySeconds = DefaultMongoStartupRetrySeconds
 	}
 	c.Mongo.Sync.Normalize()
 }
