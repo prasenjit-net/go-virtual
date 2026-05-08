@@ -45,4 +45,6 @@ FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=go-builder /go-virtual /go-virtual
 
 EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["/go-virtual", "healthcheck"]
 ENTRYPOINT ["/go-virtual", "serve"]

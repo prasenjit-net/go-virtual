@@ -85,6 +85,9 @@ func (r *Router) setupRoutes() {
 	// Prometheus metrics endpoint — always available, even in headless mode.
 	r.engine.GET("/_prometheus", gin.WrapH(promhttp.Handler()))
 
+	// Dedicated health endpoint — always available, even in headless mode.
+	r.engine.GET("/_health", r.handler.HealthCheck)
+
 	if r.headless {
 		// Headless mode: no admin API, no UI – proxy only
 		r.engine.NoRoute(func(c *gin.Context) {

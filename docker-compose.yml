@@ -135,7 +135,7 @@ services:
     networks:
       - gv-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/_prometheus | grep -q go_virtual || exit 1"]
+      test: ["CMD", "/go-virtual", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 6
