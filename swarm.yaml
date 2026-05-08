@@ -1,0 +1,157 @@
+# go-virtual — Docker Swarm stack (MongoDB + Redis, multi-instance)
+#
+# Exposed ports (host):
+#   8080  go-virtual   mock server + Admin UI at /_ui/
+#   8081  mongo-express  MongoDB admin UI  (admin / pass)
+#   8082  redis-insight  Redis admin UI
+#
+# MongoDB and Redis are internal only — no host port binding.
+#
+# Deploy:
+#   docker stack deploy -c swarm.yaml go-virtual
+#
+# Note: mongo-init runs once to initialise the replica set.
+# If mongo is not yet ready when mongo-init starts, it will retry up to 10
+# times (5 s apart) before giving up. On subsequent stack deployments the
+# rs.initiate() call is a no-op.
+
+services:
+
+  # ── MongoDB (single-node replica set for change stream support) ───────────
+  mongo:
+    image: mongo:7
+    command: mongod --replSet rs0 --bind_ip_all
+    # No host port — accessible inside the stack network as "mongo:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # One-shot service that initialises the replica set on first boot.
+  # Retries until mongo is ready, then exits. Idempotent on re-runs.
+  mongo-init:
+    image: mongo:7
+    networks:
+      - gv-net
+    entrypoint:
+      - bash
+      - -c
+      - |
+        for i in $(seq 1 10); do
+          mongosh --host mongo:27017 --quiet --eval \
+            "try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongo:27017'}]}) }" \
+            && echo "Replica set ready" && exit 0
+          echo "Waiting for mongo... ($i/10)"
+          sleep 5
+        done
+        echo "ERROR: mongo did not become ready in time" && exit 1
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: none          # run once and stop — required for Docker Stack
+
+  # ── Mongo Express (MongoDB admin UI) ──────────────────────────────────────
+  mongo-express:
+    image: mongo-express:1
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/?replicaSet=rs0
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: pass
+      ME_CONFIG_OPTIONS_EDITORTHEME: dracula
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
+    # No host port — accessible inside the stack network as "redis:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── RedisInsight (Redis admin UI) ─────────────────────────────────────────
+  redis-insight:
+    image: redis/redisinsight:latest
+    ports:
+      - "8082:5540"
+    volumes:
+      - redis-insight-data:/data
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── go-virtual ────────────────────────────────────────────────────────────
+  go-virtual:
+    image: prasenjitnet/go-virtual:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # Storage — MongoDB with change stream sync
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: mongodb://mongo:27017/?replicaSet=rs0
+      GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
+      GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: auto
+      # Allow up to 90 s for the replica set to elect a primary on first boot
+      GOVIRTUAL_STORAGE_MONGO_STARTUPRETRY_SECONDS: "90"
+
+      # Sessions — shared across replicas via Redis
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+
+      # Logging
+      GOVIRTUAL_LOGGING_LEVEL: info
+      GOVIRTUAL_LOGGING_FORMAT: json
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "/go-virtual", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+
+networks:
+  gv-net:
+    driver: overlay
+    attachable: true   # allows plain "docker compose up" to attach containers
+
+volumes:
+  mongo-data:
+  redis-data:
+  redis-insight-data:

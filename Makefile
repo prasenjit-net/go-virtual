@@ -162,7 +162,7 @@ docker-run:
 # ── Docker Swarm ──────────────────────────────────────────────────────────────
 
 STACK_NAME ?= go-virtual
-COMPOSE_FILE ?= docker-compose.yml
+COMPOSE_FILE ?= swarm.yaml
 
 ## swarm-init: Initialise Docker Swarm on this node (skip if already active)
 swarm-init:
