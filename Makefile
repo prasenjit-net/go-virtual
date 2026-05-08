@@ -167,11 +167,11 @@ DOCKER_COMPOSE   ?= docker-compose
 
 ## compose-up: Start local dev stack (uses cached image if present)
 compose-up:
-	DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 $(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d
 
 ## compose-up-build: Build image from source and start local dev stack
 compose-up-build:
-	DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 $(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d --build
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d --build
 
 ## compose-down: Stop and remove local dev containers (keeps data volume)
 compose-down:

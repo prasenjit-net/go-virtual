@@ -2,6 +2,9 @@
 # $BUILDPLATFORM = the host machine arch (e.g. linux/amd64).
 # The UI output is pure static files — architecture-independent — so there is
 # no reason to emulate arm64 here. This eliminates the QEMU npm timeout.
+# Default value ensures compatibility with non-buildx builders (docker-compose).
+ARG BUILDPLATFORM=linux/amd64
+ARG TARGETPLATFORM=linux/amd64
 FROM --platform=$BUILDPLATFORM node:20-alpine AS ui-builder
 WORKDIR /app/ui
 COPY ui/package.json ui/package-lock.json ./
