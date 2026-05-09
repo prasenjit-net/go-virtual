@@ -1,20 +1,26 @@
 # go-virtual — local development / quick-start
 #
-# Builds the image from source and runs a single instance using
-# file-based storage and in-memory sessions.
-# Spec data is persisted to ./data on the host.
+# Builds the image from source using Dockerfile.local (native platform,
+# no buildx required) and runs a single instance using file-based storage
+# and in-memory sessions. Spec data is persisted to ./data on the host.
 #
 # Usage:
-#   docker compose up --build
-#   docker compose up -d --build   # detached
-#   docker compose down -v         # stop and remove volumes
+#   docker-compose up --build        # build from source and start
+#   docker-compose up -d --build     # detached
+#   docker-compose down              # stop (./data is preserved)
+#
+# Or via Makefile:
+#   make compose-up-build            # build and start
+#   make compose-up                  # start with cached image
+#   make compose-down                # stop
+#   make compose-logs                # follow logs
 
 services:
 
   go-virtual:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "8080:8080"
     environment:

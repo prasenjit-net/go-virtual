@@ -1,10 +1,16 @@
+# Dockerfile — multi-arch CI/release build
+#
+# Requires Docker Buildx. Used by CI and release workflows to build
+# linux/amd64 + linux/arm64 images and push to Docker Hub.
+# BUILDPLATFORM and TARGETPLATFORM are injected by buildx automatically.
+#
+# For local single-arch builds see Dockerfile.dev.
+
 # ── Stage 1: build UI (always runs natively on the builder, not under QEMU) ──
-# $BUILDPLATFORM = the host machine arch (e.g. linux/amd64).
-# The UI output is pure static files — architecture-independent — so there is
-# no reason to emulate arm64 here. This eliminates the QEMU npm timeout.
-# Default value ensures compatibility with non-buildx builders (docker-compose).
-ARG BUILDPLATFORM=linux/amd64
-ARG TARGETPLATFORM=linux/amd64
+# Running on $BUILDPLATFORM ensures npm runs at native speed on the builder
+# host regardless of the target arch, avoiding slow QEMU-emulated arm64 builds.
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
 FROM --platform=$BUILDPLATFORM node:20-alpine AS ui-builder
 WORKDIR /app/ui
 COPY ui/package.json ui/package-lock.json ./
@@ -12,10 +18,9 @@ RUN npm ci
 COPY ui/ ./
 RUN npm run build
 
-# ── Stage 2: build Go binary (cross-compiled, no QEMU needed) ─────────────────
-# $BUILDPLATFORM = builder host arch; $TARGETPLATFORM = linux/amd64 or linux/arm64.
-# We build on the host and cross-compile via GOARCH so this stage also runs
-# natively — no emulation required.
+# ── Stage 2: build Go binary (cross-compiled natively, no QEMU needed) ───────
+# Build runs on $BUILDPLATFORM and cross-compiles for $TARGETPLATFORM via
+# GOOS/GOARCH, so no emulation is required even for arm64 targets.
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go-builder
 WORKDIR /app
 

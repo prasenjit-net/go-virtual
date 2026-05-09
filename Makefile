@@ -27,7 +27,7 @@ LD_FLAGS   := -s -w \
         test test-coverage \
         lint lint-ui fmt \
         install-deps clean clean-build \
-        docker-build docker-run \
+        docker-build docker-build-local docker-run \
         compose-up compose-up-build compose-down compose-logs compose-ps \
         help
 
@@ -152,15 +152,21 @@ clean-build:
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 
-## docker-build: Build Docker image
-docker-build:
-	docker build -t $(BINARY):$(VERSION) -t $(BINARY):latest .
+## docker-build-local: Build single-arch image for local use (no buildx needed)
+docker-build-local:
+	docker build -f Dockerfile.dev -t $(BINARY):dev -t $(BINARY):latest .
 
-## docker-run: Run the Docker image
+## docker-build: Build multi-arch image via buildx (requires buildx plugin)
+docker-build:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(BINARY):$(VERSION) -t $(BINARY):latest --push .
+
+## docker-run: Run the latest local image
 docker-run:
-	docker run --rm -p 8080:8080 $(BINARY):latest
+	docker run --rm -p 8080:8080 -v "$(PWD)/data:/home/nonroot/data" $(BINARY):latest
 
 # ── Docker Compose (local dev) ────────────────────────────────────────────────
+# Uses Dockerfile.local — no buildx required, builds for native platform.
 
 DEV_COMPOSE_FILE ?= docker-compose.yml
 DOCKER_COMPOSE   ?= docker-compose
@@ -173,7 +179,7 @@ compose-up:
 compose-up-build:
 	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d --build
 
-## compose-down: Stop and remove local dev containers (keeps data volume)
+## compose-down: Stop and remove local dev containers (keeps ./data volume)
 compose-down:
 	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) down
 

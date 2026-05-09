@@ -111,6 +111,10 @@ services:
         condition: on-failure
 
   # ── go-virtual ────────────────────────────────────────────────────────────
+  # Multi-arch image (linux/amd64 + linux/arm64) pulled from Docker Hub.
+  # Swarm selects the correct arch automatically.
+  # Tagged releases: prasenjitnet/go-virtual:<version>
+  # Latest CI build:  prasenjitnet/go-virtual:ci
   go-virtual:
     image: prasenjitnet/go-virtual:latest
     ports:
