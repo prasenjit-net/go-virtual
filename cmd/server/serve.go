@@ -117,6 +117,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	_ = viper.BindEnv("storage.mongo.connectTimeoutSeconds", "GOVIRTUAL_STORAGE_MONGO_CONNECT_TIMEOUT_SECONDS")
 	_ = viper.BindEnv("storage.mongo.startupRetrySeconds", "GOVIRTUAL_STORAGE_MONGO_STARTUP_RETRY_SECONDS")
 	_ = viper.BindEnv("storage.mongo.sync.pollIntervalSeconds", "GOVIRTUAL_STORAGE_MONGO_SYNC_POLL_INTERVAL_SECONDS")
+	_ = viper.BindEnv("storage.mongo.sync.mode", "GOVIRTUAL_STORAGE_MONGO_SYNC_MODE")
 
 	storageMongoURI := viper.GetString("storage.mongo.uri")
 	storageMongoDatabase := viper.GetString("storage.mongo.database")
