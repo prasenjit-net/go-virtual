@@ -126,7 +126,7 @@ services:
       GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
       GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: auto
       # Allow up to 90 s for the replica set to elect a primary on first boot
-      GOVIRTUAL_STORAGE_MONGO_STARTUPRETRY_SECONDS: "90"
+      GOVIRTUAL_STORAGE_MONGO_STARTUP_RETRY_SECONDS: "90"
 
       # Sessions — shared across replicas via Redis
       GOVIRTUAL_SESSION_STORETYPE: redis

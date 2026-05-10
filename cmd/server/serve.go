@@ -109,6 +109,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize storage
 	var store storage.Storage
 	var err error
+	// Explicitly bind env vars for camelCase viper keys. Viper's AutomaticEnv
+	// only replaces "." with "_"; it does NOT split camelCase. Without explicit
+	// BindEnv, GOVIRTUAL_STORAGE_MONGO_STARTUP_RETRY_SECONDS would not be
+	// recognised (viper would look for GOVIRTUAL_STORAGE_MONGO_STARTUPRETRYCONDS).
+	_ = viper.BindEnv("storage.mongo.collectionPrefix", "GOVIRTUAL_STORAGE_MONGO_COLLECTION_PREFIX")
+	_ = viper.BindEnv("storage.mongo.connectTimeoutSeconds", "GOVIRTUAL_STORAGE_MONGO_CONNECT_TIMEOUT_SECONDS")
+	_ = viper.BindEnv("storage.mongo.startupRetrySeconds", "GOVIRTUAL_STORAGE_MONGO_STARTUP_RETRY_SECONDS")
+	_ = viper.BindEnv("storage.mongo.sync.pollIntervalSeconds", "GOVIRTUAL_STORAGE_MONGO_SYNC_POLL_INTERVAL_SECONDS")
+
 	storageMongoURI := viper.GetString("storage.mongo.uri")
 	storageMongoDatabase := viper.GetString("storage.mongo.database")
 	storageMongoCollectionPrefix := viper.GetString("storage.mongo.collectionPrefix")
@@ -124,6 +133,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	}
 	if storageMongoConnectTimeout <= 0 {
 		storageMongoConnectTimeout = config.DefaultMongoConnectTimeoutSeconds
+	}
+	if storageMongoStartupRetry <= 0 {
+		storageMongoStartupRetry = config.DefaultMongoStartupRetrySeconds
 	}
 
 	// Build a single reusable MongoConfig for this run (used by storage,
