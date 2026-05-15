@@ -291,6 +291,14 @@ export const templatesApi = {
     },
 };
 
+// Conditions API
+export const conditionsApi = {
+    listRegexPatterns: async () => {
+        const response = await fetch(`${API_BASE}/conditions/regex-patterns`);
+        return handleResponse<{ token: string; description: string; pattern: string }[]>(response);
+    },
+};
+
 // Statistics API
 export const statsApi = {
     getGlobal: async () => {

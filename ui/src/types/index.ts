@@ -177,13 +177,31 @@ export interface Condition {
     key: string;
     operator: ConditionOperator;
     value: string;
+    /** Optional Go time layout hint for date operators (e.g. "2006-01-02"). Auto-detected when absent. */
+    format?: string;
+    /** When true, the condition result is inverted. */
+    negate?: boolean;
 }
 
 export type ConditionOperator =
-    | 'eq' | 'ne' | 'contains' | 'notContains'
-    | 'regex' | 'exists' | 'notExists'
+    | 'eq' | 'contains'
+    | 'regex' | 'exists'
     | 'gt' | 'lt' | 'gte' | 'lte'
-    | 'startsWith' | 'endsWith';
+    | 'startsWith' | 'endsWith'
+    // Date operators — value accepts date literals or dynamic tokens:
+    // now, today, yesterday, tomorrow, now+Nd, now-Nd, now+Nh, now-Nh, now+Nm, now-Nm
+    | 'dateEq' | 'dateBefore' | 'dateAfter' | 'dateLte' | 'dateGte'
+    | 'dateInPast' | 'dateInFuture' | 'dateToday'
+    | 'dateBetween'; // value = "<from>,<to>"
+
+/** Deprecated operators kept for backward compat — normalised client-side */
+export type DeprecatedConditionOperator = 'ne' | 'notContains' | 'notExists';
+
+export interface RegexPatternToken {
+    token: string;
+    description: string;
+    pattern: string;
+}
 
 // Trace types
 export interface Trace {
