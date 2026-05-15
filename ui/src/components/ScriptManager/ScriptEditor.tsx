@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Play, ChevronDown, ChevronUp,
-    Clock, ToggleLeft, ToggleRight, Loader2, Sparkles
+    Clock, ToggleLeft, ToggleRight, Loader2, Sparkles, BookOpen
 } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi, aiApi } from '../../services/api'
@@ -55,6 +55,9 @@ export default function ScriptEditor() {
     const [testBody, setTestBody] = useState('null')
     const [testResult, setTestResult] = useState<{ output: any; durationMs: number; error: string | null; logs?: string[] } | null>(null)
     const [isTesting, setIsTesting] = useState(false)
+
+    // Reference panel state
+    const [refOpen, setRefOpen] = useState(false)
 
     const { data: aiStatus = { configured: true, provider: 'openai' } } = useQuery<AIStatus>({
         queryKey: ['ai-status'],
@@ -467,6 +470,152 @@ export default function ScriptEditor() {
                     </div>
                 )}
 
+                {/* Builtin Reference panel */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
+                    <button
+                        onClick={() => setRefOpen(!refOpen)}
+                        className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            <BookOpen className="w-4 h-4 text-gray-500 dark:text-slate-400" />
+                            <span className="text-base font-semibold text-gray-900 dark:text-slate-100">Builtin Reference</span>
+                            <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">all available functions and modules</span>
+                        </div>
+                        {refOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </button>
+
+                    {refOpen && (
+                        <div className="px-6 pb-6 border-t border-gray-200 dark:border-slate-800 pt-4 space-y-5 text-sm">
+                            {/* Two-column layout for core and encoding */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                {/* Identifiers + Time */}
+                                <RefSection title="Identifiers &amp; Time">
+                                    <RefEntry sig="uuid()" ret="string" desc="Random UUID v4" />
+                                    <RefEntry sig='now()' ret="int" desc="Unix timestamp (seconds)" />
+                                    <RefEntry sig='now("unix_ms")' ret="int" desc="Milliseconds" />
+                                    <RefEntry sig='now("iso")' ret="string" desc='RFC3339 e.g. "2025-01-15T10:30:00Z"' />
+                                    <RefEntry sig='now("date")' ret="string" desc='"YYYY-MM-DD"' />
+                                    <RefEntry sig="sleep(ms)" ret="None" desc="Pause for ms milliseconds" />
+                                </RefSection>
+
+                                {/* Random */}
+                                <RefSection title="Random">
+                                    <RefEntry sig="rand_int(max)" ret="int" desc="[0, max] inclusive" />
+                                    <RefEntry sig="rand_int(min, max)" ret="int" desc="[min, max] inclusive" />
+                                    <RefEntry sig="rand_choice(list)" ret="value" desc="Random element from list" />
+                                    <RefEntry sig='counter("name")' ret="int" desc="Increment by 1, return new value" />
+                                    <RefEntry sig='counter("name", n)' ret="int" desc="Increment by n (0 = read)" />
+                                </RefSection>
+
+                                {/* Encoding + JSON */}
+                                <RefSection title="Encoding &amp; JSON">
+                                    <RefEntry sig="base64_encode(str)" ret="string" desc="Standard base64" />
+                                    <RefEntry sig="base64_decode(str)" ret="string" desc="Decode base64" />
+                                    <RefEntry sig='hash("sha256", str)' ret="string" desc="Hex digest. Algos: md5, sha1, sha256, sha512" />
+                                    <RefEntry sig="json_parse(str)" ret="value" desc="JSON string → dict/list" />
+                                    <RefEntry sig="json_stringify(value)" ret="string" desc="Value → JSON string" />
+                                </RefSection>
+
+                                {/* Regex */}
+                                <RefSection title="Regex">
+                                    <RefEntry sig="regex_match(pattern, str)" ret="bool" desc="True if pattern matches anywhere" />
+                                    <RefEntry sig="regex_find(pattern, str)" ret="string|None" desc="First match or None" />
+                                    <RefEntry sig="regex_find_all(pattern, str)" ret="list" desc="All non-overlapping matches" />
+                                </RefSection>
+
+                                {/* Store */}
+                                <RefSection title="Store (session key-value)">
+                                    <RefEntry sig='store.get("key")' ret="value|None" desc="Read value" />
+                                    <RefEntry sig='store.get("key", default)' ret="value" desc="Read with fallback" />
+                                    <RefEntry sig='store.set("key", value)' ret="None" desc="Write value" />
+                                    <RefEntry sig='store.has("key")' ret="bool" desc="Check existence" />
+                                    <RefEntry sig='store.delete("key")' ret="None" desc="Remove key" />
+                                    <RefEntry sig="store.keys()" ret="list" desc="All session keys" />
+                                </RefSection>
+
+                                {/* Log */}
+                                <RefSection title="Logging">
+                                    <RefEntry sig="log(...)" ret="None" desc="Append to request trace log" />
+                                    <div className="text-xs text-gray-400 dark:text-slate-500 font-mono mt-1">log("msg", value, ...)</div>
+                                </RefSection>
+                            </div>
+
+                            {/* datetime module — full width */}
+                            <RefSection title="datetime module">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                                    <div className="space-y-0.5">
+                                        <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">datetime.date</div>
+                                        <RefEntry sig="datetime.date(year, month, day)" ret="date" />
+                                        <RefEntry sig="datetime.date.today()" ret="date" desc="Today UTC" />
+                                        <RefEntry sig='datetime.date.fromisoformat("YYYY-MM-DD")' ret="date" />
+                                        <RefEntry sig="date.year / .month / .day" ret="int" />
+                                        <RefEntry sig="date.weekday()" ret="int" desc="0=Mon … 6=Sun" />
+                                        <RefEntry sig="date.isoformat()" ret="string" desc='"YYYY-MM-DD"' />
+                                        <RefEntry sig='date.strftime("2006/01/02")' ret="string" desc="Go layout tokens" />
+                                        <RefEntry sig="date + timedelta" ret="date" />
+                                        <RefEntry sig="date - timedelta" ret="date" />
+                                        <RefEntry sig="date - date" ret="timedelta" />
+                                        <RefEntry sig="date == / < / > date" ret="bool" />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1">datetime.datetime</div>
+                                        <RefEntry sig="datetime.datetime(year, month, day, hour?, minute?, second?)" ret="datetime" />
+                                        <RefEntry sig="datetime.datetime.now()" ret="datetime" />
+                                        <RefEntry sig='datetime.datetime.fromisoformat(str)' ret="datetime" desc="RFC3339 / ISO" />
+                                        <RefEntry sig="datetime.datetime.fromtimestamp(secs)" ret="datetime" />
+                                        <RefEntry sig="dt.year / .month / .day / .hour / .minute / .second" ret="int" />
+                                        <RefEntry sig="dt.date()" ret="date" desc="Strip time" />
+                                        <RefEntry sig="dt.isoformat()" ret="string" desc="RFC3339" />
+                                        <RefEntry sig="dt.timestamp()" ret="int" desc="Unix seconds" />
+                                        <RefEntry sig="dt +/- timedelta" ret="datetime" />
+                                        <RefEntry sig="dt - datetime" ret="timedelta" />
+                                        <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mb-1 mt-2">datetime.timedelta</div>
+                                        <RefEntry sig="datetime.timedelta(days?, hours?, minutes?, seconds?)" ret="timedelta" />
+                                        <RefEntry sig="td.days / .hours / .minutes / .seconds" ret="int" />
+                                        <RefEntry sig="td.total_seconds()" ret="float" />
+                                        <RefEntry sig="timedelta +/- timedelta" ret="timedelta" />
+                                    </div>
+                                </div>
+                                <div className="mt-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded px-2 py-1">
+                                    ⚠ strftime uses Go layout tokens, not Python %d/%m/%Y — use <code className="font-mono">2006</code> for year, <code className="font-mono">01</code> for month, <code className="font-mono">02</code> for day.
+                                </div>
+                            </RefSection>
+
+                            {/* validate module — full width */}
+                            <RefSection title="validate module">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6">
+                                    <div className="space-y-0.5">
+                                        <RefEntry sig='validate.matches(value, "uuid")' ret="bool" desc="Token name or raw regex" />
+                                        <RefEntry sig="validate.regex(value, pattern)" ret="bool" desc="Raw regex only" />
+                                        <RefEntry sig="validate.pattern_names()" ret="list" desc="All registered token names" />
+                                        <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide mt-2 mb-1">Convenience helpers</div>
+                                        <RefEntry sig="validate.is_uuid(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_email(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_url(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_ipv4(v) / is_ipv6(v) / is_ip(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_us_phone(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_us_zip(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_ssn(v)" ret="bool" />
+                                    </div>
+                                    <div className="space-y-0.5">
+                                        <RefEntry sig="validate.is_date_iso(v)" ret="bool" desc='"YYYY-MM-DD"' />
+                                        <RefEntry sig="validate.is_datetime_iso(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_integer(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_decimal(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_semver(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_jwt(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_slug(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_base64(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_hex_color(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_credit_card(v)" ret="bool" />
+                                        <RefEntry sig="validate.is_iban(v)" ret="bool" />
+                                    </div>
+                                </div>
+                            </RefSection>
+                        </div>
+                    )}
+                </div>
+
                 {/* Save actions */}
                 <div className="flex items-center gap-3">
                     <button
@@ -506,5 +655,29 @@ export default function ScriptEditor() {
             />
         )}
         </>
+    )
+}
+
+// ─── Reference panel helpers ──────────────────────────────────────────────────
+
+function RefSection({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <div>
+            <div
+                className="text-xs font-bold text-primary-600 dark:text-primary-400 uppercase tracking-wider mb-2 border-b border-gray-100 dark:border-slate-800 pb-1"
+                dangerouslySetInnerHTML={{ __html: title }}
+            />
+            <div className="space-y-0.5">{children}</div>
+        </div>
+    )
+}
+
+function RefEntry({ sig, ret, desc }: { sig: string; ret?: string; desc?: string }) {
+    return (
+        <div className="flex flex-wrap items-baseline gap-x-2 text-xs py-0.5">
+            <code className="font-mono text-gray-800 dark:text-slate-200 text-[11px]">{sig}</code>
+            {ret && <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono shrink-0">→ {ret}</span>}
+            {desc && <span className="text-gray-400 dark:text-slate-500">{desc}</span>}
+        </div>
     )
 }

@@ -46,6 +46,11 @@ func getCachedRegexp(pattern string) (*regexp.Regexp, error) {
 // sess is used by the counter() builtin (nil → local fallback map).
 // rng is a per-execution random source.
 func injectBuiltins(predeclared starlark.StringDict, rng *rand.Rand, sess store.SessionState) {
+	// ── datetime module ──────────────────────────────────────────────────────
+	predeclared["datetime"] = newDatetimeModule()
+
+	// ── validate module ──────────────────────────────────────────────────────
+	predeclared["validate"] = newValidateModule()
 	// ── uuid() ──────────────────────────────────────────────────────────────
 	// uuid() → string   Generate a random UUID v4.
 	predeclared["uuid"] = starlark.NewBuiltin("uuid", func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
@@ -343,4 +348,6 @@ var builtinNames = map[string]bool{
 	"regex_match":    true,
 	"regex_find":     true,
 	"regex_find_all": true,
+	"datetime":       true,
+	"validate":       true,
 }

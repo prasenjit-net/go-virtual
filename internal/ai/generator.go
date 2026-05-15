@@ -315,7 +315,7 @@ Every script MUST define:
         return result
 
 The return value is stored under the binding's outputKey and is accessible in response
-templates as {{.script.<outputKey>.<field>}} or {{.script.<outputKey>}} for scalar values.
+templates as {{script "binding.field"}} or {{script "binding"}} for scalar values.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REQUEST OBJECT — req
@@ -333,6 +333,162 @@ Examples:
   status  = req["query"].get("status", "available")
   token   = req["header"].get("authorization", "")
   name    = req["body"].get("name", "") if req["body"] != None else ""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BUILTIN FUNCTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The following builtins are always available (NO import needed):
+
+── Identifiers ──────────────────────────
+  uuid()                          → string   Random UUID v4, e.g. "550e8400-e29b-41d4-a716-446655440000"
+
+── Time (primitives) ────────────────────
+  now()                           → int      Unix timestamp in seconds
+  now("unix_ms")                  → int      Unix timestamp in milliseconds
+  now("iso")                      → string   RFC3339, e.g. "2025-01-15T10:30:00Z"
+  now("date")                     → string   Date only, e.g. "2025-01-15"
+
+── Random ───────────────────────────────
+  rand_int(max)                   → int      Random int in [0, max] inclusive
+  rand_int(min, max)              → int      Random int in [min, max] inclusive
+  rand_choice(list)               → value    One element picked at random
+
+── Counters ─────────────────────────────
+  counter("name")                 → int      Increment by 1, return new value
+  counter("name", n)              → int      Increment by n (use 0 to read current)
+  Note: counter is backed by the session store (key "__counter__:<name>")
+
+── Encoding ─────────────────────────────
+  base64_encode(str)              → string   Standard base64 encoding
+  base64_decode(str)              → string   Standard base64 decoding
+  hash("sha256", str)             → string   Hex digest. Algos: md5, sha1, sha256, sha512
+
+── JSON ─────────────────────────────────
+  json_parse(str)                 → value    Parse JSON string into Starlark dict/list
+  json_stringify(value)           → string   Serialize Starlark value to JSON string
+
+── Regex ────────────────────────────────
+  regex_match(pattern, str)       → bool     True if pattern matches anywhere in str
+  regex_find(pattern, str)        → string|None   First match, or None
+  regex_find_all(pattern, str)    → list     All non-overlapping matches (may be empty)
+
+── Timing ───────────────────────────────
+  sleep(ms)                       → None     Pause for up to ms milliseconds
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DATETIME MODULE — datetime
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+datetime is a built-in module (no import). Use datetime.date, datetime.datetime, and
+datetime.timedelta for date arithmetic.
+
+IMPORTANT: Use Go time layout strings for strftime (e.g. "2006-01-02", "15:04:05").
+           This is different from Python's strftime — use Go layout tokens, not %d/%m/%Y.
+
+── datetime.date ────────────────────────
+  datetime.date(year, month, day)         → date      Construct a date
+  datetime.date.today()                   → date      Today's date (UTC)
+  datetime.date.fromisoformat("YYYY-MM-DD") → date    Parse ISO date string
+
+  date.year / date.month / date.day       → int       Field access
+  date.weekday()                          → int       0=Monday … 6=Sunday
+  date.isoformat()                        → string    "YYYY-MM-DD"
+  date.strftime("2006/01/02")             → string    Formatted using Go layout
+  date + timedelta                        → date
+  date - timedelta                        → date
+  date - date                             → timedelta
+  date == date / date < date              → bool      Comparison operators work
+
+── datetime.datetime ────────────────────
+  datetime.datetime(year, month, day, hour=0, minute=0, second=0) → datetime
+  datetime.datetime.now()                 → datetime  Current UTC datetime
+  datetime.datetime.utcnow()              → datetime  Same as now()
+  datetime.datetime.fromisoformat(str)    → datetime  Parse ISO string (RFC3339 / "YYYY-MM-DD HH:MM:SS")
+  datetime.datetime.fromtimestamp(secs)   → datetime  From Unix timestamp
+
+  dt.year / dt.month / dt.day / dt.hour / dt.minute / dt.second → int
+  dt.weekday()                            → int       0=Monday … 6=Sunday
+  dt.date()                               → date      Strip time component
+  dt.isoformat()                          → string    RFC3339 "2025-01-15T10:30:00Z"
+  dt.strftime("2006-01-02 15:04:05")      → string    Formatted using Go layout
+  dt.timestamp()                          → int       Unix timestamp (seconds)
+  dt + timedelta / dt - timedelta         → datetime
+  dt - datetime                           → timedelta
+
+── datetime.timedelta ───────────────────
+  datetime.timedelta(days=0, hours=0, minutes=0, seconds=0) → timedelta
+  td.days / td.hours / td.minutes / td.seconds → int  (total, not components)
+  td.total_seconds()                      → float     Total duration in seconds
+  timedelta + timedelta / timedelta - timedelta → timedelta
+  timedelta == timedelta / timedelta < timedelta → bool
+
+Example — date arithmetic (user's requested pattern):
+  def run(req):
+      today = datetime.date.today()
+      three_days_ago = today - datetime.timedelta(days=3)
+      return {
+          "c_day": today.isoformat(),
+          "c_day_minus_3": three_days_ago.isoformat(),
+      }
+
+Example — check if a date is in the future:
+  def run(req):
+      date_str = req["query"].get("date", "")
+      if date_str == "":
+          return {"error": "missing date"}
+      d = datetime.date.fromisoformat(date_str)
+      today = datetime.date.today()
+      return {"is_future": d > today, "days_from_now": (d - today).days}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+VALIDATE MODULE — validate
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+validate is a built-in module (no import) for validating values against named patterns
+or raw regular expressions.
+
+  validate.matches(value, token_or_pattern) → bool
+    Checks value against a named token OR a raw regex. Named tokens are preferred.
+    Token names: uuid, uuid4, email, url, ipv4, ipv6, ip, us-phone, us-zip, ssn,
+                 date-iso, datetime-iso, time-hms, integer, decimal, alpha,
+                 alphanumeric, slug, hex-color, base64, jwt, credit-card, iban, semver
+
+  validate.regex(value, pattern)            → bool   Raw regex only (no token expansion)
+  validate.pattern_names()                  → list   All registered token names
+
+  validate.is_uuid(value)                   → bool
+  validate.is_email(value)                  → bool
+  validate.is_url(value)                    → bool
+  validate.is_ipv4(value)                   → bool
+  validate.is_ipv6(value)                   → bool
+  validate.is_ip(value)                     → bool
+  validate.is_us_phone(value)               → bool
+  validate.is_us_zip(value)                 → bool
+  validate.is_ssn(value)                    → bool
+  validate.is_date_iso(value)               → bool   "YYYY-MM-DD"
+  validate.is_datetime_iso(value)           → bool
+  validate.is_integer(value)                → bool
+  validate.is_decimal(value)                → bool
+  validate.is_semver(value)                 → bool
+  validate.is_jwt(value)                    → bool
+  validate.is_slug(value)                   → bool
+  validate.is_base64(value)                 → bool
+  validate.is_hex_color(value)              → bool
+  validate.is_credit_card(value)            → bool
+  validate.is_iban(value)                   → bool
+
+Example — validate body fields:
+  def run(req):
+      body = req["body"]
+      if body == None:
+          return {"error": "missing body"}
+      email = body.get("email", "")
+      if not validate.is_email(email):
+          return {"error": "invalid email"}
+      phone = body.get("phone", "")
+      if phone != "" and not validate.is_us_phone(phone):
+          return {"error": "invalid phone"}
+      id = store.get("next_id", 1)
+      store.set("next_id", id + 1)
+      return {"id": id, "email": email, "status": "created"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STORE BUILTIN — store
@@ -402,10 +558,28 @@ Example 4 — read and validate request body:
       name = body.get("name", "")
       if name == "":
           return {"error": "name is required"}
+      if not validate.is_email(body.get("email", "")):
+          return {"error": "invalid email"}
       id = store.get("next_id", 1)
       store.set("next_id", id + 1)
       store.set("pet_" + str(id), {"id": id, "name": name})
       return {"id": id, "name": name, "status": "available"}
+
+Example 5 — use uuid and hash:
+  def run(req):
+      token = uuid()
+      hashed = hash("sha256", token)
+      return {"token": token, "fingerprint": hashed[:8]}
+
+Example 6 — date-based logic:
+  def run(req):
+      dt = datetime.datetime.now()
+      expiry = dt + datetime.timedelta(days=30)
+      return {
+          "issued_at": dt.isoformat(),
+          "expires_at": expiry.isoformat(),
+          "token": uuid(),
+      }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT
@@ -789,6 +963,11 @@ var validOperators = map[string]bool{
 	"regex": true, "exists": true, "notExists": true,
 	"gt": true, "lt": true, "gte": true, "lte": true,
 	"startsWith": true, "endsWith": true,
+	// date operators
+	"dateEq": true, "dateBefore": true, "dateAfter": true,
+	"dateBeforeOrEq": true, "dateAfterOrEq": true,
+	"dateInPast": true, "dateInFuture": true,
+	"dateToday": true, "dateWithinDays": true,
 }
 
 // validateConditions returns an error if any condition has an invalid source or operator.
