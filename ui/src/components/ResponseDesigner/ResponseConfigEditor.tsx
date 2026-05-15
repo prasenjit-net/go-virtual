@@ -50,6 +50,29 @@ const DATE_OPERATORS = new Set<ConditionOperator>([
 ])
 const DATE_NO_VALUE_OPERATORS = new Set<ConditionOperator>(['dateInPast', 'dateInFuture', 'dateToday'])
 
+/** Named date tokens offered as autocomplete suggestions */
+const DATE_TOKENS: { token: string; description: string }[] = [
+    { token: 'today',      description: 'Current date at midnight' },
+    { token: 'now',        description: 'Current date and time' },
+    { token: 'yesterday',  description: 'Yesterday at midnight' },
+    { token: 'tomorrow',   description: 'Tomorrow at midnight' },
+    { token: 'now+1d',     description: '1 day from now' },
+    { token: 'now-1d',     description: '1 day ago' },
+    { token: 'now+7d',     description: '7 days from now' },
+    { token: 'now-7d',     description: '7 days ago' },
+    { token: 'now+14d',    description: '14 days from now' },
+    { token: 'now+30d',    description: '30 days from now' },
+    { token: 'now-30d',    description: '30 days ago' },
+    { token: 'now+90d',    description: '90 days from now' },
+    { token: 'now+365d',   description: '1 year from now' },
+    { token: 'now+1h',     description: '1 hour from now' },
+    { token: 'now-1h',     description: '1 hour ago' },
+    { token: 'now+6h',     description: '6 hours from now' },
+    { token: 'now+24h',    description: '24 hours from now' },
+    { token: 'now+1n',     description: '1 minute from now' },
+    { token: 'now-1n',     description: '1 minute ago' },
+]
+
 const sources = ['path', 'query', 'header', 'body', 'signature'] as const
 
 const templateDocs = {
@@ -602,9 +625,21 @@ export default function ResponseConfigEditor({
                                             ))}
                                         </datalist>
                                     )}
+                                    {DATE_OPERATORS.has(cond.operator) && !DATE_NO_VALUE_OPERATORS.has(cond.operator) && (
+                                        <datalist id={`date-tokens-${index}`}>
+                                            {DATE_TOKENS.map(t => (
+                                                <option key={t.token} value={t.token}>{t.description}</option>
+                                            ))}
+                                        </datalist>
+                                    )}
                                     <input
                                         type="text"
-                                        list={cond.operator === 'regex' ? `regex-patterns-${index}` : undefined}
+                                        autoComplete="off"
+                                        list={
+                                            cond.operator === 'regex' ? `regex-patterns-${index}`
+                                            : (DATE_OPERATORS.has(cond.operator) && !DATE_NO_VALUE_OPERATORS.has(cond.operator)) ? `date-tokens-${index}`
+                                            : undefined
+                                        }
                                         value={cond.value}
                                         onChange={(e) => updateCondition(index, { value: e.target.value })}
                                         placeholder={
@@ -628,19 +663,27 @@ export default function ResponseConfigEditor({
                                         <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
-                                {DATE_OPERATORS.has(cond.operator) && (
+                                {DATE_OPERATORS.has(cond.operator) && !DATE_NO_VALUE_OPERATORS.has(cond.operator) && (
                                     <div className="flex items-center gap-2 pl-1">
                                         <span className="text-xs text-gray-400 dark:text-slate-500 w-24 shrink-0">Format hint</span>
                                         <input
                                             type="text"
+                                            autoComplete="off"
                                             value={cond.format ?? ''}
                                             onChange={(e) => updateCondition(index, { format: e.target.value || undefined })}
                                             placeholder="auto-detect  (e.g. 2006-01-02 or 01/02/2006)"
                                             className="flex-1 px-2 py-1 border border-gray-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-500 dark:text-slate-400 placeholder-gray-300 dark:placeholder-slate-600"
                                         />
-                                        <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">
-                                            Tokens: now · today · yesterday · tomorrow · now±Nd/Nh/Nm
-                                        </span>
+                                        {(() => {
+                                            const tok = DATE_TOKENS.find(t => t.token.toLowerCase() === cond.value.toLowerCase())
+                                            return tok ? (
+                                                <span className="text-xs text-violet-600 dark:text-violet-400 font-medium shrink-0">{tok.description}</span>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">
+                                                    {cond.operator === 'dateBetween' ? 'two comma-separated values' : 'token or date literal'}
+                                                </span>
+                                            )
+                                        })()}
                                     </div>
                                 )}
                                 {cond.operator === 'regex' && cond.value && regexPatterns && (
