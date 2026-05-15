@@ -13,7 +13,7 @@ interface ResponseConfigEditorProps {
     variant?: 'modal' | 'page'
 }
 
-const operators: { value: ConditionOperator; label: string }[] = [
+const operators: { value: ConditionOperator; label: string; group?: string }[] = [
     { value: 'eq', label: 'Equals' },
     { value: 'ne', label: 'Not Equals' },
     { value: 'contains', label: 'Contains' },
@@ -27,7 +27,23 @@ const operators: { value: ConditionOperator; label: string }[] = [
     { value: 'lt', label: 'Less Than' },
     { value: 'gte', label: 'Greater or Equal' },
     { value: 'lte', label: 'Less or Equal' },
+    // Date operators
+    { value: 'dateEq', label: 'Date Equals', group: 'date' },
+    { value: 'dateBefore', label: 'Date Before', group: 'date' },
+    { value: 'dateAfter', label: 'Date After', group: 'date' },
+    { value: 'dateLte', label: 'Date ≤', group: 'date' },
+    { value: 'dateGte', label: 'Date ≥', group: 'date' },
+    { value: 'dateInPast', label: 'Date In Past', group: 'date' },
+    { value: 'dateInFuture', label: 'Date In Future', group: 'date' },
+    { value: 'dateToday', label: 'Date Is Today', group: 'date' },
+    { value: 'dateBetween', label: 'Date Between', group: 'date' },
 ]
+
+const DATE_OPERATORS = new Set<ConditionOperator>([
+    'dateEq', 'dateBefore', 'dateAfter', 'dateLte', 'dateGte',
+    'dateInPast', 'dateInFuture', 'dateToday', 'dateBetween',
+])
+const DATE_NO_VALUE_OPERATORS = new Set<ConditionOperator>(['dateInPast', 'dateInFuture', 'dateToday'])
 
 const sources = ['path', 'query', 'header', 'body', 'signature'] as const
 
@@ -508,7 +524,8 @@ export default function ResponseConfigEditor({
                         </p>
                         <div className="space-y-2">
                             {conditions.map((cond, index) => (
-                                <div key={index} className="flex items-center gap-2">
+                                <div key={index} className="space-y-1">
+                                <div className="flex items-center gap-2">
                                     <select
                                         value={cond.source}
                                         onChange={(e) =>
@@ -537,19 +554,36 @@ export default function ResponseConfigEditor({
                                         }
                                         className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
                                     >
-                                        {operators.map((op) => (
-                                            <option key={op.value} value={op.value}>
-                                                {op.label}
-                                            </option>
-                                        ))}
+                                        <optgroup label="String / Numeric">
+                                            {operators.filter(op => !op.group).map((op) => (
+                                                <option key={op.value} value={op.value}>
+                                                    {op.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        <optgroup label="Date">
+                                            {operators.filter(op => op.group === 'date').map((op) => (
+                                                <option key={op.value} value={op.value}>
+                                                    {op.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
                                     </select>
                                     <input
                                         type="text"
                                         value={cond.value}
                                         onChange={(e) => updateCondition(index, { value: e.target.value })}
-                                        placeholder="value"
+                                        placeholder={
+                                            DATE_NO_VALUE_OPERATORS.has(cond.operator) ? '—'
+                                            : cond.operator === 'dateBetween' ? 'from,to  e.g. today,now+7d'
+                                            : DATE_OPERATORS.has(cond.operator) ? 'e.g. today, now+7d, 2025-01-01'
+                                            : 'value'
+                                        }
                                         className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                                        disabled={cond.operator === 'exists' || cond.operator === 'notExists'}
+                                        disabled={
+                                            cond.operator === 'exists' || cond.operator === 'notExists' ||
+                                            DATE_NO_VALUE_OPERATORS.has(cond.operator)
+                                        }
                                     />
                                     <button
                                         type="button"
@@ -558,6 +592,22 @@ export default function ResponseConfigEditor({
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
+                                </div>
+                                {DATE_OPERATORS.has(cond.operator) && (
+                                    <div className="flex items-center gap-2 pl-1">
+                                        <span className="text-xs text-gray-400 dark:text-slate-500 w-24 shrink-0">Format hint</span>
+                                        <input
+                                            type="text"
+                                            value={cond.format ?? ''}
+                                            onChange={(e) => updateCondition(index, { format: e.target.value || undefined })}
+                                            placeholder="auto-detect  (e.g. 2006-01-02 or 01/02/2006)"
+                                            className="flex-1 px-2 py-1 border border-gray-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-500 dark:text-slate-400 placeholder-gray-300 dark:placeholder-slate-600"
+                                        />
+                                        <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">
+                                            Tokens: now · today · yesterday · tomorrow · now±Nd/Nh/Nm
+                                        </span>
+                                    </div>
+                                )}
                                 </div>
                             ))}
                         </div>

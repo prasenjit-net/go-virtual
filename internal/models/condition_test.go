@@ -38,6 +38,15 @@ func TestOperatorConstants(t *testing.T) {
 		{OpLTE, "lte"},
 		{OpStartsWith, "startsWith"},
 		{OpEndsWith, "endsWith"},
+		{OpDateEquals, "dateEq"},
+		{OpDateBefore, "dateBefore"},
+		{OpDateAfter, "dateAfter"},
+		{OpDateLte, "dateLte"},
+		{OpDateGte, "dateGte"},
+		{OpDateInPast, "dateInPast"},
+		{OpDateInFuture, "dateInFuture"},
+		{OpDateToday, "dateToday"},
+		{OpDateBetween, "dateBetween"},
 	}
 
 	for _, op := range operators {
@@ -65,14 +74,17 @@ func TestValidSources(t *testing.T) {
 func TestValidOperators(t *testing.T) {
 	operators := ValidOperators()
 
-	if len(operators) != 13 {
-		t.Errorf("Expected 13 operators, got %d", len(operators))
+	if len(operators) != 22 {
+		t.Errorf("Expected 22 operators, got %d", len(operators))
 	}
 
 	// Check that key operators are included
 	expectedOps := map[string]bool{
 		"eq": true, "ne": true, "contains": true, "regex": true,
 		"exists": true, "gt": true, "lt": true,
+		"dateEq": true, "dateBefore": true, "dateAfter": true,
+		"dateLte": true, "dateGte": true, "dateInPast": true,
+		"dateInFuture": true, "dateToday": true, "dateBetween": true,
 	}
 
 	for _, op := range operators {
