@@ -46,8 +46,14 @@ func (e *Evaluator) EvaluateAll(conditions []models.Condition, data *RequestData
 
 // Evaluate evaluates a single condition against request data
 func (e *Evaluator) Evaluate(cond models.Condition, data *RequestData) bool {
+	// Normalise deprecated negative operators before evaluating.
+	cond = models.NormaliseDeprecatedOperator(cond)
 	value := e.extractValue(cond.Source, cond.Key, data)
-	return e.compare(value, cond.Operator, cond.Value, cond.Format)
+	result := e.compare(value, cond.Operator, cond.Value, cond.Format)
+	if cond.Negate {
+		return !result
+	}
+	return result
 }
 
 // extractValue extracts a value from request data based on source and key
@@ -100,7 +106,7 @@ func (e *Evaluator) compare(actual, operator, expected, format string) bool {
 	case models.OpEndsWith:
 		return strings.HasSuffix(actual, expected)
 	case models.OpRegex:
-		re, err := regexp.Compile(expected)
+		re, err := regexp.Compile(Expand(expected))
 		if err != nil {
 			return false
 		}

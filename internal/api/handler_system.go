@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prasenjit/go-virtual/internal/condition"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/version"
 )
@@ -323,4 +324,9 @@ func (h *Handler) renameTagUsage(oldName, newName string) {
 			}
 		}
 	}
+}
+
+// ListRegexPatterns returns the named regex pattern catalogue for use with the regex condition operator.
+func (h *Handler) ListRegexPatterns(c *gin.Context) {
+c.JSON(http.StatusOK, condition.PatternCatalogue())
 }

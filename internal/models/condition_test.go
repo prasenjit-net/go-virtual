@@ -26,12 +26,9 @@ func TestOperatorConstants(t *testing.T) {
 		expected string
 	}{
 		{OpEquals, "eq"},
-		{OpNotEquals, "ne"},
 		{OpContains, "contains"},
-		{OpNotContains, "notContains"},
 		{OpRegex, "regex"},
 		{OpExists, "exists"},
-		{OpNotExists, "notExists"},
 		{OpGreaterThan, "gt"},
 		{OpLessThan, "lt"},
 		{OpGTE, "gte"},
@@ -47,6 +44,10 @@ func TestOperatorConstants(t *testing.T) {
 		{OpDateInFuture, "dateInFuture"},
 		{OpDateToday, "dateToday"},
 		{OpDateBetween, "dateBetween"},
+		// Deprecated — keep constants
+		{OpNotEquals, "ne"},
+		{OpNotContains, "notContains"},
+		{OpNotExists, "notExists"},
 	}
 
 	for _, op := range operators {
@@ -74,25 +75,46 @@ func TestValidSources(t *testing.T) {
 func TestValidOperators(t *testing.T) {
 	operators := ValidOperators()
 
-	if len(operators) != 22 {
-		t.Errorf("Expected 22 operators, got %d", len(operators))
+	// 10 standard + 9 date = 19 current operators (deprecated excluded)
+	if len(operators) != 19 {
+		t.Errorf("Expected 19 operators, got %d", len(operators))
 	}
 
-	// Check that key operators are included
-	expectedOps := map[string]bool{
-		"eq": true, "ne": true, "contains": true, "regex": true,
-		"exists": true, "gt": true, "lt": true,
-		"dateEq": true, "dateBefore": true, "dateAfter": true,
-		"dateLte": true, "dateGte": true, "dateInPast": true,
-		"dateInFuture": true, "dateToday": true, "dateBetween": true,
-	}
-
+	// Deprecated operators must NOT appear in ValidOperators
+	deprecated := map[string]bool{"ne": true, "notContains": true, "notExists": true}
 	for _, op := range operators {
-		delete(expectedOps, op)
+		if deprecated[op] {
+			t.Errorf("Deprecated operator %q should not appear in ValidOperators()", op)
+		}
 	}
 
-	if len(expectedOps) > 0 {
-		t.Errorf("Missing operators: %v", expectedOps)
+	// Key operators must be present
+	required := map[string]bool{
+		"eq": true, "contains": true, "regex": true, "exists": true,
+		"gt": true, "lt": true,
+		"dateEq": true, "dateBefore": true, "dateInPast": true, "dateBetween": true,
+	}
+	for _, op := range operators {
+		delete(required, op)
+	}
+	if len(required) > 0 {
+		t.Errorf("Missing operators: %v", required)
+	}
+}
+
+func TestDeprecatedOperators(t *testing.T) {
+	deps := DeprecatedOperators()
+	if len(deps) != 3 {
+		t.Errorf("Expected 3 deprecated operators, got %d", len(deps))
+	}
+	set := map[string]bool{}
+	for _, d := range deps {
+		set[d] = true
+	}
+	for _, expected := range []string{"ne", "notContains", "notExists"} {
+		if !set[expected] {
+			t.Errorf("Expected %q in DeprecatedOperators()", expected)
+		}
 	}
 }
 
@@ -115,5 +137,66 @@ func TestConditionStruct(t *testing.T) {
 	}
 	if cond.Value != "123" {
 		t.Errorf("Expected value '123', got %q", cond.Value)
+	}
+	if cond.Negate {
+		t.Error("Expected Negate to default to false")
+	}
+}
+
+func TestNormaliseDeprecatedOperator(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       Condition
+		wantOp      string
+		wantNegate  bool
+	}{
+		{
+			name:       "ne → eq + negate",
+			input:      Condition{Operator: OpNotEquals, Value: "x"},
+			wantOp:     OpEquals,
+			wantNegate: true,
+		},
+		{
+			name:       "notContains → contains + negate",
+			input:      Condition{Operator: OpNotContains, Value: "x"},
+			wantOp:     OpContains,
+			wantNegate: true,
+		},
+		{
+			name:       "notExists → exists + negate",
+			input:      Condition{Operator: OpNotExists},
+			wantOp:     OpExists,
+			wantNegate: true,
+		},
+		{
+			name:       "ne with negate already true → eq + negate false (double negate)",
+			input:      Condition{Operator: OpNotEquals, Negate: true},
+			wantOp:     OpEquals,
+			wantNegate: false,
+		},
+		{
+			name:       "current operator unchanged",
+			input:      Condition{Operator: OpEquals, Value: "x"},
+			wantOp:     OpEquals,
+			wantNegate: false,
+		},
+		{
+			name:       "regex unchanged",
+			input:      Condition{Operator: OpRegex, Value: "uuid"},
+			wantOp:     OpRegex,
+			wantNegate: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormaliseDeprecatedOperator(tt.input)
+			if got.Operator != tt.wantOp {
+				t.Errorf("operator: got %q, want %q", got.Operator, tt.wantOp)
+			}
+			if got.Negate != tt.wantNegate {
+				t.Errorf("negate: got %v, want %v", got.Negate, tt.wantNegate)
+			}
+		})
 	}
 }

@@ -933,3 +933,199 @@ func TestEvaluate_DateOperators(t *testing.T) {
 		})
 	}
 }
+
+// ── Negate field tests ───────────────────────────────────────────────────────
+
+func TestEvaluate_Negate(t *testing.T) {
+e := NewEvaluator()
+
+tests := []struct {
+name     string
+cond     models.Condition
+data     *RequestData
+expected bool
+}{
+{
+name:     "eq match + negate = false",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpEquals, Value: "x", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"x"}}},
+expected: false,
+},
+{
+name:     "eq no match + negate = true",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpEquals, Value: "x", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"y"}}},
+expected: true,
+},
+{
+name:     "contains match + negate = false",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpContains, Value: "foo", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"foobar"}}},
+expected: false,
+},
+{
+name:     "contains no match + negate = true",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpContains, Value: "foo", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"hello"}}},
+expected: true,
+},
+{
+name:     "exists + negate on missing key = true",
+cond:     models.Condition{Source: models.SourceQuery, Key: "missing", Operator: models.OpExists, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{}},
+expected: true,
+},
+{
+name:     "exists + negate on present key = false",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpExists, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"v"}}},
+expected: false,
+},
+{
+name:     "regex match + negate = false",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpRegex, Value: `^\d+$`, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"123"}}},
+expected: false,
+},
+{
+name:     "regex no match + negate = true",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpRegex, Value: `^\d+$`, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"abc"}}},
+expected: true,
+},
+{
+name:     "dateInPast match + negate = false",
+cond:     models.Condition{Source: models.SourceQuery, Key: "d", Operator: models.OpDateInPast, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"d": {"1999-01-01"}}},
+expected: false,
+},
+{
+name:     "dateInPast no match (future) + negate = true",
+cond:     models.Condition{Source: models.SourceQuery, Key: "d", Operator: models.OpDateInPast, Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"d": {"2099-01-01"}}},
+expected: true,
+},
+{
+name:     "deprecated ne still works",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: "ne", Value: "x"},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"y"}}},
+expected: true,
+},
+{
+name:     "deprecated notExists still works",
+cond:     models.Condition{Source: models.SourceQuery, Key: "missing", Operator: "notExists"},
+data:     &RequestData{QueryParams: map[string][]string{}},
+expected: true,
+},
+{
+name:     "deprecated notContains still works",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: "notContains", Value: "foo"},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"hello"}}},
+expected: true,
+},
+{
+name:     "negate false does not change result",
+cond:     models.Condition{Source: models.SourceQuery, Key: "s", Operator: models.OpEquals, Value: "x", Negate: false},
+data:     &RequestData{QueryParams: map[string][]string{"s": {"x"}}},
+expected: true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+result := e.Evaluate(tt.cond, tt.data)
+if result != tt.expected {
+t.Errorf("expected %v, got %v", tt.expected, result)
+}
+})
+}
+}
+
+// ── Regex token tests ────────────────────────────────────────────────────────
+
+func TestEvaluate_RegexTokens(t *testing.T) {
+e := NewEvaluator()
+
+tests := []struct {
+name     string
+cond     models.Condition
+data     *RequestData
+expected bool
+}{
+{
+name:     "uuid token matches UUID",
+cond:     models.Condition{Source: models.SourceQuery, Key: "id", Operator: models.OpRegex, Value: "uuid"},
+data:     &RequestData{QueryParams: map[string][]string{"id": {"550e8400-e29b-41d4-a716-446655440000"}}},
+expected: true,
+},
+{
+name:     "uuid token does not match non-UUID",
+cond:     models.Condition{Source: models.SourceQuery, Key: "id", Operator: models.OpRegex, Value: "uuid"},
+data:     &RequestData{QueryParams: map[string][]string{"id": {"not-a-uuid"}}},
+expected: false,
+},
+{
+name:     "UUID token uppercase lookup",
+cond:     models.Condition{Source: models.SourceQuery, Key: "id", Operator: models.OpRegex, Value: "UUID"},
+data:     &RequestData{QueryParams: map[string][]string{"id": {"550e8400-e29b-41d4-a716-446655440000"}}},
+expected: true,
+},
+{
+name:     "email token matches email",
+cond:     models.Condition{Source: models.SourceBody, Key: "email", Operator: models.OpRegex, Value: "email"},
+data:     &RequestData{Body: `{"email":"user@example.com"}`},
+expected: true,
+},
+{
+name:     "email token rejects invalid email",
+cond:     models.Condition{Source: models.SourceBody, Key: "email", Operator: models.OpRegex, Value: "email"},
+data:     &RequestData{Body: `{"email":"not-an-email"}`},
+expected: false,
+},
+{
+name:     "ssn token matches SSN",
+cond:     models.Condition{Source: models.SourceQuery, Key: "ssn", Operator: models.OpRegex, Value: "ssn"},
+data:     &RequestData{QueryParams: map[string][]string{"ssn": {"123-45-6789"}}},
+expected: true,
+},
+{
+name:     "us-phone token matches US phone",
+cond:     models.Condition{Source: models.SourceQuery, Key: "phone", Operator: models.OpRegex, Value: "us-phone"},
+data:     &RequestData{QueryParams: map[string][]string{"phone": {"555-867-5309"}}},
+expected: true,
+},
+{
+name:     "semver token matches semantic version",
+cond:     models.Condition{Source: models.SourceHeader, Key: "x-version", Operator: models.OpRegex, Value: "semver"},
+data:     &RequestData{Headers: map[string][]string{"x-version": {"1.2.3-beta.1"}}},
+expected: true,
+},
+{
+name:     "uuid token + negate rejects UUID",
+cond:     models.Condition{Source: models.SourceQuery, Key: "id", Operator: models.OpRegex, Value: "uuid", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"id": {"550e8400-e29b-41d4-a716-446655440000"}}},
+expected: false,
+},
+{
+name:     "uuid token + negate passes non-UUID",
+cond:     models.Condition{Source: models.SourceQuery, Key: "id", Operator: models.OpRegex, Value: "uuid", Negate: true},
+data:     &RequestData{QueryParams: map[string][]string{"id": {"hello"}}},
+expected: true,
+},
+{
+name:     "raw regex still works",
+cond:     models.Condition{Source: models.SourceQuery, Key: "n", Operator: models.OpRegex, Value: `^\d{3}$`},
+data:     &RequestData{QueryParams: map[string][]string{"n": {"123"}}},
+expected: true,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+result := e.Evaluate(tt.cond, tt.data)
+if result != tt.expected {
+t.Errorf("expected %v, got %v", tt.expected, result)
+}
+})
+}
+}

@@ -37,14 +37,11 @@ const methodColors: Record<string, string> = {
 
 const operators: { value: ConditionOperator; label: string }[] = [
     { value: 'eq', label: 'Equals' },
-    { value: 'ne', label: 'Not Equals' },
     { value: 'contains', label: 'Contains' },
-    { value: 'notContains', label: 'Not Contains' },
     { value: 'startsWith', label: 'Starts With' },
     { value: 'endsWith', label: 'Ends With' },
     { value: 'regex', label: 'Regex' },
     { value: 'exists', label: 'Exists' },
-    { value: 'notExists', label: 'Not Exists' },
     { value: 'gt', label: 'Greater Than' },
     { value: 'lt', label: 'Less Than' },
     { value: 'gte', label: 'Greater or Equal' },

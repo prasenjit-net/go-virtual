@@ -171,6 +171,9 @@ func (r *Router) setupRoutes() {
 		api.GET("/version", r.handler.Version)
 		api.GET("/branding", r.handler.GetBranding)
 
+		// Condition helpers
+		api.GET("/conditions/regex-patterns", r.handler.ListRegexPatterns)
+
 		// Template validation
 		api.POST("/templates/validate", r.handler.ValidateTemplate)
 

@@ -3,8 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Plus, Trash2, AlertCircle, Wand2 } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
-import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { ResponseConfig, Condition, ConditionOperator, ScriptBinding } from '../../types'
+import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
+import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -15,14 +15,11 @@ interface ResponseConfigEditorProps {
 
 const operators: { value: ConditionOperator; label: string; group?: string }[] = [
     { value: 'eq', label: 'Equals' },
-    { value: 'ne', label: 'Not Equals' },
     { value: 'contains', label: 'Contains' },
-    { value: 'notContains', label: 'Not Contains' },
     { value: 'startsWith', label: 'Starts With' },
     { value: 'endsWith', label: 'Ends With' },
     { value: 'regex', label: 'Regex' },
     { value: 'exists', label: 'Exists' },
-    { value: 'notExists', label: 'Not Exists' },
     { value: 'gt', label: 'Greater Than' },
     { value: 'lt', label: 'Less Than' },
     { value: 'gte', label: 'Greater or Equal' },
@@ -38,6 +35,14 @@ const operators: { value: ConditionOperator; label: string; group?: string }[] =
     { value: 'dateToday', label: 'Date Is Today', group: 'date' },
     { value: 'dateBetween', label: 'Date Between', group: 'date' },
 ]
+
+/** Normalise deprecated operators from stored conditions to new form */
+function normaliseCondition(c: Condition): Condition {
+    if ((c.operator as string) === 'ne') return { ...c, operator: 'eq', negate: !c.negate }
+    if ((c.operator as string) === 'notContains') return { ...c, operator: 'contains', negate: !c.negate }
+    if ((c.operator as string) === 'notExists') return { ...c, operator: 'exists', negate: !c.negate }
+    return c
+}
 
 const DATE_OPERATORS = new Set<ConditionOperator>([
     'dateEq', 'dateBefore', 'dateAfter', 'dateLte', 'dateGte',
@@ -119,7 +124,9 @@ export default function ResponseConfigEditor({
     const [delay, setDelay] = useState(config?.delay || 0)
     const [enabled, setEnabled] = useState(config?.enabled ?? true)
     const [tag, setTag] = useState(config?.tag || 'default')
-    const [conditions, setConditions] = useState<Condition[]>(config?.conditions || [])
+    const [conditions, setConditions] = useState<Condition[]>(() =>
+        (config?.conditions || []).map(normaliseCondition)
+    )
     const [headers, setHeaders] = useState<Record<string, string>>(config?.headers || {})
     const [body, setBody] = useState(config?.body || '')
     const [error, setError] = useState('')
@@ -136,6 +143,12 @@ export default function ResponseConfigEditor({
     const { data: tags } = useQuery({
         queryKey: ['tags'],
         queryFn: tagsApi.list,
+    })
+
+    const { data: regexPatterns } = useQuery({
+        queryKey: ['conditions', 'regex-patterns'],
+        queryFn: conditionsApi.listRegexPatterns,
+        staleTime: Infinity,
     })
 
     const { data: scriptBindings } = useQuery<ScriptBinding[]>({
@@ -288,7 +301,7 @@ export default function ResponseConfigEditor({
         setDelay(config.delay || 0)
         setEnabled(config.enabled ?? true)
         setTag(config.tag || 'default')
-        setConditions(config.conditions || [])
+        setConditions((config.conditions || []).map(normaliseCondition))
         setHeaders(config.headers || {})
         setBody(config.body || '')
     }, [config])
@@ -569,19 +582,41 @@ export default function ResponseConfigEditor({
                                             ))}
                                         </optgroup>
                                     </select>
+                                    {/* NOT toggle */}
+                                    <button
+                                        type="button"
+                                        title="Negate — invert the condition result"
+                                        onClick={() => updateCondition(index, { negate: !cond.negate })}
+                                        className={`px-2 py-1.5 rounded border text-xs font-semibold transition-colors ${
+                                            cond.negate
+                                                ? 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-500 text-red-700 dark:text-red-300'
+                                                : 'border-gray-300 dark:border-slate-700 text-gray-400 dark:text-slate-500 hover:border-red-400 hover:text-red-500'
+                                        }`}
+                                    >
+                                        NOT
+                                    </button>
+                                    {cond.operator === 'regex' && (
+                                        <datalist id={`regex-patterns-${index}`}>
+                                            {(regexPatterns || []).map(p => (
+                                                <option key={p.token} value={p.token}>{p.description}</option>
+                                            ))}
+                                        </datalist>
+                                    )}
                                     <input
                                         type="text"
+                                        list={cond.operator === 'regex' ? `regex-patterns-${index}` : undefined}
                                         value={cond.value}
                                         onChange={(e) => updateCondition(index, { value: e.target.value })}
                                         placeholder={
                                             DATE_NO_VALUE_OPERATORS.has(cond.operator) ? '—'
                                             : cond.operator === 'dateBetween' ? 'from,to  e.g. today,now+7d'
                                             : DATE_OPERATORS.has(cond.operator) ? 'e.g. today, now+7d, 2025-01-01'
+                                            : cond.operator === 'regex' ? 'regex or token e.g. uuid, email'
                                             : 'value'
                                         }
                                         className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
                                         disabled={
-                                            cond.operator === 'exists' || cond.operator === 'notExists' ||
+                                            cond.operator === 'exists' ||
                                             DATE_NO_VALUE_OPERATORS.has(cond.operator)
                                         }
                                     />
@@ -607,6 +642,23 @@ export default function ResponseConfigEditor({
                                             Tokens: now · today · yesterday · tomorrow · now±Nd/Nh/Nm
                                         </span>
                                     </div>
+                                )}
+                                {cond.operator === 'regex' && cond.value && regexPatterns && (
+                                    (() => {
+                                        const match = regexPatterns.find(p => p.token.toLowerCase() === cond.value.toLowerCase())
+                                        return match ? (
+                                            <div className="flex items-center gap-2 pl-1">
+                                                <span className="text-xs text-gray-400 dark:text-slate-500 w-24 shrink-0">Token</span>
+                                                <span className="text-xs text-violet-600 dark:text-violet-400 font-medium">{match.description}</span>
+                                                <code className="text-xs text-gray-400 dark:text-slate-500 font-mono truncate max-w-xs">{match.pattern}</code>
+                                            </div>
+                                        ) : (
+                                            <div className="flex items-center gap-2 pl-1">
+                                                <span className="text-xs text-gray-400 dark:text-slate-500 w-24 shrink-0">Regex</span>
+                                                <span className="text-xs text-gray-400 dark:text-slate-500">raw pattern</span>
+                                            </div>
+                                        )
+                                    })()
                                 )}
                                 </div>
                             ))}
