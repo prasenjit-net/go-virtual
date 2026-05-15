@@ -8,6 +8,9 @@ CMD_DIR    := cmd/server
 UI_DIR     := ui
 GO         := go
 
+# Docker Hub image name (override: make docker-push HUB_IMAGE=myorg/go-virtual)
+HUB_IMAGE  ?= prasenjitnet/go-virtual
+
 # Optional overrides (e.g.  make run PORT=9090)
 PORT       ?=
 CONFIG     ?=
@@ -27,7 +30,9 @@ LD_FLAGS   := -s -w \
         test test-coverage \
         lint lint-ui fmt \
         install-deps clean clean-build \
-        docker-build docker-run \
+        docker-build docker-build-local docker-push-local docker-run \
+        compose-up compose-up-build compose-down compose-logs compose-ps \
+        swarm-init swarm-deploy swarm-deploy-local swarm-status swarm-logs swarm-rm swarm-rm-volumes \
         help
 
 # ── Default ───────────────────────────────────────────────────────────────────
@@ -151,18 +156,58 @@ clean-build:
 
 # ── Docker ────────────────────────────────────────────────────────────────────
 
-## docker-build: Build Docker image
-docker-build:
-	docker build -t $(BINARY):$(VERSION) -t $(BINARY):latest .
+## docker-build-local: Build single-arch image for local use (no buildx needed)
+docker-build-local:
+	docker build -f Dockerfile.dev \
+		-t $(BINARY):dev \
+		-t $(BINARY):latest \
+		-t $(HUB_IMAGE):latest \
+		.
 
-## docker-run: Run the Docker image
+## docker-push-local: Build and push the local image to Docker Hub (single arch, for swarm testing)
+docker-push-local: docker-build-local
+	docker push $(HUB_IMAGE):latest
+	@echo "✓ Pushed $(HUB_IMAGE):latest"
+
+## docker-build: Build multi-arch image via buildx (requires buildx plugin)
+docker-build:
+	docker buildx build --platform linux/amd64,linux/arm64 \
+		-t $(HUB_IMAGE):$(VERSION) -t $(HUB_IMAGE):latest --push .
+
+## docker-run: Run the latest local image
 docker-run:
-	docker run --rm -p 8080:8080 $(BINARY):latest
+	docker run --rm -p 8080:8080 -v "$(PWD)/data:/home/nonroot/data" $(BINARY):latest
+
+# ── Docker Compose (local dev) ────────────────────────────────────────────────
+# Uses Dockerfile.local — no buildx required, builds for native platform.
+
+DEV_COMPOSE_FILE ?= docker-compose.yml
+DOCKER_COMPOSE   ?= docker-compose
+
+## compose-up: Start local dev stack (uses cached image if present)
+compose-up:
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d
+
+## compose-up-build: Build image from source and start local dev stack
+compose-up-build:
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) up -d --build
+
+## compose-down: Stop and remove local dev containers (keeps ./data volume)
+compose-down:
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) down
+
+## compose-logs: Tail logs from the local dev stack
+compose-logs:
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) logs -f
+
+## compose-ps: Show status of local dev containers
+compose-ps:
+	$(DOCKER_COMPOSE) -f $(DEV_COMPOSE_FILE) ps
 
 # ── Docker Swarm ──────────────────────────────────────────────────────────────
 
 STACK_NAME ?= go-virtual
-COMPOSE_FILE ?= docker-compose.yml
+COMPOSE_FILE ?= swarm.yaml
 
 ## swarm-init: Initialise Docker Swarm on this node (skip if already active)
 swarm-init:
@@ -170,10 +215,23 @@ swarm-init:
 		&& echo "✓ Swarm already active" \
 		|| (docker swarm init && echo "✓ Swarm initialised")
 
-## swarm-deploy: Deploy (or update) the stack on the Swarm
+## swarm-deploy: Deploy (or update) the stack using registry images (requires docker login)
 swarm-deploy: swarm-init
 	docker stack deploy --with-registry-auth -c $(COMPOSE_FILE) $(STACK_NAME)
 	@echo "✓ Stack '$(STACK_NAME)' deployed"
+	@echo "  Services:"
+	@docker stack services $(STACK_NAME)
+
+## swarm-deploy-local: Deploy using locally-built images (no registry push needed)
+# Uses 'go-virtual:local' tag so Docker never tries to pull from a registry.
+LOCAL_TAG := go-virtual:local
+swarm-deploy-local: swarm-init
+	docker build -f Dockerfile.dev -t $(LOCAL_TAG) .
+	@# Substitute the Hub image name with the purely-local tag in a temp compose file
+	@sed 's|image: $(HUB_IMAGE):.*|image: $(LOCAL_TAG)|g' $(COMPOSE_FILE) > /tmp/swarm-local.yaml
+	docker stack deploy --resolve-image never -c /tmp/swarm-local.yaml $(STACK_NAME)
+	@rm -f /tmp/swarm-local.yaml
+	@echo "✓ Stack '$(STACK_NAME)' deployed (local image: $(LOCAL_TAG))"
 	@echo "  Services:"
 	@docker stack services $(STACK_NAME)
 

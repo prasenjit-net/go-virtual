@@ -187,7 +187,8 @@ type MongoConfig struct {
 	// StartupRetrySeconds is the total time budget go-virtual will spend
 	// retrying the initial MongoDB ping. Useful in Docker Swarm / Kubernetes
 	// where the replica set may not be ready when this container first starts.
-	// 0 means a single attempt only (no retry). Default: 60.
+	// 0 or unset → defaults to DefaultMongoStartupRetrySeconds (60 s).
+	// Set to -1 to disable retries (single attempt only).
 	StartupRetrySeconds int `yaml:"startupRetrySeconds"`
 	// Sync controls cross-instance route and store synchronisation.
 	Sync MongoSyncConfig `yaml:"sync"`
@@ -219,7 +220,7 @@ func (c *StorageConfig) Normalize() {
 	if c.Mongo.ConnectTimeoutSeconds <= 0 {
 		c.Mongo.ConnectTimeoutSeconds = DefaultMongoConnectTimeoutSeconds
 	}
-	if c.Mongo.StartupRetrySeconds < 0 {
+	if c.Mongo.StartupRetrySeconds < -1 {
 		c.Mongo.StartupRetrySeconds = 0
 	}
 	if c.Mongo.StartupRetrySeconds == 0 {

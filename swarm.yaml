@@ -1,0 +1,130 @@
+# go-virtual — Docker Swarm stack (standalone MongoDB + Redis)
+#
+# Exposed ports (host):
+#   8080  go-virtual   mock server + Admin UI at /_ui/
+#   8081  mongo-express  MongoDB admin UI  (admin / pass)
+#   8082  redis-insight  Redis admin UI
+#
+# MongoDB and Redis are internal only — no host port binding.
+#
+# Deploy:
+#   docker stack deploy -c swarm.yaml go-virtual
+
+services:
+
+  # ── MongoDB (standalone — no replica set required) ─────────────────────────
+  mongo:
+    image: mongo:7
+    # No host port — accessible inside the stack network as "mongo:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── Mongo Express (MongoDB admin UI) ──────────────────────────────────────
+  mongo-express:
+    image: mongo-express:1
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: mongodb://mongo:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: pass
+      ME_CONFIG_OPTIONS_EDITORTHEME: dracula
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --loglevel warning
+    # No host port — accessible inside the stack network as "redis:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── RedisInsight (Redis admin UI) ─────────────────────────────────────────
+  redis-insight:
+    image: redis/redisinsight:latest
+    ports:
+      - "8082:5540"
+    volumes:
+      - redis-insight-data:/data
+    networks:
+      - gv-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  # ── go-virtual ────────────────────────────────────────────────────────────
+  # Multi-arch image (linux/amd64 + linux/arm64) pulled from Docker Hub.
+  # Swarm selects the correct arch automatically.
+  # Tagged releases: prasenjitnet/go-virtual:<version>
+  # Latest CI build:  prasenjitnet/go-virtual:ci
+  go-virtual:
+    image: prasenjitnet/go-virtual:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # Storage — standalone MongoDB, poll-based cross-instance sync
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: mongodb://mongo:27017/
+      GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
+      GOVIRTUAL_STORAGE_MONGO_SYNC_MODE: poll
+
+      # Sessions — shared across replicas via Redis
+      GOVIRTUAL_SESSION_STORETYPE: redis
+      GOVIRTUAL_SESSION_REDIS_ADDR: redis:6379
+
+      # Logging
+      GOVIRTUAL_LOGGING_LEVEL: info
+      GOVIRTUAL_LOGGING_FORMAT: json
+    networks:
+      - gv-net
+    healthcheck:
+      test: ["CMD", "/go-virtual", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 10
+
+networks:
+  gv-net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  mongo-data:
+  redis-data:
+  redis-insight-data:
