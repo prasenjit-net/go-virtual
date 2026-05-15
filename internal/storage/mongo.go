@@ -61,6 +61,13 @@ func NewMongoStorage(cfg config.MongoConfig) (*MongoStorage, error) {
 		pingTimeout = 10 * time.Second
 	}
 	retryBudget := time.Duration(cfg.StartupRetrySeconds) * time.Second
+	// -1 means no retry (single attempt); 0/unset → apply default defensively
+	// in case config wiring was bypassed.
+	if cfg.StartupRetrySeconds == -1 {
+		retryBudget = 0
+	} else if retryBudget <= 0 {
+		retryBudget = time.Duration(config.DefaultMongoStartupRetrySeconds) * time.Second
+	}
 
 	opts := options.Client().ApplyURI(cfg.URI).SetConnectTimeout(pingTimeout)
 	client, err := mongo.Connect(opts)
