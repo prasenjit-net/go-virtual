@@ -5,6 +5,7 @@ import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
+import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -73,7 +74,7 @@ const DATE_TOKENS: { token: string; description: string }[] = [
     { token: 'now-1n',     description: '1 minute ago' },
 ]
 
-const sources = ['path', 'query', 'header', 'body', 'signature'] as const
+const sources = ['path', 'query', 'header', 'body', 'signature', 'script'] as const
 
 const templateDocs = {
     request: [
@@ -414,6 +415,7 @@ export default function ResponseConfigEditor({
         : 'bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 w-full flex flex-col'
 
     return (
+        <>
         <div className={wrapperClass}>
             <div className={containerClass}>
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
@@ -579,7 +581,12 @@ export default function ResponseConfigEditor({
                                         type="text"
                                         value={cond.key}
                                         onChange={(e) => updateCondition(index, { key: e.target.value })}
-                                        placeholder={cond.source === 'signature' ? 'computed request signature' : 'key'}
+                                        placeholder={
+                                            cond.source === 'signature' ? 'computed request signature' :
+                                            cond.source === 'script' ? 'binding.fieldName' :
+                                            'key'
+                                        }
+                                        title={cond.source === 'script' ? 'Dot-path into operation-level script output, e.g. authCheck.tier' : undefined}
                                         className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
                                         disabled={cond.source === 'signature'}
                                     />
@@ -971,5 +978,14 @@ export default function ResponseConfigEditor({
                 </div>
             </div>
         </div>
+        {/* Response-level script bindings — shown below editor when editing an existing config in page mode */}
+        {!isModal && config?.id && (
+            <ScriptBindingsPanel
+                kind="response"
+                operationId={operationId}
+                responseConfigId={config.id}
+            />
+        )}
+        </>
     )
 }

@@ -145,6 +145,13 @@ func (r *Router) setupRoutes() {
 		api.PUT("/operations/:id/scripts/:bindingId", r.handler.UpdateScriptBinding)
 		api.DELETE("/operations/:id/scripts/:bindingId", r.handler.DeleteScriptBinding)
 
+		// Script bindings (per response config)
+		api.GET("/operations/:id/responses/:respId/scripts", r.handler.ListResponseScriptBindings)
+		api.POST("/operations/:id/responses/:respId/scripts", r.handler.CreateResponseScriptBinding)
+		api.PUT("/operations/:id/responses/:respId/scripts/reorder", r.handler.ReorderResponseScriptBindings)
+		api.PUT("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.UpdateResponseScriptBinding)
+		api.DELETE("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.DeleteResponseScriptBinding)
+
 		// Tags
 		api.GET("/tags", r.handler.ListTags)
 		api.POST("/tags", r.handler.CreateTag)

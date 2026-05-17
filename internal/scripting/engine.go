@@ -123,7 +123,80 @@ func (e *ScriptEngine) RunBindings(
 	return output, traces
 }
 
-// CompileAndValidate compiles a script source without caching or executing it.
+// RunResponseBindings executes all enabled script bindings attached to the given
+// response config and returns their merged output. The output map merges into the
+// existing operation-level script output in the caller.
+func (e *ScriptEngine) RunResponseBindings(
+	ctx context.Context,
+	responseConfigID string,
+	input *ScriptInput,
+	sess store.SessionState,
+) (map[string]any, []models.ScriptTrace) {
+	output := make(map[string]any)
+	var traces []models.ScriptTrace
+
+	bindings, err := e.store.GetResponseScriptBindings(responseConfigID)
+	if err != nil || len(bindings) == 0 {
+		return output, traces
+	}
+
+	for _, binding := range bindings {
+		if !binding.Enabled {
+			continue
+		}
+
+		script, err := e.store.GetScript(binding.ScriptID)
+		if err != nil || script == nil || !script.Enabled {
+			continue
+		}
+
+		st := models.ScriptTrace{
+			BindingID:  binding.ID,
+			ScriptID:   script.ID,
+			ScriptName: script.Name,
+			OutputKey:  binding.OutputKey,
+		}
+
+		compiled, cacheHit := e.cache.Get(script.ID, script.UpdatedAt)
+		if !cacheHit {
+			var compileErr error
+			compiled, compileErr = e.runner.Compile(script.ID, script.Source)
+			if compileErr != nil {
+				st.Error = compileErr.Error()
+				traces = append(traces, st)
+				continue
+			}
+			e.cache.Set(script.ID, script.UpdatedAt, compiled)
+		}
+
+		timeoutMs := script.Timeout
+		if timeoutMs <= 0 {
+			timeoutMs = e.defaultTimeoutMs
+		}
+
+		var accessLog []models.StoreAccessEvent
+		var logBuf []string
+
+		start := time.Now()
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf)
+		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
+
+		if execErr != nil {
+			st.Error = execErr.Error()
+		} else {
+			st.Output = result
+			output[binding.OutputKey] = result
+		}
+
+		if len(logBuf) > 0 {
+			st.Logs = logBuf
+		}
+
+		traces = append(traces, st)
+	}
+
+	return output, traces
+}
 // Used for /validate endpoint. Returns a compile error string, or "" if valid.
 func (e *ScriptEngine) CompileAndValidate(scriptID, source string) error {
 	_, err := e.runner.Compile(scriptID, source)

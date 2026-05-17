@@ -489,6 +489,48 @@ export const scriptBindingsApi = {
     },
 };
 
+export const responseScriptBindingsApi = {
+    listByResponse: async (operationId: string, responseConfigId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/scripts`);
+        return handleResponse<import('../types').ScriptBinding[]>(response);
+    },
+
+    create: async (operationId: string, responseConfigId: string, data: import('../types').ScriptBindingInput) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/scripts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ScriptBinding>(response);
+    },
+
+    update: async (operationId: string, responseConfigId: string, bindingId: string, data: Partial<import('../types').ScriptBindingInput>) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/scripts/${bindingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ScriptBinding>(response);
+    },
+
+    delete: async (operationId: string, responseConfigId: string, bindingId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/scripts/${bindingId}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    reorder: async (operationId: string, responseConfigId: string, items: { id: string; order: number }[]) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/scripts/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(items),
+        });
+        return handleResponse<import('../types').ScriptBinding[]>(response);
+    },
+};
+
 // Global Store API
 export const storeApi = {
     list: async () => {

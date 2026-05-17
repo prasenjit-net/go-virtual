@@ -692,6 +692,29 @@ func (m *MongoStorage) GetScriptBindings(operationID string) ([]*models.ScriptBi
 	return bindings, cursor.Err()
 }
 
+func (m *MongoStorage) GetResponseScriptBindings(responseConfigID string) ([]*models.ScriptBinding, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colBindings).Find(ctx, bson.M{"response_config_id": responseConfigID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var bindings []*models.ScriptBinding
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		var b models.ScriptBinding
+		if err := unmarshalDoc(&doc, &b); err != nil {
+			return nil, err
+		}
+		bindings = append(bindings, &b)
+	}
+	return bindings, cursor.Err()
+}
+
 func (m *MongoStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
 	doc, err := marshalDoc(binding.ID, "", binding.OperationID, binding.ScriptID, binding)
 	if err != nil {
@@ -729,6 +752,16 @@ func (m *MongoStorage) DeleteScriptBindingsByScript(scriptID string) error {
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err := m.col(colBindings).DeleteMany(ctx, bson.M{"script_id": scriptID})
+	return err
+}
+
+func (m *MongoStorage) DeleteScriptBindingsByResponse(responseConfigID string) error {
+	if responseConfigID == "" {
+		return nil
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colBindings).DeleteMany(ctx, bson.M{"response_config_id": responseConfigID})
 	return err
 }
 

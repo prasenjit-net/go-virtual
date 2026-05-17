@@ -671,7 +671,7 @@ export default function OperationDetail() {
             </div>
 
             {/* Script Bindings */}
-            <ScriptBindingsPanel operationId={operationId!} />
+            <ScriptBindingsPanel kind="operation" operationId={operationId!} />
 
             {/* Example Response Fallback Info */}
             {operation.exampleResponse && (

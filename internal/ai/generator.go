@@ -693,21 +693,31 @@ CONDITION SCHEMA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Each element of "conditions" must be:
 {
-  "source":   one of: "path" | "query" | "header" | "body"
-  "key":      parameter name, header name, or gjson path (for body)
+  "source":   one of: "path" | "query" | "header" | "body" | "signature" | "script"
+  "key":      parameter name, header name, gjson path (for body/script), or "" for signature
   "operator": "eq" | "ne" | "contains" | "notContains" | "regex" |
               "exists" | "notExists" | "gt" | "lt" | "gte" | "lte" |
-              "startsWith" | "endsWith"
-  "value":    comparison value as string (leave "" for exists/notExists)
+              "startsWith" | "endsWith" |
+              "dateEq" | "dateBefore" | "dateAfter" | "dateLte" | "dateGte" |
+              "dateInPast" | "dateInFuture" | "dateToday" | "dateBetween"
+  "value":    comparison value as string (leave "" for exists/notExists/date-no-arg operators)
+  "negate":   optional bool — when true, the operator result is inverted (use instead of ne/notContains/notExists)
 }
 
-GJSON PATH SYNTAX (used ONLY for source="body"):
+GJSON PATH SYNTAX (used for source="body" and source="script"):
   - Uses dot notation. NO leading "$" or "@" — this is NOT JSONPath RFC 9535.
-  - Simple field:          "id"           → body.id
-  - Nested field:          "user.id"      → body.user.id
+  - Simple field:          "id"           → body.id  /  scriptOutput.id
+  - Nested field:          "user.id"      → body.user.id  /  scriptOutput.user.id
   - Array element:         "items.0"      → first element of items array
   - Nested in array item:  "items.0.id"   → id field of first item
   - WRONG (never use):     "$.id"  "body.id"  "/id"  "$['id']"
+
+SOURCE "script" — operation-level script output:
+  Scripts attached to the operation run before response matching. Their output is a
+  map keyed by the binding's outputKey. Use source="script" to route on computed values.
+  key = "<outputKey>.<fieldName>"  (same gjson dot-path as body)
+  Example: script binding with outputKey="authCheck" returns {"tier":"premium"}
+    → use key="authCheck.tier" with operator="eq", value="premium"
 
 CONDITION EXAMPLES:
   Path param {id} equals "42":
@@ -720,6 +730,12 @@ CONDITION EXAMPLES:
     {"source":"body","key":"id","operator":"eq","value":"100"}
   Nested body field "user.role" equals "admin":
     {"source":"body","key":"user.role","operator":"eq","value":"admin"}
+  Script output field "authCheck.tier" equals "premium":
+    {"source":"script","key":"authCheck.tier","operator":"eq","value":"premium"}
+  Date field in past:
+    {"source":"body","key":"createdAt","operator":"dateInPast","value":""}
+  Date between tokens:
+    {"source":"body","key":"dueDate","operator":"dateBetween","value":"today,now+7d"}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RULES
@@ -955,7 +971,7 @@ func defaultRuntimeStatusCode(op OperationContext) int {
 }
 
 var validSources = map[string]bool{
-	"path": true, "query": true, "header": true, "body": true,
+	"path": true, "query": true, "header": true, "body": true, "signature": true, "script": true,
 }
 
 var validOperators = map[string]bool{
@@ -965,21 +981,21 @@ var validOperators = map[string]bool{
 	"startsWith": true, "endsWith": true,
 	// date operators
 	"dateEq": true, "dateBefore": true, "dateAfter": true,
-	"dateBeforeOrEq": true, "dateAfterOrEq": true,
+	"dateLte": true, "dateGte": true,
 	"dateInPast": true, "dateInFuture": true,
-	"dateToday": true, "dateWithinDays": true,
+	"dateToday": true, "dateBetween": true,
 }
 
 // validateConditions returns an error if any condition has an invalid source or operator.
 func validateConditions(conditions []models.Condition) error {
 	for i, c := range conditions {
 		if !validSources[c.Source] {
-			return fmt.Errorf("condition[%d]: invalid source %q (valid: path, query, header, body)", i, c.Source)
+			return fmt.Errorf("condition[%d]: invalid source %q (valid: path, query, header, body, signature, script)", i, c.Source)
 		}
 		if !validOperators[c.Operator] {
 			return fmt.Errorf("condition[%d]: invalid operator %q", i, c.Operator)
 		}
-		if c.Key == "" {
+		if c.Key == "" && c.Source != "signature" {
 			return fmt.Errorf("condition[%d]: key must not be empty", i)
 		}
 	}

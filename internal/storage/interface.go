@@ -54,10 +54,12 @@ type Storage interface {
 
 	// ScriptBinding operations
 	GetScriptBindings(operationID string) ([]*models.ScriptBinding, error)
+	GetResponseScriptBindings(responseConfigID string) ([]*models.ScriptBinding, error)
 	CreateScriptBinding(binding *models.ScriptBinding) error
 	UpdateScriptBinding(binding *models.ScriptBinding) error
 	DeleteScriptBinding(id string) error
 	DeleteScriptBindingsByScript(scriptID string) error
+	DeleteScriptBindingsByResponse(responseConfigID string) error
 
 	// Utility
 	Close() error
