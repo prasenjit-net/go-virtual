@@ -330,6 +330,64 @@ export default function SpecDetail() {
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800">
+                    <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">
+                        Operations ({operations?.length || 0})
+                    </h2>
+                </div>
+
+                {operations && operations.length > 0 ? (
+                    <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                        {Object.entries(groupedOps).map(([tag, ops]) => (
+                            <div key={tag}>
+                                <div className="px-6 py-3 bg-gray-50 dark:bg-slate-800 text-sm font-medium text-gray-500 dark:text-slate-300 uppercase">
+                                    {tag}
+                                </div>
+                                {ops.map((op) => (
+                                    <Link
+                                        key={op.id}
+                                        to={`/operations/${op.id}`}
+                                        className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                                    >
+                                        <div className="flex items-center">
+                                            <span className={clsx(
+                                                'px-2 py-1 rounded text-xs font-bold uppercase w-20 text-center',
+                                                methodColors[op.method] || 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
+                                            )}>
+                                                {op.method}
+                                            </span>
+                                            <div className="ml-4">
+                                                <p className="font-mono text-sm text-gray-900 dark:text-slate-100">{op.path}</p>
+                                                {op.summary && (
+                                                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{op.summary}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center text-gray-400 dark:text-slate-500">
+                                            {op.hasExampleResponse && (
+                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 mr-2" title="Has example response from spec">
+                                                    <Sparkles className="w-3 h-3 mr-1" />
+                                                    Example
+                                                </span>
+                                            )}
+                                            <span className="text-sm mr-2">
+                                                {op.responseCount} response{op.responseCount !== 1 ? 's' : ''}
+                                            </span>
+                                            <ChevronRight className="w-5 h-5" />
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <div className="p-12 text-center text-gray-500 dark:text-slate-400">
+                        No operations found in this specification
+                    </div>
+                )}
+            </div>
+
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">
                     <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
                         <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
@@ -486,64 +544,6 @@ export default function SpecDetail() {
                         </button>
                     </div>
                 </div>
-            </div>
-
-            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
-                <div className="p-6 border-b border-gray-200 dark:border-slate-800">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">
-                        Operations ({operations?.length || 0})
-                    </h2>
-                </div>
-
-                {operations && operations.length > 0 ? (
-                    <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                        {Object.entries(groupedOps).map(([tag, ops]) => (
-                            <div key={tag}>
-                                <div className="px-6 py-3 bg-gray-50 dark:bg-slate-800 text-sm font-medium text-gray-500 dark:text-slate-300 uppercase">
-                                    {tag}
-                                </div>
-                                {ops.map((op) => (
-                                    <Link
-                                        key={op.id}
-                                        to={`/operations/${op.id}`}
-                                        className="flex items-center justify-between px-6 py-4 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
-                                    >
-                                        <div className="flex items-center">
-                                            <span className={clsx(
-                                                'px-2 py-1 rounded text-xs font-bold uppercase w-20 text-center',
-                                                methodColors[op.method] || 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300'
-                                            )}>
-                                                {op.method}
-                                            </span>
-                                            <div className="ml-4">
-                                                <p className="font-mono text-sm text-gray-900 dark:text-slate-100">{op.path}</p>
-                                                {op.summary && (
-                                                    <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">{op.summary}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center text-gray-400 dark:text-slate-500">
-                                            {op.hasExampleResponse && (
-                                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 mr-2" title="Has example response from spec">
-                                                    <Sparkles className="w-3 h-3 mr-1" />
-                                                    Example
-                                                </span>
-                                            )}
-                                            <span className="text-sm mr-2">
-                                                {op.responseCount} response{op.responseCount !== 1 ? 's' : ''}
-                                            </span>
-                                            <ChevronRight className="w-5 h-5" />
-                                        </div>
-                                    </Link>
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="p-12 text-center text-gray-500 dark:text-slate-400">
-                        No operations found in this specification
-                    </div>
-                )}
             </div>
 
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
