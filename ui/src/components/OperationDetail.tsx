@@ -191,7 +191,7 @@ export default function OperationDetail() {
             <ScriptBindingsPanel kind="operation" operationId={operationId!} />
 
             {/* Response Configurations */}
-            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Manual Response Configurations</h2>
