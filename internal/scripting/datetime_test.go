@@ -4,8 +4,10 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+	"time"
 
 	"go.starlark.net/starlark"
+	"go.starlark.net/syntax"
 )
 
 // execScript is a test helper that runs a Starlark script with all builtins
@@ -346,5 +348,367 @@ def run(req):
 	v, _ := n.Int64()
 	if v != 0 {
 		t.Errorf("2025-05-12 is Monday, expected weekday()=0, got %d", v)
+	}
+}
+
+func TestTimedeltaValue_StringMethods(t *testing.T) {
+	v := &timedeltaValue{d: 26*time.Hour + 2*time.Minute + 3*time.Second}
+
+	if got := v.String(); got == "" {
+		t.Fatal("expected non-empty String()")
+	}
+	if got := v.Type(); got != "timedelta" {
+		t.Fatalf("Type() = %q", got)
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestDateValue_StringMethods(t *testing.T) {
+	v := newDate(2024, 6, 15)
+
+	if got := v.String(); got != "date(2024, 6, 15)" {
+		t.Fatalf("String() = %q", got)
+	}
+	if got := v.Type(); got != "date" {
+		t.Fatalf("Type() = %q", got)
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestDateTimeValue_StringMethods(t *testing.T) {
+	v := newDateTime(time.Date(2024, 6, 15, 10, 30, 45, 0, time.UTC))
+
+	if got := v.String(); got != "datetime(2024, 6, 15, 10, 30, 45)" {
+		t.Fatalf("String() = %q", got)
+	}
+	if got := v.Type(); got != "datetime" {
+		t.Fatalf("Type() = %q", got)
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestTimedeltaType_InterfaceMethods(t *testing.T) {
+	v := timedeltaType{}
+
+	if got := v.String(); got != "<type 'timedelta'>" {
+		t.Fatalf("String() = %q", got)
+	}
+	if got := v.Type(); got != "builtin_type" {
+		t.Fatalf("Type() = %q", got)
+	}
+	if got := v.Name(); got != "timedelta" {
+		t.Fatalf("Name() = %q", got)
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestDateType_InterfaceMethods(t *testing.T) {
+	v := dateType{}
+	want := []string{"today", "fromisoformat"}
+
+	if got := v.String(); got != "<type 'date'>" {
+		t.Fatalf("String() = %q", got)
+	}
+	if got := v.Type(); got != "builtin_type" {
+		t.Fatalf("Type() = %q", got)
+	}
+	if got := v.Name(); got != "date" {
+		t.Fatalf("Name() = %q", got)
+	}
+	got := v.AttrNames()
+	if len(got) != len(want) {
+		t.Fatalf("AttrNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("AttrNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestDatetimeType_InterfaceMethods(t *testing.T) {
+	v := datetimeType{}
+	want := []string{"now", "utcnow", "fromisoformat", "fromtimestamp"}
+
+	if got := v.String(); got != "<type 'datetime'>" {
+		t.Fatalf("String() = %q", got)
+	}
+	if got := v.Type(); got != "builtin_type" {
+		t.Fatalf("Type() = %q", got)
+	}
+	if got := v.Name(); got != "datetime" {
+		t.Fatalf("Name() = %q", got)
+	}
+	got := v.AttrNames()
+	if len(got) != len(want) {
+		t.Fatalf("AttrNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("AttrNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	v.Freeze()
+	if !bool(v.Truth()) {
+		t.Fatal("expected Truth() to be true")
+	}
+	if _, err := v.Hash(); err == nil {
+		t.Fatal("expected Hash() error")
+	}
+}
+
+func TestDateValue_AttrNames(t *testing.T) {
+	v := newDate(2024, 6, 15)
+	want := []string{"year", "month", "day", "weekday", "isoformat", "strftime"}
+	got := v.AttrNames()
+	if len(got) != len(want) {
+		t.Fatalf("AttrNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("AttrNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestDateTimeValue_AttrNames(t *testing.T) {
+	v := newDateTime(time.Date(2024, 6, 15, 10, 30, 45, 0, time.UTC))
+	want := []string{"year", "month", "day", "hour", "minute", "second", "weekday", "date", "isoformat", "strftime", "timestamp"}
+	got := v.AttrNames()
+	if len(got) != len(want) {
+		t.Fatalf("AttrNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("AttrNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestTimedeltaValue_AttrNames(t *testing.T) {
+	v := &timedeltaValue{d: time.Hour}
+	want := []string{"days", "hours", "minutes", "seconds", "total_seconds"}
+	got := v.AttrNames()
+	if len(got) != len(want) {
+		t.Fatalf("AttrNames() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("AttrNames()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestTimedelta_CompareSameType(t *testing.T) {
+	left := &timedeltaValue{d: 2 * time.Hour}
+	right := &timedeltaValue{d: time.Hour}
+
+	ok, err := left.CompareSameType(syntax.GT, right, 0)
+	if err != nil {
+		t.Fatalf("CompareSameType(): %v", err)
+	}
+	if !ok {
+		t.Fatal("expected left > right")
+	}
+}
+
+func TestDate_CompareSameType(t *testing.T) {
+	left := newDate(2024, 6, 15)
+	right := newDate(2024, 6, 14)
+
+	ok, err := left.CompareSameType(syntax.GT, right, 0)
+	if err != nil {
+		t.Fatalf("CompareSameType(): %v", err)
+	}
+	if !ok {
+		t.Fatal("expected left > right")
+	}
+}
+
+func TestDateTime_CompareSameType(t *testing.T) {
+	left := newDateTime(time.Date(2024, 6, 15, 10, 0, 0, 0, time.UTC))
+	right := newDateTime(time.Date(2024, 6, 15, 9, 0, 0, 0, time.UTC))
+
+	ok, err := left.CompareSameType(syntax.GT, right, 0)
+	if err != nil {
+		t.Fatalf("CompareSameType(): %v", err)
+	}
+	if !ok {
+		t.Fatal("expected left > right")
+	}
+}
+
+func TestDateTimeValue_Attr_AllFields(t *testing.T) {
+	v := newDateTime(time.Date(2024, 6, 15, 10, 30, 45, 0, time.UTC))
+
+	for _, name := range v.AttrNames() {
+		got, err := v.Attr(name)
+		if err != nil {
+			t.Fatalf("Attr(%q): %v", name, err)
+		}
+		if got == nil {
+			t.Fatalf("Attr(%q) returned nil", name)
+		}
+	}
+}
+
+func TestDateValue_Binary_DateMinusDate(t *testing.T) {
+	left := newDate(2024, 6, 15)
+	right := newDate(2024, 6, 13)
+
+	got, err := left.Binary(syntax.MINUS, right, starlark.Left)
+	if err != nil {
+		t.Fatalf("Binary(): %v", err)
+	}
+	td, ok := got.(*timedeltaValue)
+	if !ok {
+		t.Fatalf("expected timedeltaValue, got %T", got)
+	}
+	if td.d != 48*time.Hour {
+		t.Fatalf("expected 48h diff, got %v", td.d)
+	}
+}
+
+func TestDateTimeValue_Binary_DatetimeMinusDatetime(t *testing.T) {
+	left := newDateTime(time.Date(2024, 6, 15, 12, 0, 0, 0, time.UTC))
+	right := newDateTime(time.Date(2024, 6, 15, 9, 30, 0, 0, time.UTC))
+
+	got, err := left.Binary(syntax.MINUS, right, starlark.Left)
+	if err != nil {
+		t.Fatalf("Binary(): %v", err)
+	}
+	td, ok := got.(*timedeltaValue)
+	if !ok {
+		t.Fatalf("expected timedeltaValue, got %T", got)
+	}
+	if td.d != 150*time.Minute {
+		t.Fatalf("expected 150m diff, got %v", td.d)
+	}
+}
+
+func TestIsoFormatLayouts(t *testing.T) {
+	layouts := isoFormatLayouts()
+	if len(layouts) == 0 {
+		t.Fatal("expected non-empty layouts")
+	}
+	if layouts[0] == "" {
+		t.Fatal("expected first layout to be non-empty")
+	}
+}
+
+func TestParseISODate_ValidFormats(t *testing.T) {
+	tests := []string{
+		"2024-06-15T10:30:00Z",
+		"2024-06-15T10:30:00",
+		"2024-06-15 10:30:00",
+		"2024-06-15",
+	}
+
+	for _, input := range tests {
+		if got, ok := parseISODate(input); !ok || got.IsZero() {
+			t.Fatalf("parseISODate(%q) = (%v, %v), want success", input, got, ok)
+		}
+	}
+}
+
+func TestParseISODate_InvalidFormat(t *testing.T) {
+	if got, ok := parseISODate("not-a-date"); ok || !got.IsZero() {
+		t.Fatalf("parseISODate() = (%v, %v), want zero time and false", got, ok)
+	}
+}
+
+func TestTimedeltaValue_Attr_AllFields(t *testing.T) {
+	v := &timedeltaValue{d: 26*time.Hour + 2*time.Minute + 3*time.Second}
+
+	for _, name := range v.AttrNames() {
+		got, err := v.Attr(name)
+		if err != nil {
+			t.Fatalf("Attr(%q): %v", name, err)
+		}
+		if got == nil {
+			t.Fatalf("Attr(%q) returned nil", name)
+		}
+	}
+}
+
+func TestTimedeltaValue_BinaryOperations(t *testing.T) {
+	left := &timedeltaValue{d: 2 * time.Hour}
+	right := &timedeltaValue{d: 30 * time.Minute}
+
+	plus, err := left.Binary(syntax.PLUS, right, starlark.Left)
+	if err != nil {
+		t.Fatalf("Binary(PLUS): %v", err)
+	}
+	plusTD, ok := plus.(*timedeltaValue)
+	if !ok || plusTD.d != 150*time.Minute {
+		t.Fatalf("Binary(PLUS) = %T %v", plus, plus)
+	}
+
+	minus, err := left.Binary(syntax.MINUS, right, starlark.Left)
+	if err != nil {
+		t.Fatalf("Binary(MINUS): %v", err)
+	}
+	minusTD, ok := minus.(*timedeltaValue)
+	if !ok || minusTD.d != 90*time.Minute {
+		t.Fatalf("Binary(MINUS) = %T %v", minus, minus)
+	}
+}
+
+func TestDateType_Attr_AllFields(t *testing.T) {
+	v := dateType{}
+
+	for _, name := range v.AttrNames() {
+		got, err := v.Attr(name)
+		if err != nil {
+			t.Fatalf("Attr(%q): %v", name, err)
+		}
+		if got == nil {
+			t.Fatalf("Attr(%q) returned nil", name)
+		}
+	}
+}
+
+func TestDatetimeType_Attr_AllFields(t *testing.T) {
+	v := datetimeType{}
+
+	for _, name := range v.AttrNames() {
+		got, err := v.Attr(name)
+		if err != nil {
+			t.Fatalf("Attr(%q): %v", name, err)
+		}
+		if got == nil {
+			t.Fatalf("Attr(%q) returned nil", name)
+		}
 	}
 }

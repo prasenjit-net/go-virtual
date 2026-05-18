@@ -306,3 +306,135 @@ func TestTestScript_UsesDefaultTimeout(t *testing.T) {
 		t.Errorf("Expected 'fast', got %v", result)
 	}
 }
+
+func TestRunSpecBindings_NoBindings(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunSpecBindings(context.Background(), "spec-1", &ScriptInput{}, nil)
+	if len(out) != 0 {
+		t.Fatalf("expected empty output, got %v", out)
+	}
+	if len(traces) != 0 {
+		t.Fatalf("expected empty traces, got %v", traces)
+	}
+}
+
+func TestRunSpecBindings_SingleBinding(t *testing.T) {
+	script := makeScript("s1", `def run(req): return {"scope": "spec", "id": req["path"]["specId"]}`)
+	binding := &models.ScriptBinding{
+		ID:        "b1",
+		SpecID:    "spec-1",
+		ScriptID:  "s1",
+		OutputKey: "spec",
+		Order:     0,
+		Enabled:   true,
+	}
+
+	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunSpecBindings(context.Background(), "spec-1", &ScriptInput{Path: map[string]string{"specId": "spec-1"}}, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 output key, got %d: %v", len(out), out)
+	}
+	specOut, ok := out["spec"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected map output, got %T", out["spec"])
+	}
+	if specOut["scope"] != "spec" || specOut["id"] != "spec-1" {
+		t.Fatalf("unexpected spec output: %v", specOut)
+	}
+	if len(traces) != 1 || traces[0].OutputKey != "spec" || traces[0].Error != "" {
+		t.Fatalf("unexpected traces: %+v", traces)
+	}
+}
+
+func TestRunSpecBindings_DisabledSkipped(t *testing.T) {
+	script := makeScript("s1", `def run(req): return "spec"`)
+	binding := &models.ScriptBinding{
+		ID:        "b1",
+		SpecID:    "spec-1",
+		ScriptID:  "s1",
+		OutputKey: "spec",
+		Order:     0,
+		Enabled:   false,
+	}
+
+	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunSpecBindings(context.Background(), "spec-1", &ScriptInput{}, nil)
+	if len(out) != 0 {
+		t.Fatalf("expected empty output, got %v", out)
+	}
+	if len(traces) != 0 {
+		t.Fatalf("expected empty traces, got %v", traces)
+	}
+}
+
+func TestRunResponseBindings_NoBindings(t *testing.T) {
+	store := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunResponseBindings(context.Background(), "resp-1", &ScriptInput{}, nil)
+	if len(out) != 0 {
+		t.Fatalf("expected empty output, got %v", out)
+	}
+	if len(traces) != 0 {
+		t.Fatalf("expected empty traces, got %v", traces)
+	}
+}
+
+func TestRunResponseBindings_SingleBinding(t *testing.T) {
+	script := makeScript("s1", `def run(req): return {"scope": "response", "id": req["path"]["responseId"]}`)
+	binding := &models.ScriptBinding{
+		ID:               "b1",
+		ResponseConfigID: "resp-1",
+		ScriptID:         "s1",
+		OutputKey:        "response",
+		Order:            0,
+		Enabled:          true,
+	}
+
+	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunResponseBindings(context.Background(), "resp-1", &ScriptInput{Path: map[string]string{"responseId": "resp-1"}}, nil)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 output key, got %d: %v", len(out), out)
+	}
+	responseOut, ok := out["response"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected map output, got %T", out["response"])
+	}
+	if responseOut["scope"] != "response" || responseOut["id"] != "resp-1" {
+		t.Fatalf("unexpected response output: %v", responseOut)
+	}
+	if len(traces) != 1 || traces[0].OutputKey != "response" || traces[0].Error != "" {
+		t.Fatalf("unexpected traces: %+v", traces)
+	}
+}
+
+func TestRunResponseBindings_DisabledSkipped(t *testing.T) {
+	script := makeScript("s1", `def run(req): return "response"`)
+	binding := &models.ScriptBinding{
+		ID:               "b1",
+		ResponseConfigID: "resp-1",
+		ScriptID:         "s1",
+		OutputKey:        "response",
+		Order:            0,
+		Enabled:          false,
+	}
+
+	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
+	engine := NewScriptEngine(store, 100)
+
+	out, traces := engine.RunResponseBindings(context.Background(), "resp-1", &ScriptInput{}, nil)
+	if len(out) != 0 {
+		t.Fatalf("expected empty output, got %v", out)
+	}
+	if len(traces) != 0 {
+		t.Fatalf("expected empty traces, got %v", traces)
+	}
+}
