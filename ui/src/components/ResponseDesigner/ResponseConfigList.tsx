@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     Bot,
     ChevronDown,
     ChevronRight,
+    Code2,
+    Copy,
     Edit2,
+    Eye,
     GripVertical,
     Plus,
     Radio,
@@ -14,8 +17,8 @@ import {
     Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { responsesApi } from '../../services/api'
-import type { ResponseConfig } from '../../types'
+import { responsesApi, responseScriptBindingsApi } from '../../services/api'
+import type { ResponseConfig, ScriptBinding } from '../../types'
 
 interface ResponseConfigListProps {
     operationId: string
@@ -27,6 +30,34 @@ interface ResponseConfigListProps {
         label: string
     }
     editSource?: 'operation' | 'recorded'
+}
+
+function ResponseScriptsSection({ operationId, configId }: { operationId: string; configId: string }) {
+    const { data: bindings, isLoading } = useQuery<ScriptBinding[]>({
+        queryKey: ['responseScriptBindings', configId],
+        queryFn: () => responseScriptBindingsApi.listByResponse(operationId, configId),
+    })
+
+    if (isLoading || !bindings || bindings.length === 0) return null
+
+    return (
+        <div>
+            <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Scripts</h4>
+            <div className="space-y-1">
+                {bindings.sort((a, b) => a.order - b.order).map((b) => (
+                    <div key={b.id} className="flex items-center gap-2 text-sm bg-emerald-50 dark:bg-emerald-950/30 rounded px-3 py-2">
+                        <Code2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                        <span className="font-mono text-emerald-700 dark:text-emerald-300">{b.outputKey}</span>
+                        <span className="text-gray-400 dark:text-slate-500">←</span>
+                        <span className="text-gray-600 dark:text-slate-300">{b.scriptName || b.scriptId}</span>
+                        {!b.enabled && (
+                            <span className="ml-auto text-xs text-gray-400 dark:text-slate-500 italic">disabled</span>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
 }
 
 export default function ResponseConfigList({
@@ -55,6 +86,21 @@ export default function ResponseConfigList({
         },
     })
 
+    const cloneMutation = useMutation({
+        mutationFn: ({ id, name }: { id: string; name: string }) => responsesApi.clone(id, name),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
+        },
+    })
+
+    const handleClone = (e: React.MouseEvent, config: ResponseConfig) => {
+        e.stopPropagation()
+        const name = window.prompt('Enter a name for the cloned response:', `${config.name} (copy)`)
+        if (!name) return
+        cloneMutation.mutate({ id: config.id, name })
+    }
+
+    const isRecorded = (config: ResponseConfig) => config.recorded === true
     const editSuffix = editSource === 'recorded' ? '?source=recorded' : ''
 
     const renderOriginBadge = (config: ResponseConfig) => {
@@ -161,14 +207,35 @@ export default function ResponseConfigList({
                                     <ToggleLeft className="w-5 h-5" />
                                 )}
                             </button>
-                            <Link
-                                to={`/responses/${config.id}/edit${editSuffix}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
-                                title="Edit"
-                            >
-                                <Edit2 className="w-5 h-5" />
-                            </Link>
+                            {isRecorded(config) ? (
+                                <>
+                                    <Link
+                                        to={`/responses/${config.id}/edit?source=recorded`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                                        title="View (read-only)"
+                                    >
+                                        <Eye className="w-5 h-5" />
+                                    </Link>
+                                    <button
+                                        onClick={(e) => handleClone(e, config)}
+                                        disabled={cloneMutation.isPending}
+                                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
+                                        title="Clone as manual"
+                                    >
+                                        <Copy className="w-5 h-5" />
+                                    </button>
+                                </>
+                            ) : (
+                                <Link
+                                    to={`/responses/${config.id}/edit${editSuffix}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
+                                    title="Edit"
+                                >
+                                    <Edit2 className="w-5 h-5" />
+                                </Link>
+                            )}
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation()
@@ -216,6 +283,8 @@ export default function ResponseConfigList({
                                     </div>
                                 </div>
                             )}
+
+                            <ResponseScriptsSection operationId={operationId} configId={config.id} />
 
                             {Object.keys(config.headers).length > 0 && (
                                 <div>

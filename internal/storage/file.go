@@ -577,6 +577,9 @@ func (f *FileStorage) DeleteSpec(id string) error {
 		return err
 	}
 
+	// Cascade: remove spec-level script bindings file
+	os.Remove(f.specScriptBindingsPath(id))
+
 	return f.deleteSpecFile(id)
 }
 
@@ -733,6 +736,10 @@ func (f *FileStorage) scriptBindingsPath(operationID string) string {
 	return filepath.Join(f.basePath, "operations", operationID+".scripts.json")
 }
 
+func (f *FileStorage) specScriptBindingsPath(specID string) string {
+	return filepath.Join(f.basePath, "specs", specID+".scripts.json")
+}
+
 func (f *FileStorage) responseScriptBindingsPath(responseConfigID string) string {
 	return filepath.Join(f.basePath, "responses", responseConfigID+".scripts.json")
 }
@@ -852,6 +859,38 @@ func (f *FileStorage) loadScripts() error {
 		}
 	}
 
+	// Load spec-level script bindings from specs/<id>.scripts.json files
+	specsDir := filepath.Join(f.basePath, "specs")
+	specEntries, err := os.ReadDir(specsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range specEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".scripts.json") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(specsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var bindings []*models.ScriptBinding
+		if err := json.Unmarshal(data, &bindings); err != nil {
+			continue
+		}
+
+		for _, b := range bindings {
+			if b != nil {
+				f.memory.scriptBindings[b.ID] = b
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -859,6 +898,28 @@ func (f *FileStorage) loadScripts() error {
 func (f *FileStorage) deleteScriptFiles(id string) {
 	os.Remove(f.scriptMetaPath(id))
 	os.Remove(f.scriptSourcePath(id))
+}
+
+// saveSpecScriptBindings persists the bindings for a spec
+func (f *FileStorage) saveSpecScriptBindings(specID string) error {
+	bindings, err := f.memory.GetSpecScriptBindings(specID)
+	if err != nil {
+		return err
+	}
+
+	path := f.specScriptBindingsPath(specID)
+
+	if len(bindings) == 0 {
+		os.Remove(path)
+		return nil
+	}
+
+	data, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
 }
 
 // saveScriptBindings persists the bindings for an operation
@@ -988,6 +1049,11 @@ func (f *FileStorage) DeleteAIScenario(id string) error {
 	return f.saveAIScenarios()
 }
 
+// GetSpecScriptBindings retrieves all bindings for a spec
+func (f *FileStorage) GetSpecScriptBindings(specID string) ([]*models.ScriptBinding, error) {
+	return f.memory.GetSpecScriptBindings(specID)
+}
+
 // GetScriptBindings retrieves all bindings for an operation
 func (f *FileStorage) GetScriptBindings(operationID string) ([]*models.ScriptBinding, error) {
 	return f.memory.GetScriptBindings(operationID)
@@ -1006,6 +1072,9 @@ func (f *FileStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
 	if err := f.memory.CreateScriptBinding(binding); err != nil {
 		return err
 	}
+	if binding.IsSpecBinding() {
+		return f.saveSpecScriptBindings(binding.SpecID)
+	}
 	if binding.IsResponseBinding() {
 		return f.saveResponseScriptBindings(binding.ResponseConfigID)
 	}
@@ -1019,6 +1088,9 @@ func (f *FileStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
 
 	if err := f.memory.UpdateScriptBinding(binding); err != nil {
 		return err
+	}
+	if binding.IsSpecBinding() {
+		return f.saveSpecScriptBindings(binding.SpecID)
 	}
 	if binding.IsResponseBinding() {
 		return f.saveResponseScriptBindings(binding.ResponseConfigID)
@@ -1037,14 +1109,20 @@ func (f *FileStorage) DeleteScriptBinding(id string) error {
 	if !exists {
 		return fmt.Errorf("script binding not found: %s", id)
 	}
+	isSpec := binding.IsSpecBinding()
 	isResponse := binding.IsResponseBinding()
 	ownerID := binding.OperationID
-	if isResponse {
+	if isSpec {
+		ownerID = binding.SpecID
+	} else if isResponse {
 		ownerID = binding.ResponseConfigID
 	}
 
 	if err := f.memory.DeleteScriptBinding(id); err != nil {
 		return err
+	}
+	if isSpec {
+		return f.saveSpecScriptBindings(ownerID)
 	}
 	if isResponse {
 		return f.saveResponseScriptBindings(ownerID)
@@ -1059,11 +1137,14 @@ func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
 
 	// Collect affected owner IDs before deletion
 	f.memory.mu.RLock()
+	affectedSpecs := make(map[string]struct{})
 	affectedOps := make(map[string]struct{})
 	affectedResps := make(map[string]struct{})
 	for _, b := range f.memory.scriptBindings {
 		if b.ScriptID == scriptID {
-			if b.IsResponseBinding() {
+			if b.IsSpecBinding() {
+				affectedSpecs[b.SpecID] = struct{}{}
+			} else if b.IsResponseBinding() {
 				affectedResps[b.ResponseConfigID] = struct{}{}
 			} else {
 				affectedOps[b.OperationID] = struct{}{}
@@ -1076,6 +1157,11 @@ func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
 		return err
 	}
 
+	for specID := range affectedSpecs {
+		if err := f.saveSpecScriptBindings(specID); err != nil {
+			fmt.Printf("Warning: failed to save script bindings for spec %s: %v\n", specID, err)
+		}
+	}
 	for opID := range affectedOps {
 		if err := f.saveScriptBindings(opID); err != nil {
 			fmt.Printf("Warning: failed to save script bindings for operation %s: %v\n", opID, err)
@@ -1086,6 +1172,18 @@ func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
 			fmt.Printf("Warning: failed to save script bindings for response %s: %v\n", respID, err)
 		}
 	}
+	return nil
+}
+
+// DeleteScriptBindingsBySpec removes all bindings for a spec and cleans up the file
+func (f *FileStorage) DeleteScriptBindingsBySpec(specID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteScriptBindingsBySpec(specID); err != nil {
+		return err
+	}
+	os.Remove(f.specScriptBindingsPath(specID))
 	return nil
 }
 

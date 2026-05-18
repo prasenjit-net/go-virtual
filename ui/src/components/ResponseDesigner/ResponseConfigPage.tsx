@@ -72,7 +72,11 @@ export default function ResponseConfigPage() {
                     </Link>
                     <div>
                         <h1 className="text-2xl font-semibold text-gray-900 dark:text-slate-100">
-                            {responseId ? 'Edit Response Configuration' : 'Create Response Configuration'}
+                            {responseId
+                                ? backToRecorded
+                                    ? 'View Recorded Response'
+                                    : 'Edit Response Configuration'
+                                : 'Create Response Configuration'}
                         </h1>
                         <p className="text-sm text-gray-500 dark:text-slate-400">
                             Configure conditions, headers, and response body templates for this operation.
@@ -92,6 +96,7 @@ export default function ResponseConfigPage() {
                 config={responseConfig || null}
                 onClose={() => navigate(backPath)}
                 variant="page"
+                readOnly={backToRecorded}
             />
         </div>
     )

@@ -12,6 +12,7 @@ interface ResponseConfigEditorProps {
     config: ResponseConfig | null
     onClose: () => void
     variant?: 'modal' | 'page'
+    readOnly?: boolean
 }
 
 const operators: { value: ConditionOperator; label: string; group?: string }[] = [
@@ -140,6 +141,7 @@ export default function ResponseConfigEditor({
     config,
     onClose,
     variant = 'modal',
+    readOnly = false,
 }: ResponseConfigEditorProps) {
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
@@ -432,8 +434,20 @@ export default function ResponseConfigEditor({
                     )}
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {error && (
+                <form onSubmit={readOnly ? (e) => e.preventDefault() : handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {readOnly && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start dark:bg-amber-950/40 dark:border-amber-900/40">
+                            <AlertCircle className="w-5 h-5 text-amber-600 mr-3 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-amber-700 dark:text-amber-300 font-medium">Read-only — recorded response</p>
+                                <p className="text-amber-600 dark:text-amber-400 text-sm mt-0.5">
+                                    This response was auto-recorded. Use the <strong>Clone as Manual</strong> action in the response list to create an editable copy.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!readOnly && error && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start dark:bg-red-950/40 dark:border-red-900/40">
                             <AlertCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
                             <p className="text-red-700 dark:text-red-300">{error}</p>
@@ -849,19 +863,21 @@ export default function ResponseConfigEditor({
                         onClick={onClose}
                         className="px-4 py-2 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                     >
-                        Cancel
+                        {readOnly ? 'Close' : 'Cancel'}
                     </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={createMutation.isPending || updateMutation.isPending}
-                        className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-                    >
-                        {createMutation.isPending || updateMutation.isPending
-                            ? 'Saving...'
-                            : config
-                                ? 'Update'
-                                : 'Create'}
-                    </button>
+                    {!readOnly && (
+                        <button
+                            onClick={handleSubmit}
+                            disabled={createMutation.isPending || updateMutation.isPending}
+                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+                        >
+                            {createMutation.isPending || updateMutation.isPending
+                                ? 'Saving...'
+                                : config
+                                    ? 'Update'
+                                    : 'Create'}
+                        </button>
+                    )}
                 </div>
 
                 {/* Template Documentation */}

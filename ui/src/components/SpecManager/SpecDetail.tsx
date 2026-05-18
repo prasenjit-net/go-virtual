@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
+import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 import type {
     AIStatus,
     Condition,
@@ -386,6 +387,8 @@ export default function SpecDetail() {
                     </div>
                 )}
             </div>
+
+            <ScriptBindingsPanel kind="spec" specId={spec.id} />
 
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">

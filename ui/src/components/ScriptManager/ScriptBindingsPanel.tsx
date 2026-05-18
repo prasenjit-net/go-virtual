@@ -6,7 +6,7 @@ import {
     Code2, ExternalLink, X, Loader2, Info
 } from 'lucide-react'
 import clsx from 'clsx'
-import { scriptsApi, scriptBindingsApi, responseScriptBindingsApi } from '../../services/api'
+import { scriptsApi, scriptBindingsApi, responseScriptBindingsApi, specScriptBindingsApi } from '../../services/api'
 import type { Script, ScriptBinding, ScriptBindingInput } from '../../types'
 
 interface OperationProps {
@@ -20,7 +20,12 @@ interface ResponseProps {
     responseConfigId: string
 }
 
-type Props = OperationProps | ResponseProps
+interface SpecProps {
+    kind: 'spec'
+    specId: string
+}
+
+type Props = OperationProps | ResponseProps | SpecProps
 
 interface AttachForm {
     scriptId: string
@@ -36,9 +41,12 @@ export default function ScriptBindingsPanel(props: Props) {
     const [formError, setFormError] = useState<string | null>(null)
 
     const isResponse = props.kind === 'response'
+    const isSpec = props.kind === 'spec'
     const queryKey = isResponse
         ? ['responseScriptBindings', (props as ResponseProps).responseConfigId]
-        : ['scriptBindings', (props as OperationProps).operationId]
+        : isSpec
+            ? ['specScriptBindings', (props as SpecProps).specId]
+            : ['scriptBindings', (props as OperationProps).operationId]
 
     // All available scripts (for the attach dropdown)
     const { data: allScripts } = useQuery<Script[]>({
@@ -46,12 +54,14 @@ export default function ScriptBindingsPanel(props: Props) {
         queryFn: scriptsApi.list,
     })
 
-    // Bindings for this operation or response config
+    // Bindings for this spec, operation, or response config
     const { data: bindings, isLoading } = useQuery<ScriptBinding[]>({
         queryKey,
         queryFn: () => isResponse
             ? responseScriptBindingsApi.listByResponse((props as ResponseProps).operationId, (props as ResponseProps).responseConfigId)
-            : scriptBindingsApi.listByOperation((props as OperationProps).operationId),
+            : isSpec
+                ? specScriptBindingsApi.list((props as SpecProps).specId)
+                : scriptBindingsApi.listByOperation((props as OperationProps).operationId),
     })
 
     const invalidate = () => {
@@ -74,10 +84,16 @@ export default function ScriptBindingsPanel(props: Props) {
                 binding.id,
                 buildUpdatePayload(binding, { enabled: !binding.enabled }),
               )
-            : scriptBindingsApi.update(
-                (props as OperationProps).operationId,
-                binding.id,
-                buildUpdatePayload(binding, { enabled: !binding.enabled }),
+            : isSpec
+                ? specScriptBindingsApi.update(
+                    (props as SpecProps).specId,
+                    binding.id,
+                    buildUpdatePayload(binding, { enabled: !binding.enabled }),
+                  )
+                : scriptBindingsApi.update(
+                    (props as OperationProps).operationId,
+                    binding.id,
+                    buildUpdatePayload(binding, { enabled: !binding.enabled }),
               ),
         onSuccess: invalidate,
     })
@@ -89,7 +105,9 @@ export default function ScriptBindingsPanel(props: Props) {
                 (props as ResponseProps).responseConfigId,
                 bindingId,
               )
-            : scriptBindingsApi.delete((props as OperationProps).operationId, bindingId),
+            : isSpec
+                ? specScriptBindingsApi.delete((props as SpecProps).specId, bindingId)
+                : scriptBindingsApi.delete((props as OperationProps).operationId, bindingId),
         onSuccess: invalidate,
     })
 
@@ -100,7 +118,9 @@ export default function ScriptBindingsPanel(props: Props) {
                 (props as ResponseProps).responseConfigId,
                 form,
               )
-            : scriptBindingsApi.create((props as OperationProps).operationId, form),
+            : isSpec
+                ? specScriptBindingsApi.create((props as SpecProps).specId, form)
+                : scriptBindingsApi.create((props as OperationProps).operationId, form),
         onSuccess: () => {
             invalidate()
             setModalOpen(false)
@@ -117,7 +137,9 @@ export default function ScriptBindingsPanel(props: Props) {
                 (props as ResponseProps).responseConfigId,
                 items,
               )
-            : scriptBindingsApi.reorder((props as OperationProps).operationId, items),
+            : isSpec
+                ? specScriptBindingsApi.reorder((props as SpecProps).specId, items)
+                : scriptBindingsApi.reorder((props as OperationProps).operationId, items),
         onSuccess: invalidate,
     })
 

@@ -24,10 +24,11 @@ type ScriptInput struct {
 	Enabled     bool   `json:"enabled"`
 }
 
-// ScriptBinding attaches a Script to an Operation or a ResponseConfig.
-// Exactly one of OperationID or ResponseConfigID will be non-empty.
+// ScriptBinding attaches a Script to a Spec, an Operation, or a ResponseConfig.
+// Exactly one of SpecID, OperationID, or ResponseConfigID will be non-empty.
 type ScriptBinding struct {
 	ID               string `json:"id"`
+	SpecID           string `json:"specId,omitempty"`
 	OperationID      string `json:"operationId,omitempty"`
 	ResponseConfigID string `json:"responseConfigId,omitempty"`
 	ScriptID         string `json:"scriptId"`
@@ -35,6 +36,11 @@ type ScriptBinding struct {
 	OutputKey        string `json:"outputKey"`            // Namespace under {{.script.<outputKey>.*}}
 	Order            int    `json:"order"`                // Execution order, ascending
 	Enabled          bool   `json:"enabled"`
+}
+
+// IsSpecBinding reports whether this binding is attached to a spec.
+func (b *ScriptBinding) IsSpecBinding() bool {
+	return b.SpecID != ""
 }
 
 // IsResponseBinding reports whether this binding is attached to a response config

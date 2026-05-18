@@ -331,6 +331,7 @@ export interface ScriptInput {
 
 export interface ScriptBinding {
     id: string;
+    specId?: string;
     operationId?: string;
     responseConfigId?: string;
     scriptId: string;

@@ -351,8 +351,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
-	scriptOutput, scriptTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
-	reqLogger.Debug("Executed operation script bindings",
+
+	// Run spec-level script bindings first, then operation-level bindings.
+	// Spec scripts provide a shared base; operation scripts can override by key.
+	scriptOutput, scriptTraces := e.scriptEngine.RunSpecBindings(r.Context(), matchedRoute.spec.ID, scriptInput, sess)
+	opOutput, opTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
+	for k, v := range opOutput {
+		scriptOutput[k] = v
+	}
+	scriptTraces = append(scriptTraces, opTraces...)
+	reqLogger.Debug("Executed script bindings",
 		"event", "script_bindings_executed",
 		"binding_count", len(scriptTraces),
 	)
