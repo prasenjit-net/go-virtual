@@ -609,7 +609,71 @@ func (m *MemoryStorage) DeleteScriptBinding(id string) error {
 	return nil
 }
 
-// DeleteScriptBindingsByScript deletes all bindings referencing a script
+// GetResponseScriptBindings retrieves all bindings for a response config, sorted by Order
+func (m *MemoryStorage) GetResponseScriptBindings(responseConfigID string) ([]*models.ScriptBinding, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bindings := make([]*models.ScriptBinding, 0)
+	for _, b := range m.scriptBindings {
+		if b.ResponseConfigID == responseConfigID {
+			bindings = append(bindings, b)
+		}
+	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		return bindings[i].Order < bindings[j].Order
+	})
+
+	return bindings, nil
+}
+
+// GetSpecScriptBindings retrieves all bindings for a spec, sorted by Order
+func (m *MemoryStorage) GetSpecScriptBindings(specID string) ([]*models.ScriptBinding, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	bindings := make([]*models.ScriptBinding, 0)
+	for _, b := range m.scriptBindings {
+		if b.SpecID == specID {
+			bindings = append(bindings, b)
+		}
+	}
+
+	sort.Slice(bindings, func(i, j int) bool {
+		return bindings[i].Order < bindings[j].Order
+	})
+
+	return bindings, nil
+}
+
+// DeleteScriptBindingsBySpec deletes all bindings for a spec
+func (m *MemoryStorage) DeleteScriptBindingsBySpec(specID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id, b := range m.scriptBindings {
+		if b.SpecID == specID {
+			delete(m.scriptBindings, id)
+		}
+	}
+	return nil
+}
+
+// DeleteScriptBindingsByResponse deletes all bindings for a response config
+func (m *MemoryStorage) DeleteScriptBindingsByResponse(responseConfigID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id, b := range m.scriptBindings {
+		if b.ResponseConfigID == responseConfigID {
+			delete(m.scriptBindings, id)
+		}
+	}
+	return nil
+}
+
+
 func (m *MemoryStorage) DeleteScriptBindingsByScript(scriptID string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

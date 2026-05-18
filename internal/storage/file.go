@@ -577,6 +577,9 @@ func (f *FileStorage) DeleteSpec(id string) error {
 		return err
 	}
 
+	// Cascade: remove spec-level script bindings file
+	os.Remove(f.specScriptBindingsPath(id))
+
 	return f.deleteSpecFile(id)
 }
 
@@ -685,6 +688,10 @@ func (f *FileStorage) DeleteResponseConfig(id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	// Cascade-delete response-level script bindings
+	f.memory.DeleteScriptBindingsByResponse(id) //nolint:errcheck
+	os.Remove(f.responseScriptBindingsPath(id))
+
 	if err := f.memory.DeleteResponseConfig(id); err != nil {
 		return err
 	}
@@ -705,8 +712,10 @@ func (f *FileStorage) DeleteResponseConfigsByOperation(opID string) error {
 		return err
 	}
 
-	// Delete files
+	// Delete files (including any response-level script binding files)
 	for _, cfg := range cfgs {
+		f.memory.DeleteScriptBindingsByResponse(cfg.ID) //nolint:errcheck
+		os.Remove(f.responseScriptBindingsPath(cfg.ID))
 		f.deleteResponseConfigFile(cfg.ID)
 	}
 
@@ -725,6 +734,14 @@ func (f *FileStorage) scriptSourcePath(id string) string {
 
 func (f *FileStorage) scriptBindingsPath(operationID string) string {
 	return filepath.Join(f.basePath, "operations", operationID+".scripts.json")
+}
+
+func (f *FileStorage) specScriptBindingsPath(specID string) string {
+	return filepath.Join(f.basePath, "specs", specID+".scripts.json")
+}
+
+func (f *FileStorage) responseScriptBindingsPath(responseConfigID string) string {
+	return filepath.Join(f.basePath, "responses", responseConfigID+".scripts.json")
 }
 
 // saveScript writes <id>.json (no Source) and <id>.star (source text)
@@ -810,6 +827,70 @@ func (f *FileStorage) loadScripts() error {
 		}
 	}
 
+	// Load response-level script bindings from responses/<id>.scripts.json files
+	respDir := filepath.Join(f.basePath, "responses")
+	respEntries, err := os.ReadDir(respDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range respEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".scripts.json") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(respDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var bindings []*models.ScriptBinding
+		if err := json.Unmarshal(data, &bindings); err != nil {
+			continue
+		}
+
+		for _, b := range bindings {
+			if b != nil {
+				f.memory.scriptBindings[b.ID] = b
+			}
+		}
+	}
+
+	// Load spec-level script bindings from specs/<id>.scripts.json files
+	specsDir := filepath.Join(f.basePath, "specs")
+	specEntries, err := os.ReadDir(specsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range specEntries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".scripts.json") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(specsDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+
+		var bindings []*models.ScriptBinding
+		if err := json.Unmarshal(data, &bindings); err != nil {
+			continue
+		}
+
+		for _, b := range bindings {
+			if b != nil {
+				f.memory.scriptBindings[b.ID] = b
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -817,6 +898,28 @@ func (f *FileStorage) loadScripts() error {
 func (f *FileStorage) deleteScriptFiles(id string) {
 	os.Remove(f.scriptMetaPath(id))
 	os.Remove(f.scriptSourcePath(id))
+}
+
+// saveSpecScriptBindings persists the bindings for a spec
+func (f *FileStorage) saveSpecScriptBindings(specID string) error {
+	bindings, err := f.memory.GetSpecScriptBindings(specID)
+	if err != nil {
+		return err
+	}
+
+	path := f.specScriptBindingsPath(specID)
+
+	if len(bindings) == 0 {
+		os.Remove(path)
+		return nil
+	}
+
+	data, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
 }
 
 // saveScriptBindings persists the bindings for an operation
@@ -834,7 +937,30 @@ func (f *FileStorage) saveScriptBindings(operationID string) error {
 	return os.WriteFile(f.scriptBindingsPath(operationID), data, 0644)
 }
 
-// ---- Script Storage interface methods ----
+// saveResponseScriptBindings persists the bindings for a response config
+func (f *FileStorage) saveResponseScriptBindings(responseConfigID string) error {
+	bindings, err := f.memory.GetResponseScriptBindings(responseConfigID)
+	if err != nil {
+		return err
+	}
+
+	path := f.responseScriptBindingsPath(responseConfigID)
+
+	if len(bindings) == 0 {
+		// Clean up the file when there are no bindings
+		os.Remove(path)
+		return nil
+	}
+
+	data, err := json.MarshalIndent(bindings, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+
 
 // CreateScript creates a new script
 func (f *FileStorage) CreateScript(script *models.Script) error {
@@ -923,12 +1049,22 @@ func (f *FileStorage) DeleteAIScenario(id string) error {
 	return f.saveAIScenarios()
 }
 
+// GetSpecScriptBindings retrieves all bindings for a spec
+func (f *FileStorage) GetSpecScriptBindings(specID string) ([]*models.ScriptBinding, error) {
+	return f.memory.GetSpecScriptBindings(specID)
+}
+
 // GetScriptBindings retrieves all bindings for an operation
 func (f *FileStorage) GetScriptBindings(operationID string) ([]*models.ScriptBinding, error) {
 	return f.memory.GetScriptBindings(operationID)
 }
 
-// CreateScriptBinding creates a new binding and persists the operation's binding list
+// GetResponseScriptBindings retrieves all bindings for a response config
+func (f *FileStorage) GetResponseScriptBindings(responseConfigID string) ([]*models.ScriptBinding, error) {
+	return f.memory.GetResponseScriptBindings(responseConfigID)
+}
+
+// CreateScriptBinding creates a new binding and persists the appropriate binding list
 func (f *FileStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -936,10 +1072,16 @@ func (f *FileStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
 	if err := f.memory.CreateScriptBinding(binding); err != nil {
 		return err
 	}
+	if binding.IsSpecBinding() {
+		return f.saveSpecScriptBindings(binding.SpecID)
+	}
+	if binding.IsResponseBinding() {
+		return f.saveResponseScriptBindings(binding.ResponseConfigID)
+	}
 	return f.saveScriptBindings(binding.OperationID)
 }
 
-// UpdateScriptBinding updates a binding and re-persists the operation's binding list
+// UpdateScriptBinding updates a binding and re-persists the appropriate binding list
 func (f *FileStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -947,27 +1089,45 @@ func (f *FileStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
 	if err := f.memory.UpdateScriptBinding(binding); err != nil {
 		return err
 	}
+	if binding.IsSpecBinding() {
+		return f.saveSpecScriptBindings(binding.SpecID)
+	}
+	if binding.IsResponseBinding() {
+		return f.saveResponseScriptBindings(binding.ResponseConfigID)
+	}
 	return f.saveScriptBindings(binding.OperationID)
 }
 
-// DeleteScriptBinding removes a binding and re-persists the operation's binding list
+// DeleteScriptBinding removes a binding and re-persists the appropriate binding list
 func (f *FileStorage) DeleteScriptBinding(id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Find the binding first to get the operationID
 	f.memory.mu.RLock()
 	binding, exists := f.memory.scriptBindings[id]
 	f.memory.mu.RUnlock()
 	if !exists {
 		return fmt.Errorf("script binding not found: %s", id)
 	}
-	operationID := binding.OperationID
+	isSpec := binding.IsSpecBinding()
+	isResponse := binding.IsResponseBinding()
+	ownerID := binding.OperationID
+	if isSpec {
+		ownerID = binding.SpecID
+	} else if isResponse {
+		ownerID = binding.ResponseConfigID
+	}
 
 	if err := f.memory.DeleteScriptBinding(id); err != nil {
 		return err
 	}
-	return f.saveScriptBindings(operationID)
+	if isSpec {
+		return f.saveSpecScriptBindings(ownerID)
+	}
+	if isResponse {
+		return f.saveResponseScriptBindings(ownerID)
+	}
+	return f.saveScriptBindings(ownerID)
 }
 
 // DeleteScriptBindingsByScript removes all bindings for a script
@@ -975,12 +1135,20 @@ func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Collect affected operationIDs before deletion
+	// Collect affected owner IDs before deletion
 	f.memory.mu.RLock()
-	affected := make(map[string]struct{})
+	affectedSpecs := make(map[string]struct{})
+	affectedOps := make(map[string]struct{})
+	affectedResps := make(map[string]struct{})
 	for _, b := range f.memory.scriptBindings {
 		if b.ScriptID == scriptID {
-			affected[b.OperationID] = struct{}{}
+			if b.IsSpecBinding() {
+				affectedSpecs[b.SpecID] = struct{}{}
+			} else if b.IsResponseBinding() {
+				affectedResps[b.ResponseConfigID] = struct{}{}
+			} else {
+				affectedOps[b.OperationID] = struct{}{}
+			}
 		}
 	}
 	f.memory.mu.RUnlock()
@@ -989,13 +1157,46 @@ func (f *FileStorage) DeleteScriptBindingsByScript(scriptID string) error {
 		return err
 	}
 
-	// Re-persist each affected operation's binding list
-	for opID := range affected {
+	for specID := range affectedSpecs {
+		if err := f.saveSpecScriptBindings(specID); err != nil {
+			fmt.Printf("Warning: failed to save script bindings for spec %s: %v\n", specID, err)
+		}
+	}
+	for opID := range affectedOps {
 		if err := f.saveScriptBindings(opID); err != nil {
 			fmt.Printf("Warning: failed to save script bindings for operation %s: %v\n", opID, err)
 		}
 	}
+	for respID := range affectedResps {
+		if err := f.saveResponseScriptBindings(respID); err != nil {
+			fmt.Printf("Warning: failed to save script bindings for response %s: %v\n", respID, err)
+		}
+	}
 	return nil
+}
+
+// DeleteScriptBindingsBySpec removes all bindings for a spec and cleans up the file
+func (f *FileStorage) DeleteScriptBindingsBySpec(specID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteScriptBindingsBySpec(specID); err != nil {
+		return err
+	}
+	os.Remove(f.specScriptBindingsPath(specID))
+	return nil
+}
+
+// DeleteScriptBindingsByResponse removes all bindings for a response config and cleans up the file
+func (f *FileStorage) DeleteScriptBindingsByResponse(responseConfigID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteScriptBindingsByResponse(responseConfigID); err != nil {
+		return err
+	}
+	// saveResponseScriptBindings removes the file when there are no bindings
+	return f.saveResponseScriptBindings(responseConfigID)
 }
 
 // Close closes the storage

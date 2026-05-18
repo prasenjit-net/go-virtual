@@ -1,6 +1,7 @@
 package condition
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -21,11 +22,12 @@ func NewEvaluator() *Evaluator {
 
 // RequestData contains all request data for condition evaluation
 type RequestData struct {
-	PathParams  map[string]string
-	QueryParams map[string][]string
-	Headers     map[string][]string
-	Body        string
-	Signature   string // Pre-computed request signature for signature conditions
+	PathParams   map[string]string
+	QueryParams  map[string][]string
+	Headers      map[string][]string
+	Body         string
+	Signature    string            // Pre-computed request signature for signature conditions
+	ScriptOutput map[string]any    // Operation-level script output, available as source=script conditions
 }
 
 // EvaluateAll evaluates all conditions against request data
@@ -84,6 +86,20 @@ func (e *Evaluator) extractValue(source, key string, data *RequestData) string {
 	case models.SourceSignature:
 		// Return the pre-computed request signature
 		return data.Signature
+	case models.SourceScriptOutput:
+		// JSON-serialise the script output map and apply gjson key (same pattern as body)
+		if len(data.ScriptOutput) == 0 {
+			return ""
+		}
+		scriptJSON, err := json.Marshal(data.ScriptOutput)
+		if err != nil {
+			return ""
+		}
+		result := gjson.GetBytes(scriptJSON, key)
+		if result.Exists() {
+			return result.String()
+		}
+		return ""
 	default:
 		return ""
 	}

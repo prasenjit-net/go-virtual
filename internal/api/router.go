@@ -137,6 +137,14 @@ func (r *Router) setupRoutes() {
 		api.PUT("/responses/:id", r.handler.UpdateResponseConfig)
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)
 		api.PUT("/responses/:id/priority", r.handler.UpdateResponsePriority)
+		api.POST("/responses/:id/clone", r.handler.CloneResponseConfig)
+
+		// Script bindings (per spec)
+		api.GET("/specs/:id/scripts", r.handler.ListSpecScriptBindings)
+		api.POST("/specs/:id/scripts", r.handler.CreateSpecScriptBinding)
+		api.PUT("/specs/:id/scripts/reorder", r.handler.ReorderSpecScriptBindings)
+		api.PUT("/specs/:id/scripts/:bindingId", r.handler.UpdateSpecScriptBinding)
+		api.DELETE("/specs/:id/scripts/:bindingId", r.handler.DeleteSpecScriptBinding)
 
 		// Script bindings (per operation)
 		api.GET("/operations/:id/scripts", r.handler.ListScriptBindings)
@@ -144,6 +152,13 @@ func (r *Router) setupRoutes() {
 		api.PUT("/operations/:id/scripts/reorder", r.handler.ReorderScriptBindings)
 		api.PUT("/operations/:id/scripts/:bindingId", r.handler.UpdateScriptBinding)
 		api.DELETE("/operations/:id/scripts/:bindingId", r.handler.DeleteScriptBinding)
+
+		// Script bindings (per response config)
+		api.GET("/operations/:id/responses/:respId/scripts", r.handler.ListResponseScriptBindings)
+		api.POST("/operations/:id/responses/:respId/scripts", r.handler.CreateResponseScriptBinding)
+		api.PUT("/operations/:id/responses/:respId/scripts/reorder", r.handler.ReorderResponseScriptBindings)
+		api.PUT("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.UpdateResponseScriptBinding)
+		api.DELETE("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.DeleteResponseScriptBinding)
 
 		// Tags
 		api.GET("/tags", r.handler.ListTags)

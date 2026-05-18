@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	miniredis "github.com/alicebob/miniredis/v2"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/prasenjit/go-virtual/internal/store"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 	"go.starlark.net/starlark"
 )
 
@@ -693,13 +696,13 @@ store.set("nil_val",   None)
 
 type errSessionState struct{}
 
-func (e *errSessionState) Get(key string) (any, bool)                 { return nil, false }
-func (e *errSessionState) Set(key string, value any) error            { return fmt.Errorf("mock set error") }
-func (e *errSessionState) Has(key string) bool                        { return false }
-func (e *errSessionState) Delete(key string) error                    { return fmt.Errorf("mock delete error") }
-func (e *errSessionState) Keys() []string                             { return nil }
-func (e *errSessionState) Snapshot() map[string]any                  { return nil }
-func (e *errSessionState) Info(bool) models.SessionInfo               { return models.SessionInfo{} }
+func (e *errSessionState) Get(key string) (any, bool)      { return nil, false }
+func (e *errSessionState) Set(key string, value any) error { return fmt.Errorf("mock set error") }
+func (e *errSessionState) Has(key string) bool             { return false }
+func (e *errSessionState) Delete(key string) error         { return fmt.Errorf("mock delete error") }
+func (e *errSessionState) Keys() []string                  { return nil }
+func (e *errSessionState) Snapshot() map[string]any        { return nil }
+func (e *errSessionState) Info(bool) models.SessionInfo    { return models.SessionInfo{} }
 
 // callMethodErr calls a StoreBuiltin method and returns the error (or nil on success).
 func callMethodErr(t *testing.T, sb *store.StoreBuiltin, name string, args ...starlark.Value) error {
@@ -993,18 +996,306 @@ func TestSessionManager_ExpiryLoop_Cancel(t *testing.T) {
 // ── GlobalStore: un-marshallable value covers deepCopy and save marshal errors ─
 
 func TestGlobalStore_Set_FuncValue(t *testing.T) {
-gs, err := store.NewGlobalStore(tempStorePath(t))
-if err != nil {
-t.Fatalf("NewGlobalStore: %v", err)
+	gs, err := store.NewGlobalStore(tempStorePath(t))
+	if err != nil {
+		t.Fatalf("NewGlobalStore: %v", err)
+	}
+	// func() is not JSON-marshallable; save() fails when marshalling the store.
+	// The value is still stored in memory (assignment happens before save()).
+	if err := gs.Set("fn", func() {}); err == nil {
+		t.Error("expected error when setting an un-marshallable value")
+	}
+	// Snapshot calls deepCopy on the stored func() → json.Marshal error → returns original.
+	snap := gs.Snapshot()
+	if snap == nil {
+		t.Error("expected non-nil snapshot even after failed set")
+	}
 }
-// func() is not JSON-marshallable; save() fails when marshalling the store.
-// The value is still stored in memory (assignment happens before save()).
-if err := gs.Set("fn", func() {}); err == nil {
-t.Error("expected error when setting an un-marshallable value")
+
+func TestLazySession_NotMaterializedUntilStoreOp(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if lazy.Materialized() != nil {
+		t.Fatal("expected lazy session to remain unmaterialized")
+	}
 }
-// Snapshot calls deepCopy on the stored func() → json.Marshal error → returns original.
-snap := gs.Snapshot()
-if snap == nil {
-t.Error("expected non-nil snapshot even after failed set")
+
+func TestLazySession_SetMaterializesSession(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if err := lazy.Set("answer", 42); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	if lazy.Materialized() == nil {
+		t.Fatal("expected Set to materialize session")
+	}
 }
+
+func TestLazySession_GetMaterializesSession(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	_, _ = lazy.Get("missing")
+	if lazy.Materialized() == nil {
+		t.Fatal("expected Get to materialize session")
+	}
+}
+
+func TestLazySession_HasMaterializesSession(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	_ = lazy.Has("missing")
+	if lazy.Materialized() == nil {
+		t.Fatal("expected Has to materialize session")
+	}
+}
+
+func TestLazySession_DeleteMaterializesSession(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if err := lazy.Delete("missing"); err != nil {
+		t.Fatalf("Delete(): %v", err)
+	}
+	if lazy.Materialized() == nil {
+		t.Fatal("expected Delete to materialize session")
+	}
+}
+
+func TestLazySession_KeysMaterializesSession(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	_ = lazy.Keys()
+	if lazy.Materialized() == nil {
+		t.Fatal("expected Keys to materialize session")
+	}
+}
+
+func TestLazySession_SnapshotBeforeMaterialize(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	snap := lazy.Snapshot()
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if len(snap) != 0 {
+		t.Fatalf("expected empty snapshot, got %v", snap)
+	}
+}
+
+func TestLazySession_InfoBeforeMaterialize(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	info := lazy.Info(true)
+	if info.ID != "" || !info.CreatedAt.IsZero() || !info.LastActive.IsZero() || info.EntryCount != 0 || info.StoreSnapshot != nil {
+		t.Fatalf("expected zero-value session info, got %+v", info)
+	}
+}
+
+func TestLazySession_SetAndGet(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if err := lazy.Set("answer", 42); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	got, ok := lazy.Get("answer")
+	if !ok {
+		t.Fatal("expected key to exist")
+	}
+	if got != 42 {
+		t.Fatalf("expected 42, got %v", got)
+	}
+}
+
+func TestLazySession_SnapshotAfterMaterialize(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if err := lazy.Set("answer", 42); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	snap := lazy.Snapshot()
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if snap["answer"] != 42 {
+		t.Fatalf("expected snapshot to contain stored value, got %v", snap)
+	}
+}
+
+func TestLazySession_InfoAfterMaterialize(t *testing.T) {
+	sm := store.NewSessionManager(context.Background(), nil, config.SessionConfig{HeaderName: "X-Session", InactivityTimeout: 30 * time.Minute, MaxSessions: 10})
+	lazy := store.NewLazySession(sm)
+
+	if err := lazy.Set("answer", 42); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	info := lazy.Info(true)
+	if info.ID == "" {
+		t.Fatal("expected session info to include an ID")
+	}
+	if info.EntryCount != 1 {
+		t.Fatalf("expected entry count 1, got %d", info.EntryCount)
+	}
+	if info.StoreSnapshot["answer"] != 42 {
+		t.Fatalf("expected session snapshot to include stored value, got %v", info.StoreSnapshot)
+	}
+}
+
+func TestRedisSessionManager_RoundTrip(t *testing.T) {
+	redisSrv, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run(): %v", err)
+	}
+	defer redisSrv.Close()
+
+	cfg := config.SessionConfig{
+		StoreType:         config.SessionStoreRedis,
+		HeaderName:        "X-Session",
+		InactivityTimeout: time.Minute,
+		MaxSessions:       10,
+		Redis: config.RedisSessionConfig{
+			Addr:      redisSrv.Addr(),
+			KeyPrefix: "go-virtual:test:sessions",
+		},
+	}
+	manager, err := store.NewRedisSessionManager(context.Background(), nil, cfg)
+	if err != nil {
+		t.Fatalf("NewRedisSessionManager(): %v", err)
+	}
+
+	sess, isNew, err := manager.GetOrCreate("session-1")
+	if err != nil {
+		t.Fatalf("GetOrCreate(): %v", err)
+	}
+	if !isNew {
+		t.Fatal("expected new redis session")
+	}
+	if err := sess.Set("answer", 42); err != nil {
+		t.Fatalf("Set(): %v", err)
+	}
+	got, ok := sess.Get("answer")
+	if !ok {
+		t.Fatalf("Get() = (%v, %v), want (_, true)", got, ok)
+	}
+	if got != 42 && got != 42.0 {
+		t.Fatalf("Get() = %v, want 42", got)
+	}
+	if !sess.Has("answer") {
+		t.Fatal("expected Has(answer) to be true")
+	}
+	keys := sess.Keys()
+	if len(keys) != 1 || keys[0] != "answer" {
+		t.Fatalf("Keys() = %v", keys)
+	}
+	info := sess.Info(true)
+	if info.ID != "session-1" || info.EntryCount != 1 {
+		t.Fatalf("unexpected session info: %+v", info)
+	}
+	if info.StoreSnapshot["answer"] != 42 && info.StoreSnapshot["answer"] != 42.0 {
+		t.Fatalf("unexpected session snapshot: %v", info.StoreSnapshot)
+	}
+	count, err := manager.Count()
+	if err != nil {
+		t.Fatalf("Count(): %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("Count() = %d, want 1", count)
+	}
+	infos, err := manager.ActiveSessions()
+	if err != nil {
+		t.Fatalf("ActiveSessions(): %v", err)
+	}
+	if len(infos) != 1 || infos[0].ID != "session-1" {
+		t.Fatalf("ActiveSessions() = %+v", infos)
+	}
+	if err := sess.Delete("answer"); err != nil {
+		t.Fatalf("Delete(): %v", err)
+	}
+	if sess.Has("answer") {
+		t.Fatal("expected key to be deleted")
+	}
+	if err := manager.Invalidate("session-1"); err != nil {
+		t.Fatalf("Invalidate(): %v", err)
+	}
+	if _, ok, err := manager.Get("session-1"); err != nil || ok {
+		t.Fatalf("Get() after invalidate = (_, %v, %v), want (_, false, nil)", ok, err)
+	}
+}
+
+func TestRedisSessionManager_InvalidateAll(t *testing.T) {
+	redisSrv, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run(): %v", err)
+	}
+	defer redisSrv.Close()
+
+	cfg := config.SessionConfig{
+		StoreType:         config.SessionStoreRedis,
+		HeaderName:        "X-Session",
+		InactivityTimeout: time.Minute,
+		MaxSessions:       10,
+		Redis: config.RedisSessionConfig{
+			Addr:      redisSrv.Addr(),
+			KeyPrefix: "go-virtual:test:invalidate-all",
+		},
+	}
+	manager, err := store.NewRedisSessionManager(context.Background(), nil, cfg)
+	if err != nil {
+		t.Fatalf("NewRedisSessionManager(): %v", err)
+	}
+
+	if _, _, err := manager.GetOrCreate("session-1"); err != nil {
+		t.Fatalf("GetOrCreate(session-1): %v", err)
+	}
+	if _, _, err := manager.GetOrCreate("session-2"); err != nil {
+		t.Fatalf("GetOrCreate(session-2): %v", err)
+	}
+	if err := manager.InvalidateAll(); err != nil {
+		t.Fatalf("InvalidateAll(): %v", err)
+	}
+	count, err := manager.Count()
+	if err != nil {
+		t.Fatalf("Count(): %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("Count() = %d, want 0", count)
+	}
+}
+
+func TestStoreBuiltin_Freeze(t *testing.T) {
+	sb := store.NewStoreBuiltin(store.NewEphemeralSession(nil), nil)
+	sb.Freeze()
+}
+
+func TestNewMongoGlobalStoreFromConfig_EmptyURI(t *testing.T) {
+	_, err := store.NewMongoGlobalStoreFromConfig(config.MongoConfig{})
+	if err == nil {
+		t.Fatal("expected error for empty Mongo URI")
+	}
+}
+
+func TestNewMongoGlobalStore_LoadError(t *testing.T) {
+	client, err := mongo.Connect(options.Client().
+		ApplyURI("mongodb://127.0.0.1:1").
+		SetConnectTimeout(time.Second).
+		SetServerSelectionTimeout(time.Second))
+	if err != nil {
+		t.Fatalf("mongo.Connect(): %v", err)
+	}
+	defer func() {
+		_ = client.Disconnect(context.Background())
+	}()
+
+	_, err = store.NewMongoGlobalStore(client.Database("test").Collection("global_store"))
+	if err == nil {
+		t.Fatal("expected load error for unavailable Mongo server")
+	}
 }

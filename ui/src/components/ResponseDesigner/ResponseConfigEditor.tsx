@@ -5,12 +5,14 @@ import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
+import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 
 interface ResponseConfigEditorProps {
     operationId: string
     config: ResponseConfig | null
     onClose: () => void
     variant?: 'modal' | 'page'
+    readOnly?: boolean
 }
 
 const operators: { value: ConditionOperator; label: string; group?: string }[] = [
@@ -73,7 +75,7 @@ const DATE_TOKENS: { token: string; description: string }[] = [
     { token: 'now-1n',     description: '1 minute ago' },
 ]
 
-const sources = ['path', 'query', 'header', 'body', 'signature'] as const
+const sources = ['path', 'query', 'header', 'body', 'signature', 'script'] as const
 
 const templateDocs = {
     request: [
@@ -139,6 +141,7 @@ export default function ResponseConfigEditor({
     config,
     onClose,
     variant = 'modal',
+    readOnly = false,
 }: ResponseConfigEditorProps) {
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
@@ -414,6 +417,7 @@ export default function ResponseConfigEditor({
         : 'bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 w-full flex flex-col'
 
     return (
+        <>
         <div className={wrapperClass}>
             <div className={containerClass}>
                 <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
@@ -430,8 +434,20 @@ export default function ResponseConfigEditor({
                     )}
                 </div>
 
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {error && (
+                <form onSubmit={readOnly ? (e) => e.preventDefault() : handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {readOnly && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start dark:bg-amber-950/40 dark:border-amber-900/40">
+                            <AlertCircle className="w-5 h-5 text-amber-600 mr-3 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <p className="text-amber-700 dark:text-amber-300 font-medium">Read-only — recorded response</p>
+                                <p className="text-amber-600 dark:text-amber-400 text-sm mt-0.5">
+                                    This response was auto-recorded. Use the <strong>Clone as Manual</strong> action in the response list to create an editable copy.
+                                </p>
+                            </div>
+                        </div>
+                    )}
+
+                    {!readOnly && error && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start dark:bg-red-950/40 dark:border-red-900/40">
                             <AlertCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
                             <p className="text-red-700 dark:text-red-300">{error}</p>
@@ -448,7 +464,8 @@ export default function ResponseConfigEditor({
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                 placeholder="Success Response"
                             />
                         </div>
@@ -460,7 +477,8 @@ export default function ResponseConfigEditor({
                                 type="text"
                                 value={description}
                                 onChange={(e) => setDescription(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                 placeholder="Returns when..."
                             />
                         </div>
@@ -471,7 +489,8 @@ export default function ResponseConfigEditor({
                             <select
                                 value={tag}
                                 onChange={(e) => setTag(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                             >
                                 {tagOptions.map((t: { name: string }) => (
                                     <option key={t.name} value={t.name}>
@@ -495,7 +514,8 @@ export default function ResponseConfigEditor({
                                 type="number"
                                 value={statusCode}
                                 onChange={(e) => setStatusCode(parseInt(e.target.value) || 200)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                 min={100}
                                 max={599}
                             />
@@ -508,7 +528,8 @@ export default function ResponseConfigEditor({
                                 type="number"
                                 value={priority}
                                 onChange={(e) => setPriority(parseInt(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                 min={0}
                             />
                             <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Lower = higher priority</p>
@@ -521,7 +542,8 @@ export default function ResponseConfigEditor({
                                 type="number"
                                 value={delay}
                                 onChange={(e) => setDelay(parseInt(e.target.value) || 0)}
-                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                disabled={readOnly}
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                 min={0}
                             />
                         </div>
@@ -531,8 +553,9 @@ export default function ResponseConfigEditor({
                             </label>
                             <button
                                 type="button"
-                                onClick={() => setEnabled(!enabled)}
-                                className={`w-full px-3 py-2 rounded-lg border ${enabled
+                                onClick={() => !readOnly && setEnabled(!enabled)}
+                                disabled={readOnly}
+                                className={`w-full px-3 py-2 rounded-lg border disabled:opacity-60 disabled:cursor-not-allowed ${enabled
                                     ? 'bg-green-50 border-green-300 text-green-700 dark:bg-green-950/40 dark:border-green-900/50 dark:text-green-300'
                                     : 'bg-gray-50 border-gray-300 text-gray-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'
                                     }`}
@@ -546,6 +569,7 @@ export default function ResponseConfigEditor({
                     <div>
                         <div className="flex items-center justify-between mb-2">
                             <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Conditions</label>
+                            {!readOnly && (
                             <button
                                 type="button"
                                 onClick={addCondition}
@@ -554,6 +578,7 @@ export default function ResponseConfigEditor({
                                 <Plus className="w-4 h-4 mr-1" />
                                 Add Condition
                             </button>
+                            )}
                         </div>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-3">
                             All conditions must match (AND logic)
@@ -567,7 +592,8 @@ export default function ResponseConfigEditor({
                                         onChange={(e) =>
                                             updateCondition(index, { source: e.target.value as any })
                                         }
-                                        className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                        disabled={readOnly}
+                                        className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                         {sources.map((s) => (
                                             <option key={s} value={s}>
@@ -579,16 +605,22 @@ export default function ResponseConfigEditor({
                                         type="text"
                                         value={cond.key}
                                         onChange={(e) => updateCondition(index, { key: e.target.value })}
-                                        placeholder={cond.source === 'signature' ? 'computed request signature' : 'key'}
-                                        className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                                        disabled={cond.source === 'signature'}
+                                        placeholder={
+                                            cond.source === 'signature' ? 'computed request signature' :
+                                            cond.source === 'script' ? 'binding.fieldName' :
+                                            'key'
+                                        }
+                                        title={cond.source === 'script' ? 'Dot-path into operation-level script output, e.g. authCheck.tier' : undefined}
+                                        className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
+                                        disabled={readOnly || cond.source === 'signature'}
                                     />
                                     <select
                                         value={cond.operator}
                                         onChange={(e) =>
                                             updateCondition(index, { operator: e.target.value as any })
                                         }
-                                        className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                        disabled={readOnly}
+                                        className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                     >
                                         <optgroup label="String / Numeric">
                                             {operators.filter(op => !op.group).map((op) => (
@@ -609,8 +641,9 @@ export default function ResponseConfigEditor({
                                     <button
                                         type="button"
                                         title="Negate — invert the condition result"
-                                        onClick={() => updateCondition(index, { negate: !cond.negate })}
-                                        className={`px-2 py-1.5 rounded border text-xs font-semibold transition-colors ${
+                                        onClick={() => !readOnly && updateCondition(index, { negate: !cond.negate })}
+                                        disabled={readOnly}
+                                        className={`px-2 py-1.5 rounded border text-xs font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
                                             cond.negate
                                                 ? 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-500 text-red-700 dark:text-red-300'
                                                 : 'border-gray-300 dark:border-slate-700 text-gray-400 dark:text-slate-500 hover:border-red-400 hover:text-red-500'
@@ -649,12 +682,14 @@ export default function ResponseConfigEditor({
                                             : cond.operator === 'regex' ? 'regex or token e.g. uuid, email'
                                             : 'value'
                                         }
-                                        className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
+                                        className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60 disabled:cursor-not-allowed"
                                         disabled={
+                                            readOnly ||
                                             cond.operator === 'exists' ||
                                             DATE_NO_VALUE_OPERATORS.has(cond.operator)
                                         }
                                     />
+                                    {!readOnly && (
                                     <button
                                         type="button"
                                         onClick={() => removeCondition(index)}
@@ -662,6 +697,7 @@ export default function ResponseConfigEditor({
                                     >
                                         <Trash2 className="w-4 h-4" />
                                     </button>
+                                    )}
                                 </div>
                                 {DATE_OPERATORS.has(cond.operator) && !DATE_NO_VALUE_OPERATORS.has(cond.operator) && (
                                     <div className="flex items-center gap-2 pl-1">
@@ -672,7 +708,8 @@ export default function ResponseConfigEditor({
                                             value={cond.format ?? ''}
                                             onChange={(e) => updateCondition(index, { format: e.target.value || undefined })}
                                             placeholder="auto-detect  (e.g. 2006-01-02 or 01/02/2006)"
-                                            className="flex-1 px-2 py-1 border border-gray-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-500 dark:text-slate-400 placeholder-gray-300 dark:placeholder-slate-600"
+                                            disabled={readOnly}
+                                            className="flex-1 px-2 py-1 border border-gray-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-500 dark:text-slate-400 placeholder-gray-300 dark:placeholder-slate-600 disabled:opacity-60 disabled:cursor-not-allowed"
                                         />
                                         {(() => {
                                             const tok = DATE_TOKENS.find(t => t.token.toLowerCase() === cond.value.toLowerCase())
@@ -718,6 +755,7 @@ export default function ResponseConfigEditor({
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
                             Response Headers
                         </label>
+                        {!readOnly && (
                         <div className="flex gap-2 mb-2">
                             <input
                                 type="text"
@@ -741,6 +779,7 @@ export default function ResponseConfigEditor({
                                 Add
                             </button>
                         </div>
+                        )}
                         {Object.entries(headers).length > 0 && (
                             <div className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 space-y-1">
                                 {Object.entries(headers).map(([key, value]) => (
@@ -748,6 +787,7 @@ export default function ResponseConfigEditor({
                                         <span>
                                             <span className="font-medium text-gray-900 dark:text-slate-100">{key}:</span> <span className="text-gray-700 dark:text-slate-300">{value}</span>
                                         </span>
+                                        {!readOnly && (
                                         <button
                                             type="button"
                                             onClick={() => removeHeader(key)}
@@ -755,6 +795,7 @@ export default function ResponseConfigEditor({
                                         >
                                             <Trash2 className="w-4 h-4" />
                                         </button>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -767,6 +808,7 @@ export default function ResponseConfigEditor({
                             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
                                 Response Body
                             </label>
+                            {!readOnly && (
                             <button
                                 type="button"
                                 onClick={prettifyBody}
@@ -776,6 +818,7 @@ export default function ResponseConfigEditor({
                                 <Wand2 className="w-3.5 h-3.5" />
                                 Prettify
                             </button>
+                            )}
                         </div>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
                             Body templates use Go text/template. Try {'{{.Path.id}}'},
@@ -814,6 +857,7 @@ export default function ResponseConfigEditor({
                                     lineNumbers: 'off',
                                     folding: false,
                                     scrollBeyondLastLine: false,
+                                    readOnly: readOnly,
                                     theme: document.documentElement.classList.contains('dark')
                                         ? 'vs-dark'
                                         : 'light',
@@ -842,19 +886,21 @@ export default function ResponseConfigEditor({
                         onClick={onClose}
                         className="px-4 py-2 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
                     >
-                        Cancel
+                        {readOnly ? 'Close' : 'Cancel'}
                     </button>
-                    <button
-                        onClick={handleSubmit}
-                        disabled={createMutation.isPending || updateMutation.isPending}
-                        className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-                    >
-                        {createMutation.isPending || updateMutation.isPending
-                            ? 'Saving...'
-                            : config
-                                ? 'Update'
-                                : 'Create'}
-                    </button>
+                    {!readOnly && (
+                        <button
+                            onClick={handleSubmit}
+                            disabled={createMutation.isPending || updateMutation.isPending}
+                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+                        >
+                            {createMutation.isPending || updateMutation.isPending
+                                ? 'Saving...'
+                                : config
+                                    ? 'Update'
+                                    : 'Create'}
+                        </button>
+                    )}
                 </div>
 
                 {/* Template Documentation */}
@@ -971,5 +1017,14 @@ export default function ResponseConfigEditor({
                 </div>
             </div>
         </div>
+        {/* Response-level script bindings — shown below editor when editing an existing config in page mode */}
+        {!isModal && config?.id && !readOnly && (
+            <ScriptBindingsPanel
+                kind="response"
+                operationId={operationId}
+                responseConfigId={config.id}
+            />
+        )}
+        </>
     )
 }

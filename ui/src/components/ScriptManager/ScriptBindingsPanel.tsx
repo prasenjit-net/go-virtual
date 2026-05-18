@@ -6,12 +6,26 @@ import {
     Code2, ExternalLink, X, Loader2, Info
 } from 'lucide-react'
 import clsx from 'clsx'
-import { scriptsApi, scriptBindingsApi } from '../../services/api'
-import type { Script, ScriptBinding } from '../../types'
+import { scriptsApi, scriptBindingsApi, responseScriptBindingsApi, specScriptBindingsApi } from '../../services/api'
+import type { Script, ScriptBinding, ScriptBindingInput } from '../../types'
 
-interface Props {
+interface OperationProps {
+    kind: 'operation'
     operationId: string
 }
+
+interface ResponseProps {
+    kind: 'response'
+    operationId: string
+    responseConfigId: string
+}
+
+interface SpecProps {
+    kind: 'spec'
+    specId: string
+}
+
+type Props = OperationProps | ResponseProps | SpecProps
 
 interface AttachForm {
     scriptId: string
@@ -20,11 +34,19 @@ interface AttachForm {
     enabled: boolean
 }
 
-export default function ScriptBindingsPanel({ operationId }: Props) {
+export default function ScriptBindingsPanel(props: Props) {
     const queryClient = useQueryClient()
     const [modalOpen, setModalOpen] = useState(false)
     const [form, setForm] = useState<AttachForm>({ scriptId: '', outputKey: '', order: 0, enabled: true })
     const [formError, setFormError] = useState<string | null>(null)
+
+    const isResponse = props.kind === 'response'
+    const isSpec = props.kind === 'spec'
+    const queryKey = isResponse
+        ? ['responseScriptBindings', (props as ResponseProps).responseConfigId]
+        : isSpec
+            ? ['specScriptBindings', (props as SpecProps).specId]
+            : ['scriptBindings', (props as OperationProps).operationId]
 
     // All available scripts (for the attach dropdown)
     const { data: allScripts } = useQuery<Script[]>({
@@ -32,34 +54,73 @@ export default function ScriptBindingsPanel({ operationId }: Props) {
         queryFn: scriptsApi.list,
     })
 
-    // Bindings for this operation
+    // Bindings for this spec, operation, or response config
     const { data: bindings, isLoading } = useQuery<ScriptBinding[]>({
-        queryKey: ['scriptBindings', operationId],
-        queryFn: () => scriptBindingsApi.listByOperation(operationId),
+        queryKey,
+        queryFn: () => isResponse
+            ? responseScriptBindingsApi.listByResponse((props as ResponseProps).operationId, (props as ResponseProps).responseConfigId)
+            : isSpec
+                ? specScriptBindingsApi.list((props as SpecProps).specId)
+                : scriptBindingsApi.listByOperation((props as OperationProps).operationId),
     })
 
     const invalidate = () => {
-        queryClient.invalidateQueries({ queryKey: ['scriptBindings', operationId] })
+        queryClient.invalidateQueries({ queryKey })
     }
 
+    const buildUpdatePayload = (binding: ScriptBinding, overrides: Partial<ScriptBindingInput>) => ({
+        scriptId: binding.scriptId,
+        outputKey: binding.outputKey,
+        order: binding.order,
+        enabled: binding.enabled,
+        ...overrides,
+    })
+
     const toggleMutation = useMutation({
-        mutationFn: ({ binding }: { binding: ScriptBinding }) =>
-            scriptBindingsApi.update(operationId, binding.id, {
-                scriptId: binding.scriptId,
-                outputKey: binding.outputKey,
-                order: binding.order,
-                enabled: !binding.enabled,
-            }),
+        mutationFn: ({ binding }: { binding: ScriptBinding }) => isResponse
+            ? responseScriptBindingsApi.update(
+                (props as ResponseProps).operationId,
+                (props as ResponseProps).responseConfigId,
+                binding.id,
+                buildUpdatePayload(binding, { enabled: !binding.enabled }),
+              )
+            : isSpec
+                ? specScriptBindingsApi.update(
+                    (props as SpecProps).specId,
+                    binding.id,
+                    buildUpdatePayload(binding, { enabled: !binding.enabled }),
+                  )
+                : scriptBindingsApi.update(
+                    (props as OperationProps).operationId,
+                    binding.id,
+                    buildUpdatePayload(binding, { enabled: !binding.enabled }),
+              ),
         onSuccess: invalidate,
     })
 
     const deleteMutation = useMutation({
-        mutationFn: (bindingId: string) => scriptBindingsApi.delete(operationId, bindingId),
+        mutationFn: (bindingId: string) => isResponse
+            ? responseScriptBindingsApi.delete(
+                (props as ResponseProps).operationId,
+                (props as ResponseProps).responseConfigId,
+                bindingId,
+              )
+            : isSpec
+                ? specScriptBindingsApi.delete((props as SpecProps).specId, bindingId)
+                : scriptBindingsApi.delete((props as OperationProps).operationId, bindingId),
         onSuccess: invalidate,
     })
 
     const attachMutation = useMutation({
-        mutationFn: () => scriptBindingsApi.create(operationId, form),
+        mutationFn: () => isResponse
+            ? responseScriptBindingsApi.create(
+                (props as ResponseProps).operationId,
+                (props as ResponseProps).responseConfigId,
+                form,
+              )
+            : isSpec
+                ? specScriptBindingsApi.create((props as SpecProps).specId, form)
+                : scriptBindingsApi.create((props as OperationProps).operationId, form),
         onSuccess: () => {
             invalidate()
             setModalOpen(false)
@@ -70,8 +131,15 @@ export default function ScriptBindingsPanel({ operationId }: Props) {
     })
 
     const reorderMutation = useMutation({
-        mutationFn: (items: { id: string; order: number }[]) =>
-            scriptBindingsApi.reorder(operationId, items),
+        mutationFn: (items: { id: string; order: number }[]) => isResponse
+            ? responseScriptBindingsApi.reorder(
+                (props as ResponseProps).operationId,
+                (props as ResponseProps).responseConfigId,
+                items,
+              )
+            : isSpec
+                ? specScriptBindingsApi.reorder((props as SpecProps).specId, items)
+                : scriptBindingsApi.reorder((props as OperationProps).operationId, items),
         onSuccess: invalidate,
     })
 
@@ -229,7 +297,9 @@ export default function ScriptBindingsPanel({ operationId }: Props) {
                 ) : (
                     <div className="p-10 text-center">
                         <Code2 className="w-8 h-8 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
-                        <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">No scripts attached to this operation</p>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">
+                            No scripts attached to this {isResponse ? 'response' : 'operation'}
+                        </p>
                         <p className="text-xs text-gray-400 dark:text-slate-500">
                             Attach a script to enrich responses with dynamic computed data.
                         </p>

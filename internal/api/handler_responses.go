@@ -168,7 +168,64 @@ func (h *Handler) DeleteResponseConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Response config deleted"})
 }
 
-// UpdateResponsePriority updates the priority of a response config
+// CloneResponseConfig deep-copies a response config as a new manual response.
+// The clone has origin="manual", recorded=false, and signature conditions stripped.
+func (h *Handler) CloneResponseConfig(c *gin.Context) {
+	id := c.Param("id")
+
+	src, err := h.store.GetResponseConfig(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Response config not found"})
+		return
+	}
+
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil || input.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		return
+	}
+
+	// Deep-copy conditions, skipping auto-generated signature conditions
+	clonedConditions := make([]models.Condition, 0, len(src.Conditions))
+	for _, cond := range src.Conditions {
+		if cond.Source == "signature" {
+			continue
+		}
+		clonedConditions = append(clonedConditions, cond)
+	}
+
+	// Copy headers
+	clonedHeaders := make(map[string]string, len(src.Headers))
+	for k, v := range src.Headers {
+		clonedHeaders[k] = v
+	}
+
+	clone := &models.ResponseConfig{
+		ID:          generateID(),
+		OperationID: src.OperationID,
+		Name:        input.Name,
+		Description: src.Description,
+		Tag:         src.Tag,
+		Priority:    src.Priority,
+		Conditions:  clonedConditions,
+		StatusCode:  src.StatusCode,
+		Headers:     clonedHeaders,
+		Body:        src.Body,
+		Delay:       src.Delay,
+		Enabled:     src.Enabled,
+		Origin:      models.ResponseOriginManual,
+		Recorded:    false,
+	}
+
+	if err := h.store.CreateResponseConfig(clone); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusCreated, clone)
+}
 func (h *Handler) UpdateResponsePriority(c *gin.Context) {
 	id := c.Param("id")
 

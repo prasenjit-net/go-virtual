@@ -173,7 +173,7 @@ export interface Tag {
 
 // Condition types
 export interface Condition {
-    source: 'path' | 'query' | 'header' | 'body' | 'signature';
+    source: 'path' | 'query' | 'header' | 'body' | 'signature' | 'script';
     key: string;
     operator: ConditionOperator;
     value: string;
@@ -331,7 +331,9 @@ export interface ScriptInput {
 
 export interface ScriptBinding {
     id: string;
-    operationId: string;
+    specId?: string;
+    operationId?: string;
+    responseConfigId?: string;
     scriptId: string;
     scriptName?: string;
     outputKey: string;
