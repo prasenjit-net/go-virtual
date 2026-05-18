@@ -325,29 +325,44 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// ---- Virtual response mode ----
 	// Resolve session and run operation-level scripts BEFORE response matching so
 	// that script output can be used as a condition source (source=script).
+	//
+	// Session creation rules:
+	//   1. Session header sent + session exists        → reuse, echo ID in response
+	//   2. Session header sent + session not found     → create with that ID, echo in response
+	//   3. No session header + store op in script      → create new UUID session, echo in response
+	//   4. No session header + no store op             → no session, no header sent
 	var sess store.SessionState
 	var sessionIsNew bool
+	var lazySession *store.LazySession
+
 	if e.sessionManager != nil {
 		rawSessionID := r.Header.Get(e.sessionHeaderName)
-		var sessErr error
-		sess, sessionIsNew, sessErr = e.sessionManager.GetOrCreate(rawSessionID)
-		if sessErr != nil {
-			reqLogger.Error("Failed to resolve request session",
-				"event", "session_resolve_failed",
-				"header_name", e.sessionHeaderName,
-				"error", sessErr,
+		if rawSessionID != "" {
+			// Case 1 or 2: explicit ID provided
+			var sessErr error
+			sess, sessionIsNew, sessErr = e.sessionManager.GetOrCreate(rawSessionID)
+			if sessErr != nil {
+				reqLogger.Error("Failed to resolve request session",
+					"event", "session_resolve_failed",
+					"header_name", e.sessionHeaderName,
+					"error", sessErr,
+				)
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error": "Failed to resolve session"}`))
+				return
+			}
+			sessionInfo := sess.Info(false)
+			w.Header().Set(e.sessionHeaderName, sessionInfo.ID)
+			reqLogger.Debug("Resolved request session",
+				"event", "session_resolved",
+				"session_id", sessionInfo.ID,
+				"session_is_new", sessionIsNew,
 			)
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = w.Write([]byte(`{"error": "Failed to resolve session"}`))
-			return
+		} else {
+			// Case 3 or 4: no ID — create a lazy session that materialises on first store op
+			lazySession = store.NewLazySession(e.sessionManager)
+			sess = lazySession
 		}
-		sessionInfo := sess.Info(false)
-		w.Header().Set(e.sessionHeaderName, sessionInfo.ID)
-		reqLogger.Debug("Resolved request session",
-			"event", "session_resolved",
-			"session_id", sessionInfo.ID,
-			"session_is_new", sessionIsNew,
-		)
 	}
 
 	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
@@ -789,6 +804,25 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"event", "response_script_bindings_executed",
 			"binding_count", len(respScriptTraces),
 		)
+	}
+
+	// Case 3 of session-creation rules: if a lazy session was used (no header
+	// sent by the client) and any script performed a store operation, the session
+	// will now be materialised — echo its generated ID back to the caller.
+	// If nothing materialised, clear sess so downstream code treats it as absent.
+	if lazySession != nil {
+		if inner := lazySession.Materialized(); inner != nil {
+			info := inner.Info(false)
+			w.Header().Set(e.sessionHeaderName, info.ID)
+			sess = inner
+			sessionIsNew = true
+			reqLogger.Debug("Lazy session materialised by store operation",
+				"event", "lazy_session_created",
+				"session_id", info.ID,
+			)
+		} else {
+			sess = nil
+		}
 	}
 
 	// Apply delay if configured
