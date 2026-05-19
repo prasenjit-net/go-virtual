@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
@@ -38,6 +38,10 @@ export default function ScriptEditor() {
     const [enabled, setEnabled] = useState(true)
     const [source, setSource] = useState(DEFAULT_SOURCE)
     const [formInitialised, setFormInitialised] = useState(false)
+
+    // Track the last-saved source to detect unsaved changes
+    const savedSourceRef = useRef<string>(isNew ? '' : DEFAULT_SOURCE)
+    const isDirty = isNew || source !== savedSourceRef.current
 
     // Validate state
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
@@ -81,6 +85,7 @@ export default function ScriptEditor() {
                 setEnabled(data.enabled)
                 if (data.source !== undefined) {
                     setSource(data.source || '')
+                    savedSourceRef.current = data.source || ''
                 }
                 setFormInitialised(true)
             }
@@ -98,6 +103,7 @@ export default function ScriptEditor() {
             if (!isNew) {
                 queryClient.invalidateQueries({ queryKey: ['script', scriptId] })
             }
+            savedSourceRef.current = source
             // Discard the AI conversation context on save.
             setAiHistory([])
             navigate(`/scripts`)
@@ -123,7 +129,6 @@ export default function ScriptEditor() {
     }, [source])
 
     const handleTest = useCallback(async () => {
-        if (isNew || !scriptId) return
         setIsTesting(true)
         setTestResult(null)
         try {
@@ -135,19 +140,21 @@ export default function ScriptEditor() {
             try { parsedQuery = JSON.parse(testQuery) } catch { /* ignore */ }
             try { parsedHeader = JSON.parse(testHeader) } catch { /* ignore */ }
             try { parsedBody = JSON.parse(testBody) } catch { /* ignore */ }
-            const result = await scriptsApi.test(scriptId, {
-                path: parsedPath,
-                query: parsedQuery,
-                header: parsedHeader,
-                body: parsedBody,
-            })
+            const input = { path: parsedPath, query: parsedQuery, header: parsedHeader, body: parsedBody }
+
+            let result
+            if (isDirty || !scriptId) {
+                result = await scriptsApi.testSource(source, timeout, input)
+            } else {
+                result = await scriptsApi.test(scriptId, input)
+            }
             setTestResult(result)
         } catch (e) {
             setTestResult({ output: null, durationMs: 0, error: (e as Error).message })
         } finally {
             setIsTesting(false)
         }
-    }, [scriptId, isNew, testPath, testQuery, testHeader, testBody])
+    }, [scriptId, isDirty, source, timeout, testPath, testQuery, testHeader, testBody])
 
     if (!isNew && isLoadingScript && !formInitialised) {
         return (
@@ -340,9 +347,8 @@ export default function ScriptEditor() {
                     />
                 </div>
 
-                {/* Test panel (only in edit mode — needs a saved script to execute) */}
-                {!isNew && (
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
+                {/* Test panel — always shown; dispatches to test-source when unsaved */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
                         <button
                             onClick={() => setTestOpen(!testOpen)}
                             className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -350,7 +356,13 @@ export default function ScriptEditor() {
                             <div className="flex items-center gap-2">
                                 <Play className="w-4 h-4 text-gray-500 dark:text-slate-400" />
                                 <span className="text-base font-semibold text-gray-900 dark:text-slate-100">Test Execution</span>
-                                <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs the last saved version)</span>
+                                {isDirty
+                                    ? <span className="text-xs text-amber-500 dark:text-amber-400 ml-1 flex items-center gap-1">
+                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                        runs current unsaved source
+                                      </span>
+                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs saved version)</span>
+                                }
                             </div>
                             {testOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                         </button>
@@ -468,7 +480,6 @@ export default function ScriptEditor() {
                             </div>
                         )}
                     </div>
-                )}
 
                 {/* Builtin Reference panel */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">

@@ -440,6 +440,20 @@ export const scriptsApi = {
         return handleResponse<{ valid: boolean; error: string | null }>(response);
     },
 
+    testSource: async (source: string, timeout: number, input: {
+        path?: Record<string, string>;
+        query?: Record<string, string>;
+        header?: Record<string, string>;
+        body?: any;
+    }) => {
+        const response = await fetch(`${API_BASE}/scripts/test-source`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, timeout, input }),
+        });
+        return handleResponse<{ output: any; durationMs: number; logs?: string[]; error: string | null }>(response);
+    },
+
     test: async (id: string, input: {
         path?: Record<string, string>;
         query?: Record<string, string>;

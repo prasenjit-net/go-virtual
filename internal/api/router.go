@@ -196,6 +196,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/scripts", r.handler.ListScripts)
 		api.POST("/scripts", r.handler.CreateScript)
 		api.POST("/scripts/validate", r.handler.ValidateScript)
+		api.POST("/scripts/test-source", r.handler.TestScriptSource)
 		api.GET("/scripts/:id", r.handler.GetScript)
 		api.PUT("/scripts/:id", r.handler.UpdateScript)
 		api.DELETE("/scripts/:id", r.handler.DeleteScript)
