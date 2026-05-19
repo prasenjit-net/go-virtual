@@ -128,14 +128,16 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
     };
 
     if (isLoading) {
-        return <div className="text-sm text-gray-500 p-4">Loading collections…</div>;
+        return <div className="text-sm text-gray-500 dark:text-slate-400 p-4">Loading collections…</div>;
     }
+
+    const isDark = document.documentElement.classList.contains('dark');
 
     return (
         <div className="space-y-2">
             {/* New collection inline input — triggered from parent header button */}
             {showNewCol && (
-                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-3">
+                <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg mb-3">
                     <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
                     <input
                         autoFocus
@@ -144,7 +146,7 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                         value={newColName}
                         onChange={e => setNewColName(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') createCollection(); if (e.key === 'Escape') onNewColCancel(); }}
-                        className="flex-1 text-sm border border-blue-300 rounded px-2 py-1 bg-white font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="flex-1 text-sm border border-blue-300 dark:border-blue-600 rounded px-2 py-1 bg-white dark:bg-slate-700 text-gray-900 dark:text-white font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                     <button
                         onClick={createCollection}
@@ -153,44 +155,44 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                     >Create</button>
                     <button
                         onClick={onNewColCancel}
-                        className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50"
+                        className="text-xs px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300"
                     >Cancel</button>
                 </div>
             )}
 
             {collections.length === 0 && !showNewCol && (
-                <div className="text-center py-10 text-gray-500">
+                <div className="text-center py-10 text-gray-500 dark:text-slate-400">
                     <Database className="h-10 w-10 mx-auto mb-3 opacity-30" />
                     <p className="text-sm">No collections yet.</p>
-                    <p className="text-xs mt-1 text-gray-400">Create one above, or use <code className="bg-gray-100 px-1 rounded">store.collection("name")</code> in a script.</p>
+                    <p className="text-xs mt-1 text-gray-400 dark:text-slate-500">Create one above, or use <code className="bg-gray-100 dark:bg-slate-700 px-1 rounded">store.collection("name")</code> in a script.</p>
                 </div>
             )}
 
             {/* Add form for a not-yet-existing collection (created via New Collection button) */}
             {addState && !collections.find((c: CollectionInfo) => c.name === addState.name) && (
-                <div className="border border-blue-300 rounded-lg overflow-hidden">
-                    <div className="flex items-center gap-2 px-4 py-3 bg-blue-50">
-                        <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                        <span className="font-mono text-sm font-medium flex-1">{addState.name}</span>
-                        <span className="text-xs text-blue-400 italic">new</span>
+                <div className="border border-indigo-300 dark:border-indigo-700 rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-indigo-50 dark:bg-indigo-900/20">
+                        <Database className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                        <span className="font-mono text-sm font-medium flex-1 text-gray-900 dark:text-white">{addState.name}</span>
+                        <span className="text-xs text-indigo-400 italic">new</span>
                     </div>
-                    <div className="p-4 bg-blue-50 space-y-2">
-                        <p className="text-xs font-medium text-blue-700">First document</p>
-                        <div className="h-40 border border-blue-300 rounded overflow-hidden">
+                    <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 space-y-2">
+                        <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">First document</p>
+                        <div className="h-40 border border-indigo-300 dark:border-indigo-700 rounded overflow-hidden">
                             <Editor
                                 defaultLanguage="json"
                                 value={addState.value}
                                 onChange={v => setAddState(prev => prev ? { ...prev, value: v ?? '' } : null)}
                                 options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off', scrollBeyondLastLine: false }}
-                                theme="light"
+                                theme={isDark ? 'vs-dark' : 'light'}
                             />
                         </div>
-                        {editorError && <p className="text-xs text-red-600">{editorError}</p>}
+                        {editorError && <p className="text-xs text-red-500 dark:text-red-400">{editorError}</p>}
                         <div className="flex gap-2">
-                            <button onClick={saveAdd} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">
+                            <button onClick={saveAdd} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                                 <Plus className="h-3 w-3" /> Insert
                             </button>
-                            <button onClick={() => { setAddState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
+                            <button onClick={() => { setAddState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300">
                                 <X className="h-3 w-3" /> Cancel
                             </button>
                         </div>
@@ -199,27 +201,27 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
             )}
 
             {collections.map((col: CollectionInfo) => (
-                <div key={col.name} className="border border-gray-200 rounded-lg overflow-hidden">
+                <div key={col.name} className="border border-gray-200 dark:border-slate-700 rounded-lg overflow-hidden">
                     {/* Collection header */}
                     <div
-                        className="flex items-center gap-2 px-4 py-3 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                        className="flex items-center gap-2 px-4 py-3 bg-gray-50 dark:bg-slate-700/50 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
                         onClick={() => toggleExpand(col.name)}
                     >
                         {expanded === col.name
-                            ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                            : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
-                        <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                        <span className="font-mono text-sm font-medium flex-1">{col.name}</span>
-                        <span className="text-xs text-gray-400 bg-gray-200 px-2 py-0.5 rounded-full">{col.count} doc{col.count !== 1 ? 's' : ''}</span>
+                            ? <ChevronDown className="h-4 w-4 text-gray-400 dark:text-slate-500 flex-shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-gray-400 dark:text-slate-500 flex-shrink-0" />}
+                        <Database className="h-4 w-4 text-indigo-500 flex-shrink-0" />
+                        <span className="font-mono text-sm font-medium flex-1 text-gray-900 dark:text-white">{col.name}</span>
+                        <span className="text-xs text-gray-400 dark:text-slate-400 bg-gray-200 dark:bg-slate-600 px-2 py-0.5 rounded-full">{col.count} doc{col.count !== 1 ? 's' : ''}</span>
                         <button
-                            className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                            className="p-1 text-gray-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded"
                             title="Add document"
                             onClick={e => { e.stopPropagation(); if (expanded !== col.name) toggleExpand(col.name); startAdd(col.name); }}
                         >
                             <Plus className="h-4 w-4" />
                         </button>
                         <button
-                            className="p-1 text-gray-400 hover:text-red-500 rounded"
+                            className="p-1 text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded"
                             title="Clear collection"
                             onClick={e => { e.stopPropagation(); setClearConfirm(col.name); }}
                         >
@@ -229,15 +231,15 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
 
                     {/* Clear confirm */}
                     {clearConfirm === col.name && (
-                        <div className="bg-red-50 border-t border-red-200 px-4 py-3 flex items-center gap-3">
+                        <div className="bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800 px-4 py-3 flex items-center gap-3">
                             <AlertTriangle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                            <span className="text-sm text-red-700 flex-1">Clear all {col.count} documents?</span>
+                            <span className="text-sm text-red-700 dark:text-red-300 flex-1">Clear all {col.count} documents?</span>
                             <button
                                 className="text-xs px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700"
                                 onClick={() => clearMutation.mutate(col.name)}
                             >Clear</button>
                             <button
-                                className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50"
+                                className="text-xs px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300"
                                 onClick={() => setClearConfirm(null)}
                             >Cancel</button>
                         </div>
@@ -245,31 +247,31 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
 
                     {/* Expanded documents */}
                     {expanded === col.name && (
-                        <div className="divide-y divide-gray-100">
+                        <div className="divide-y divide-gray-100 dark:divide-slate-700">
                             {docsLoading && (
-                                <div className="px-4 py-3 text-sm text-gray-500">Loading…</div>
+                                <div className="px-4 py-3 text-sm text-gray-500 dark:text-slate-400">Loading…</div>
                             )}
 
                             {!docsLoading && docs.map((doc: CollectionDocument, idx: number) => (
-                                <div key={idx} className="p-4">
+                                <div key={idx} className="p-4 bg-white dark:bg-slate-800">
                                     {editState?.name === col.name && editState.index === idx ? (
                                         /* Edit mode */
                                         <div className="space-y-2">
-                                            <div className="h-40 border border-gray-300 rounded overflow-hidden">
+                                            <div className="h-40 border border-gray-300 dark:border-slate-600 rounded overflow-hidden">
                                                 <Editor
                                                     defaultLanguage="json"
                                                     value={editState.value}
                                                     onChange={v => setEditState(prev => prev ? { ...prev, value: v ?? '' } : null)}
                                                     options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off', scrollBeyondLastLine: false }}
-                                                    theme="light"
+                                                    theme={isDark ? 'vs-dark' : 'light'}
                                                 />
                                             </div>
-                                            {editorError && <p className="text-xs text-red-600">{editorError}</p>}
+                                            {editorError && <p className="text-xs text-red-500 dark:text-red-400">{editorError}</p>}
                                             <div className="flex gap-2">
-                                                <button onClick={saveEdit} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                                <button onClick={saveEdit} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                                                     <Save className="h-3 w-3" /> Save
                                                 </button>
-                                                <button onClick={() => { setEditState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
+                                                <button onClick={() => { setEditState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300">
                                                     <X className="h-3 w-3" /> Cancel
                                                 </button>
                                             </div>
@@ -277,21 +279,21 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                                     ) : (
                                         /* View mode */
                                         <div className="flex items-start gap-3">
-                                            <span className="text-xs text-gray-400 pt-0.5 w-6 flex-shrink-0 text-right">#{idx}</span>
-                                            <pre className="text-xs text-gray-700 flex-1 whitespace-pre-wrap break-all bg-gray-50 rounded p-2 font-mono">
+                                            <span className="text-xs text-gray-400 dark:text-slate-500 pt-0.5 w-6 flex-shrink-0 text-right">#{idx}</span>
+                                            <pre className="text-xs text-gray-700 dark:text-slate-300 flex-1 whitespace-pre-wrap break-all bg-gray-50 dark:bg-slate-700/50 rounded p-2 font-mono">
                                                 {JSON.stringify(doc, null, 2)}
                                             </pre>
                                             <div className="flex gap-1 flex-shrink-0">
                                                 <button
                                                     onClick={() => startEdit(col.name, idx, doc)}
-                                                    className="p-1 text-gray-400 hover:text-blue-600 rounded"
+                                                    className="p-1 text-gray-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded"
                                                     title="Edit"
                                                 >
                                                     <Edit2 className="h-3.5 w-3.5" />
                                                 </button>
                                                 <button
                                                     onClick={() => deleteMutation.mutate({ name: col.name, index: idx })}
-                                                    className="p-1 text-gray-400 hover:text-red-500 rounded"
+                                                    className="p-1 text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded"
                                                     title="Delete"
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
@@ -303,28 +305,28 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                             ))}
 
                             {!docsLoading && docs.length === 0 && (
-                                <div className="px-4 py-3 text-sm text-gray-400 italic">No documents yet.</div>
+                                <div className="px-4 py-3 text-sm text-gray-400 dark:text-slate-500 italic bg-white dark:bg-slate-800">No documents yet.</div>
                             )}
 
                             {/* Add document row */}
                             {addState?.name === col.name && (
-                                <div className="p-4 bg-blue-50 space-y-2">
-                                    <p className="text-xs font-medium text-blue-700">New document</p>
-                                    <div className="h-40 border border-blue-300 rounded overflow-hidden">
+                                <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 space-y-2">
+                                    <p className="text-xs font-medium text-indigo-700 dark:text-indigo-300">New document</p>
+                                    <div className="h-40 border border-indigo-300 dark:border-indigo-700 rounded overflow-hidden">
                                         <Editor
                                             defaultLanguage="json"
                                             value={addState.value}
                                             onChange={v => setAddState(prev => prev ? { ...prev, value: v ?? '' } : null)}
                                             options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off', scrollBeyondLastLine: false }}
-                                            theme="light"
+                                            theme={isDark ? 'vs-dark' : 'light'}
                                         />
                                     </div>
-                                    {editorError && <p className="text-xs text-red-600">{editorError}</p>}
+                                    {editorError && <p className="text-xs text-red-500 dark:text-red-400">{editorError}</p>}
                                     <div className="flex gap-2">
-                                        <button onClick={saveAdd} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                        <button onClick={saveAdd} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700">
                                             <Plus className="h-3 w-3" /> Insert
                                         </button>
-                                        <button onClick={() => { setAddState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
+                                        <button onClick={() => { setAddState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 dark:border-slate-600 rounded hover:bg-gray-50 dark:hover:bg-slate-700 text-gray-600 dark:text-slate-300">
                                             <X className="h-3 w-3" /> Cancel
                                         </button>
                                     </div>
