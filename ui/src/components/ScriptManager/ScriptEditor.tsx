@@ -21,77 +21,186 @@ function registerStarlarkCompletions(monaco: Monaco) {
     if (_starlarkCompletionsRegistered) return
     _starlarkCompletionsRegistered = true
 
+    const CIK = monaco.languages.CompletionItemKind
+    const CITR = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet
+
+    // Helper: build a completion item with a shared range
+    const mk = (
+        range: monacoEditor.IRange,
+        label: string,
+        kind: number,
+        detail: string,
+        insertText: string,
+        doc?: string,
+    ) => ({ label, kind, detail, insertText, insertTextRules: CITR, documentation: doc, range })
+
+    // ── Provider 1: dot-triggered member access ────────────────────────────
     monaco.languages.registerCompletionItemProvider('python', {
         triggerCharacters: ['.'],
-        provideCompletionItems: (model: monacoEditor.editor.ITextModel, position: monacoEditor.Position) => {
-            const line = model.getLineContent(position.lineNumber).substring(0, position.column - 1)
+        provideCompletionItems: (
+            model: monacoEditor.editor.ITextModel,
+            position: monacoEditor.Position,
+        ) => {
+            const textBefore = model.getLineContent(position.lineNumber).substring(0, position.column - 1)
             const word = model.getWordUntilPosition(position)
-            const range = {
+            const range: monacoEditor.IRange = {
                 startLineNumber: position.lineNumber,
                 endLineNumber: position.lineNumber,
                 startColumn: word.startColumn,
                 endColumn: word.endColumn,
             }
-            const CIK = monaco.languages.CompletionItemKind
-            const mk = (label: string, kind: number, detail: string, insertText?: string, doc?: string) => ({
-                label, kind, detail, insertText: insertText ?? label,
-                insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-                documentation: doc, range,
-            })
+            const s = (label: string, kind: number, detail: string, insertText: string, doc?: string) =>
+                mk(range, label, kind, detail, insertText, doc)
 
-            if (/\breq\.\w*$/.test(line)) {
+            // req.*
+            if (/\breq\.$/.test(textBefore) || /\breq\.\w+$/.test(textBefore)) {
                 return { suggestions: [
-                    mk('path',   CIK.Property, 'dict – path parameters',   'path',   'Dict of path parameters from the URL template.'),
-                    mk('query',  CIK.Property, 'dict – query parameters',  'query',  'Dict of query string parameters.'),
-                    mk('header', CIK.Property, 'dict – request headers',   'header', 'Dict of request headers (lowercase keys).'),
-                    mk('body',   CIK.Property, 'value – parsed JSON body', 'body',   'Parsed JSON body of the request, or None.'),
+                    s('path',   CIK.Property, 'dict  path parameters',   'path',   'Dict of path parameters from the URL template, e.g. req.path["id"]'),
+                    s('query',  CIK.Property, 'dict  query parameters',  'query',  'Dict of query string parameters, e.g. req.query["page"]'),
+                    s('header', CIK.Property, 'dict  request headers',   'header', 'Dict of request headers (lowercase keys), e.g. req.header["authorization"]'),
+                    s('body',   CIK.Property, 'value  parsed JSON body', 'body',   'Parsed JSON body (dict/list/None), e.g. req.body["name"]'),
                 ]}
             }
 
-            if (/\bstore\.\w*$/.test(line)) {
+            // store.*
+            if (/\bstore\.$/.test(textBefore) || /\bstore\.\w+$/.test(textBefore)) {
                 return { suggestions: [
-                    mk('get',        CIK.Method, 'store.get(key[, default])',          'get("${1:key}")',           'Read a value from the session store.'),
-                    mk('set',        CIK.Method, 'store.set(key, value)',               'set("${1:key}", ${2:value})', 'Write a value to the session store.'),
-                    mk('has',        CIK.Method, 'store.has(key) → bool',              'has("${1:key}")',           'Check if a key exists.'),
-                    mk('delete',     CIK.Method, 'store.delete(key)',                   'delete("${1:key}")',        'Remove a key from the store.'),
-                    mk('keys',       CIK.Method, 'store.keys() → list',                'keys()',                    'Return all keys in the session store.'),
-                    mk('collection', CIK.Method, 'store.collection(name) → col',       'collection("${1:name}")',   'Get a global named collection.'),
+                    s('get',        CIK.Method, 'store.get(key[, default]) → value', 'get("${1:key}")',              'Read a value from the session store. Returns None if absent.'),
+                    s('set',        CIK.Method, 'store.set(key, value)',              'set("${1:key}", ${2:value})',  'Write a value to the session store.'),
+                    s('has',        CIK.Method, 'store.has(key) → bool',             'has("${1:key}")',              'True if key exists in the session store.'),
+                    s('delete',     CIK.Method, 'store.delete(key)',                  'delete("${1:key}")',           'Remove a key from the session store.'),
+                    s('keys',       CIK.Method, 'store.keys() → list',               'keys()',                       'Return all keys in the session store.'),
+                    s('collection', CIK.Method, 'store.collection(name) → col',      'collection("${1:name}")',      'Get a named global collection. Shared across all sessions.'),
                 ]}
             }
 
-            if (/\b\w+\.\w*$/.test(line)) {
-                // Likely a collection handle — offer collection methods
+            // datetime.date.* (static class methods)
+            if (/\bdatetime\.date\.$/.test(textBefore) || /\bdatetime\.date\.\w+$/.test(textBefore)) {
                 return { suggestions: [
-                    mk('findAll',  CIK.Method, 'col.findAll([filter]) → list',        'findAll()',             'Return all documents; optional equality filter dict.'),
-                    mk('findOne',  CIK.Method, 'col.findOne(filter) → dict|None',     'findOne({${1}})',       'Return first matching document or None.'),
-                    mk('insert',   CIK.Method, 'col.insert(doc)',                      'insert({${1}})',        'Insert a document into the collection.'),
-                    mk('update',   CIK.Method, 'col.update(filter, patch)',            'update({${1}}, {${2}})', 'Update all documents matching filter.'),
-                    mk('remove',   CIK.Method, 'col.remove(filter)',                   'remove({${1}})',        'Remove all documents matching filter.'),
-                    mk('count',    CIK.Method, 'col.count([filter]) → int',           'count()',               'Count documents; optional filter dict.'),
-                    mk('clear',    CIK.Method, 'col.clear()',                          'clear()',               'Remove all documents.'),
+                    s('today',        CIK.Method, 'datetime.date.today() → date',               'today()',             'Return today\'s date in UTC.'),
+                    s('fromisoformat', CIK.Method, 'datetime.date.fromisoformat(str) → date',   'fromisoformat("${1:YYYY-MM-DD}")', 'Parse a date from ISO format string "YYYY-MM-DD".'),
                 ]}
             }
 
-            // Top-level builtins
+            // datetime.datetime.* (static class methods)
+            if (/\bdatetime\.datetime\.$/.test(textBefore) || /\bdatetime\.datetime\.\w+$/.test(textBefore)) {
+                return { suggestions: [
+                    s('now',           CIK.Method, 'datetime.datetime.now() → datetime',           'now()',              'Return the current datetime (UTC).'),
+                    s('utcnow',        CIK.Method, 'datetime.datetime.utcnow() → datetime',        'utcnow()',           'Return the current UTC datetime (alias for now).'),
+                    s('fromisoformat', CIK.Method, 'datetime.datetime.fromisoformat(str) → datetime', 'fromisoformat("${1:str}")',  'Parse datetime from RFC3339/ISO string.'),
+                    s('fromtimestamp', CIK.Method, 'datetime.datetime.fromtimestamp(secs) → datetime', 'fromtimestamp(${1:secs})', 'Create datetime from Unix timestamp (seconds).'),
+                ]}
+            }
+
+            // datetime.timedelta.* constructor
+            if (/\bdatetime\.timedelta\.$/.test(textBefore) || /\bdatetime\.timedelta\.\w+$/.test(textBefore)) {
+                // timedelta is a constructor — no static methods, return empty to avoid noise
+                return { suggestions: [] }
+            }
+
+            // datetime.* (module members: date, datetime, timedelta)
+            if (/\bdatetime\.$/.test(textBefore) || /\bdatetime\.\w+$/.test(textBefore)) {
+                return { suggestions: [
+                    s('date',      CIK.Class, 'datetime.date(year, month, day) → date',                'date',      'Date type. Constructor: datetime.date(year, month, day). Static: .today(), .fromisoformat()'),
+                    s('datetime',  CIK.Class, 'datetime.datetime(year, month, day, ...) → datetime',   'datetime',  'Datetime type. Constructor and static methods: .now(), .fromisoformat(), .fromtimestamp()'),
+                    s('timedelta', CIK.Class, 'datetime.timedelta(days?, hours?, minutes?, seconds?)', 'timedelta', 'Timedelta constructor. kwargs: days, hours, minutes, seconds.'),
+                ]}
+            }
+
+            // validate.*
+            if (/\bvalidate\.$/.test(textBefore) || /\bvalidate\.\w+$/.test(textBefore)) {
+                const validateMethods = [
+                    s('matches',       CIK.Method, 'validate.matches(value, token_or_pattern) → bool', 'matches(${1:value}, "${2:uuid}")', 'Match against a named token (uuid, email, …) or raw regex.'),
+                    s('regex',         CIK.Method, 'validate.regex(value, pattern) → bool',            'regex(${1:value}, "${2:pattern}")', 'Match against a raw regex pattern.'),
+                    s('pattern_names', CIK.Method, 'validate.pattern_names() → list',                  'pattern_names()',                  'Return list of all registered token names.'),
+                    // Convenience helpers
+                    s('is_uuid',        CIK.Method, '(value) → bool', 'is_uuid(${1:v})',        'True if value is a valid UUID.'),
+                    s('is_email',       CIK.Method, '(value) → bool', 'is_email(${1:v})',       'True if value is a valid email address.'),
+                    s('is_url',         CIK.Method, '(value) → bool', 'is_url(${1:v})',         'True if value is a valid URL.'),
+                    s('is_ipv4',        CIK.Method, '(value) → bool', 'is_ipv4(${1:v})',        'True if value is an IPv4 address.'),
+                    s('is_ipv6',        CIK.Method, '(value) → bool', 'is_ipv6(${1:v})',        'True if value is an IPv6 address.'),
+                    s('is_ip',          CIK.Method, '(value) → bool', 'is_ip(${1:v})',          'True if value is an IPv4 or IPv6 address.'),
+                    s('is_us_phone',    CIK.Method, '(value) → bool', 'is_us_phone(${1:v})',    'True if value is a US phone number.'),
+                    s('is_us_zip',      CIK.Method, '(value) → bool', 'is_us_zip(${1:v})',      'True if value is a US ZIP code.'),
+                    s('is_ssn',         CIK.Method, '(value) → bool', 'is_ssn(${1:v})',         'True if value is a US Social Security Number.'),
+                    s('is_date_iso',    CIK.Method, '(value) → bool', 'is_date_iso(${1:v})',    'True if value matches YYYY-MM-DD.'),
+                    s('is_datetime_iso',CIK.Method, '(value) → bool', 'is_datetime_iso(${1:v})','True if value is an ISO datetime string.'),
+                    s('is_integer',     CIK.Method, '(value) → bool', 'is_integer(${1:v})',     'True if value is an integer string.'),
+                    s('is_decimal',     CIK.Method, '(value) → bool', 'is_decimal(${1:v})',     'True if value is a decimal number string.'),
+                    s('is_semver',      CIK.Method, '(value) → bool', 'is_semver(${1:v})',      'True if value is a semantic version (e.g. 1.2.3).'),
+                    s('is_jwt',         CIK.Method, '(value) → bool', 'is_jwt(${1:v})',         'True if value looks like a JWT token.'),
+                    s('is_slug',        CIK.Method, '(value) → bool', 'is_slug(${1:v})',        'True if value is a URL slug.'),
+                    s('is_base64',      CIK.Method, '(value) → bool', 'is_base64(${1:v})',      'True if value is valid base64.'),
+                    s('is_hex_color',   CIK.Method, '(value) → bool', 'is_hex_color(${1:v})',   'True if value is a hex color (#RGB or #RRGGBB).'),
+                    s('is_credit_card', CIK.Method, '(value) → bool', 'is_credit_card(${1:v})', 'True if value is a credit card number.'),
+                    s('is_iban',        CIK.Method, '(value) → bool', 'is_iban(${1:v})',        'True if value is an IBAN.'),
+                ]
+                return { suggestions: validateMethods }
+            }
+
+            // Collection methods (for any other variable.xxx pattern)
+            if (/\b\w+\.$/.test(textBefore) || /\b\w+\.\w+$/.test(textBefore)) {
+                return { suggestions: [
+                    s('findAll', CIK.Method, 'col.findAll([filter]) → list',       'findAll()',              'Return all documents; pass a dict to filter by equality.'),
+                    s('findOne', CIK.Method, 'col.findOne(filter) → dict|None',    'findOne({${1}})',         'Return first document matching filter, or None.'),
+                    s('insert',  CIK.Method, 'col.insert(doc)',                    'insert({${1}})',          'Insert a document into the collection.'),
+                    s('update',  CIK.Method, 'col.update(filter, patch)',          'update({${1}}, {${2}})',  'Update all documents matching filter with the patch dict.'),
+                    s('remove',  CIK.Method, 'col.remove(filter)',                 'remove({${1}})',          'Remove all documents matching filter.'),
+                    s('count',   CIK.Method, 'col.count([filter]) → int',         'count()',                 'Count documents; pass a dict to filter.'),
+                    s('clear',   CIK.Method, 'col.clear()',                        'clear()',                 'Remove all documents from the collection.'),
+                ]}
+            }
+
+            return { suggestions: [] }
+        },
+    })
+
+    // ── Provider 2: top-level builtins (no dot, Ctrl+Space / normal typing) ──
+    monaco.languages.registerCompletionItemProvider('python', {
+        triggerCharacters: [],
+        provideCompletionItems: (
+            model: monacoEditor.editor.ITextModel,
+            position: monacoEditor.Position,
+        ) => {
+            const textBefore = model.getLineContent(position.lineNumber).substring(0, position.column - 1)
+            // Skip if we're in a member-access context (after a dot)
+            if (/\.\w*$/.test(textBefore)) return { suggestions: [] }
+
+            const word = model.getWordUntilPosition(position)
+            const range: monacoEditor.IRange = {
+                startLineNumber: position.lineNumber,
+                endLineNumber: position.lineNumber,
+                startColumn: word.startColumn,
+                endColumn: word.endColumn,
+            }
+            const s = (label: string, kind: number, detail: string, insertText: string, doc?: string) =>
+                mk(range, label, kind, detail, insertText, doc)
+
             return { suggestions: [
-                mk('uuid',          CIK.Function, '() → string',         'uuid()',                     'Generate a random UUID v4.'),
-                mk('now',           CIK.Function, '([fmt]) → int|string', 'now()',                      'Current time. Formats: "unix_ms", "iso", "date".'),
-                mk('sleep',         CIK.Function, '(ms)',                 'sleep(${1:100})',            'Pause execution for ms milliseconds.'),
-                mk('rand_int',      CIK.Function, '(max) or (min, max)', 'rand_int(${1:100})',         'Random integer in [0, max] or [min, max].'),
-                mk('rand_choice',   CIK.Function, '(list) → value',      'rand_choice(${1:list})',     'Random element from a list.'),
-                mk('counter',       CIK.Function, '(name[, n]) → int',   'counter("${1:name}")',       'Increment named counter and return new value.'),
-                mk('log',           CIK.Function, '(...)',                'log(${1})',                  'Append message(s) to the request trace log.'),
-                mk('base64_encode', CIK.Function, '(str) → string',      'base64_encode(${1:s})',      'Encode string as standard base64.'),
-                mk('base64_decode', CIK.Function, '(str) → string',      'base64_decode(${1:s})',      'Decode a base64 string.'),
-                mk('hash',          CIK.Function, '(algo, str) → string','hash("${1:sha256}", ${2:s})', 'Hex digest. Algos: md5, sha1, sha256, sha512.'),
-                mk('json_parse',    CIK.Function, '(str) → value',       'json_parse(${1:s})',         'Parse a JSON string to a Starlark value.'),
-                mk('json_stringify',CIK.Function, '(value) → string',    'json_stringify(${1:v})',     'Serialize a Starlark value to JSON.'),
-                mk('regex_match',   CIK.Function, '(pattern, str) → bool','regex_match("${1:pattern}", ${2:s})', 'True if pattern matches anywhere in str.'),
-                mk('regex_find',    CIK.Function, '(pattern, str) → str|None','regex_find("${1:pattern}", ${2:s})', 'First match or None.'),
-                mk('regex_find_all',CIK.Function, '(pattern, str) → list','regex_find_all("${1:pattern}", ${2:s})', 'All non-overlapping matches.'),
-                mk('store',         CIK.Module,   'session key-value store', 'store', 'Session key-value store.'),
-                mk('datetime',      CIK.Module,   'datetime utilities',      'datetime', 'datetime.date / .datetime / .timedelta'),
-                mk('validate',      CIK.Module,   'validation helpers',       'validate', 'validate.is_email(), .is_uuid(), etc.'),
+                // Core builtins
+                s('uuid',           CIK.Function, '() → string',              'uuid()',                          'Generate a random UUID v4.'),
+                s('now',            CIK.Function, '([fmt]) → int|string',     'now()',                           'Current time. Use now("iso"), now("date"), now("unix_ms"), or now() for Unix seconds.'),
+                s('sleep',          CIK.Function, '(ms)',                      'sleep(${1:100})',                 'Pause execution for ms milliseconds.'),
+                s('rand_int',       CIK.Function, '(max) or (min, max) → int','rand_int(${1:100})',              'Random integer. rand_int(max) → [0, max]. rand_int(min, max) → [min, max].'),
+                s('rand_choice',    CIK.Function, '(list) → value',           'rand_choice(${1:list})',          'Return a random element from a list.'),
+                s('counter',        CIK.Function, '(name[, n]) → int',        'counter("${1:name}")',            'Increment named counter, return new value. Pass n=0 to read without incrementing.'),
+                s('log',            CIK.Function, '(...)',                     'log(${1})',                       'Append one or more values to the request trace log.'),
+                s('hash',           CIK.Function, '(algo, str) → string',     'hash("${1|sha256,md5,sha1,sha512|}", ${2:s})', 'Hex digest. Supported algos: md5, sha1, sha256, sha512.'),
+                s('base64_encode',  CIK.Function, '(str) → string',           'base64_encode(${1:s})',           'Encode a string as standard base64.'),
+                s('base64_decode',  CIK.Function, '(str) → string',           'base64_decode(${1:s})',           'Decode a base64-encoded string.'),
+                s('json_parse',     CIK.Function, '(str) → value',            'json_parse(${1:s})',              'Parse a JSON string into a Starlark dict/list/value.'),
+                s('json_stringify', CIK.Function, '(value) → string',         'json_stringify(${1:v})',          'Serialize a Starlark value to a JSON string.'),
+                s('regex_match',    CIK.Function, '(pattern, str) → bool',    'regex_match("${1:pattern}", ${2:s})', 'Return True if pattern matches anywhere in str.'),
+                s('regex_find',     CIK.Function, '(pattern, str) → str|None','regex_find("${1:pattern}", ${2:s})', 'Return first match or None.'),
+                s('regex_find_all', CIK.Function, '(pattern, str) → list',    'regex_find_all("${1:pattern}", ${2:s})', 'Return list of all non-overlapping matches.'),
+
+                // Modules
+                s('store',    CIK.Module,   'session key-value store',  'store',    'Per-request session store. Methods: get, set, has, delete, keys, collection.'),
+                s('datetime', CIK.Module,   'datetime utilities',       'datetime', 'datetime module. Access: datetime.date, datetime.datetime, datetime.timedelta.'),
+                s('validate', CIK.Module,   'value validation helpers', 'validate', 'validate module. Methods: matches, regex, is_email, is_uuid, is_url, …'),
+
+                // req variable — appears in run(req) context
+                s('req', CIK.Variable, 'request object', 'req', 'Request object. Fields: req.path, req.query, req.header, req.body'),
             ]}
         },
     })
