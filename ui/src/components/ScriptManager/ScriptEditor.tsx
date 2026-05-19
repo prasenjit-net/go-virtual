@@ -44,7 +44,12 @@ export default function ScriptEditor() {
     const sourceRef = useRef(DEFAULT_SOURCE)
     const timeoutRef = useRef(0)
 
-    // Validate state
+    // savedSource drives the dirty banner only — has no effect on test execution
+    // null = not yet loaded (new script or loading); string = last persisted source
+    const [savedSource, setSavedSource] = useState<string | null>(isNew ? '' : null)
+    const isDirty = savedSource !== null && source !== savedSource
+
+
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
     const [isValidating, setIsValidating] = useState(false)
 
@@ -85,6 +90,7 @@ export default function ScriptEditor() {
             setSource(DEFAULT_SOURCE)
             sourceRef.current = DEFAULT_SOURCE
             timeoutRef.current = 0
+            setSavedSource(isNew ? '' : null)
             setValidateResult(null)
             setTestResult(null)
         }
@@ -106,6 +112,7 @@ export default function ScriptEditor() {
                 if (data.source !== undefined) {
                     setSource(data.source || '')
                     sourceRef.current = data.source || ''
+                    setSavedSource(data.source || '')
                 }
                 setFormInitialised(true)
             }
@@ -123,6 +130,7 @@ export default function ScriptEditor() {
             if (!isNew) {
                 queryClient.invalidateQueries({ queryKey: ['script', scriptId] })
             }
+            setSavedSource(sourceRef.current)
             // Discard the AI conversation context on save.
             setAiHistory([])
             navigate(`/scripts`)
@@ -382,7 +390,13 @@ export default function ScriptEditor() {
                             <div className="flex items-center gap-2">
                                 <Play className="w-4 h-4 text-gray-500 dark:text-slate-400" />
                                 <span className="text-base font-semibold text-gray-900 dark:text-slate-100">Test Execution</span>
-                                <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
+                                {isDirty
+                                    ? <span className="inline-flex items-center gap-1 text-xs text-amber-500 dark:text-amber-400 ml-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>
+                                        unsaved changes
+                                      </span>
+                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
+                                }
                             </div>
                             {testOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                         </button>
