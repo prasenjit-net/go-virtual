@@ -186,6 +186,50 @@ func (h *Handler) ValidateScript(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"valid": true, "error": nil})
 }
 
+// TestScriptSource compiles and executes raw Starlark source without saving.
+// Used when the user wants to run the script before it has been persisted.
+func (h *Handler) TestScriptSource(c *gin.Context) {
+	var body struct {
+		Source  string                 `json:"source"`
+		Timeout int                    `json:"timeout"`
+		Input   *scripting.ScriptInput `json:"input"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if body.Source == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source is required"})
+		return
+	}
+
+	input := body.Input
+	if input == nil {
+		input = &scripting.ScriptInput{
+			Path:   map[string]string{},
+			Query:  map[string]string{},
+			Header: map[string]string{},
+			Body:   nil,
+		}
+	}
+
+	// Use RunSource — bypasses the cache so every call compiles fresh from the provided source
+	output, logs, durationMs, execErr := h.scriptEngine.RunSource(c.Request.Context(), body.Source, body.Timeout, input)
+
+	resp := gin.H{
+		"output":     output,
+		"durationMs": durationMs,
+		"logs":       logs,
+		"error":      nil,
+	}
+	if execErr != nil {
+		resp["error"] = execErr.Error()
+		resp["output"] = nil
+	}
+
+	c.JSON(http.StatusOK, resp)
+}
+
 // TestScript executes a saved script with a mock input.
 func (h *Handler) TestScript(c *gin.Context) {
 	id := c.Param("id")

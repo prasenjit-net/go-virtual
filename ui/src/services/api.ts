@@ -440,6 +440,20 @@ export const scriptsApi = {
         return handleResponse<{ valid: boolean; error: string | null }>(response);
     },
 
+    testSource: async (source: string, timeout: number, input: {
+        path?: Record<string, string>;
+        query?: Record<string, string>;
+        header?: Record<string, string>;
+        body?: any;
+    }) => {
+        const response = await fetch(`${API_BASE}/scripts/test-source`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source, timeout, input }),
+        });
+        return handleResponse<{ output: any; durationMs: number; logs?: string[]; error: string | null }>(response);
+    },
+
     test: async (id: string, input: {
         path?: Record<string, string>;
         query?: Record<string, string>;
@@ -615,6 +629,57 @@ export const storeApi = {
 
     clear: async () => {
         const response = await fetch(`${API_BASE}/store?confirm=true`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};
+
+// Collections API
+export const collectionsApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/store/collections`);
+        return handleResponse<import('../types').CollectionInfo[]>(response);
+    },
+
+    get: async (name: string) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`);
+        return handleResponse<import('../types').CollectionDocument[]>(response);
+    },
+
+    insert: async (name: string, doc: import('../types').CollectionDocument) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc),
+        });
+        return handleResponse<import('../types').CollectionDocument>(response);
+    },
+
+    update: async (name: string, index: number, changes: import('../types').CollectionDocument) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(changes),
+        });
+        return handleResponse<import('../types').CollectionDocument>(response);
+    },
+
+    deleteDoc: async (name: string, index: number) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}/${index}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    clear: async (name: string) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`, {
             method: 'DELETE',
         });
         if (!response.ok && response.status !== 204) {

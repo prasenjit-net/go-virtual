@@ -196,6 +196,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/scripts", r.handler.ListScripts)
 		api.POST("/scripts", r.handler.CreateScript)
 		api.POST("/scripts/validate", r.handler.ValidateScript)
+		api.POST("/scripts/test-source", r.handler.TestScriptSource)
 		api.GET("/scripts/:id", r.handler.GetScript)
 		api.PUT("/scripts/:id", r.handler.UpdateScript)
 		api.DELETE("/scripts/:id", r.handler.DeleteScript)
@@ -207,6 +208,14 @@ func (r *Router) setupRoutes() {
 		api.PUT("/store/:key", r.handler.UpsertStoreEntry)
 		api.DELETE("/store/:key", r.handler.DeleteStoreEntry)
 		api.DELETE("/store", r.handler.ClearStore)
+
+		// Named collections (backed by the global store)
+		api.GET("/store/collections", r.handler.ListCollections)
+		api.GET("/store/collections/:name", r.handler.GetCollection)
+		api.POST("/store/collections/:name", r.handler.InsertCollectionDoc)
+		api.PUT("/store/collections/:name/:index", r.handler.UpdateCollectionDoc)
+		api.DELETE("/store/collections/:name/:index", r.handler.DeleteCollectionDoc)
+		api.DELETE("/store/collections/:name", r.handler.ClearCollection)
 
 		// Sessions (Phase 2)
 		api.GET("/sessions", r.handler.ListSessions)

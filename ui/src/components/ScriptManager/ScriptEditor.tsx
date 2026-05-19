@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import Editor from '@monaco-editor/react'
@@ -39,7 +39,17 @@ export default function ScriptEditor() {
     const [source, setSource] = useState(DEFAULT_SOURCE)
     const [formInitialised, setFormInitialised] = useState(false)
 
-    // Validate state
+    // Keep a ref in sync with source so handleTest always reads the latest value
+    // regardless of closure staleness
+    const sourceRef = useRef(DEFAULT_SOURCE)
+    const timeoutRef = useRef(0)
+
+    // savedSource drives the dirty banner only — has no effect on test execution
+    // null = not yet loaded (new script or loading); string = last persisted source
+    const [savedSource, setSavedSource] = useState<string | null>(isNew ? '' : null)
+    const isDirty = savedSource !== null && source !== savedSource
+
+
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
     const [isValidating, setIsValidating] = useState(false)
 
@@ -67,6 +77,25 @@ export default function ScriptEditor() {
     const aiConfigured = aiStatus.configured
     const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
+    // Reset all form state when scriptId changes (e.g. navigating between scripts)
+    const prevScriptIdRef = useRef<string | undefined>(undefined)
+    if (prevScriptIdRef.current !== scriptId) {
+        prevScriptIdRef.current = scriptId
+        if (formInitialised) {
+            setFormInitialised(false)
+            setName('')
+            setDescription('')
+            setTimeout(0)
+            setEnabled(true)
+            setSource(DEFAULT_SOURCE)
+            sourceRef.current = DEFAULT_SOURCE
+            timeoutRef.current = 0
+            setSavedSource(isNew ? '' : null)
+            setValidateResult(null)
+            setTestResult(null)
+        }
+    }
+
     // Load existing script for edit mode
     const { isLoading: isLoadingScript } = useQuery<Script>({
         queryKey: ['script', scriptId],
@@ -78,9 +107,12 @@ export default function ScriptEditor() {
                 setName(data.name)
                 setDescription(data.description)
                 setTimeout(data.timeout)
+                timeoutRef.current = data.timeout
                 setEnabled(data.enabled)
                 if (data.source !== undefined) {
                     setSource(data.source || '')
+                    sourceRef.current = data.source || ''
+                    setSavedSource(data.source || '')
                 }
                 setFormInitialised(true)
             }
@@ -98,6 +130,7 @@ export default function ScriptEditor() {
             if (!isNew) {
                 queryClient.invalidateQueries({ queryKey: ['script', scriptId] })
             }
+            setSavedSource(sourceRef.current)
             // Discard the AI conversation context on save.
             setAiHistory([])
             navigate(`/scripts`)
@@ -123,10 +156,19 @@ export default function ScriptEditor() {
     }, [source])
 
     const handleTest = useCallback(async () => {
-        if (isNew || !scriptId) return
+        // Read directly from refs — never stale, no closure capture issues
+        const currentSource = sourceRef.current
+        const currentTimeout = timeoutRef.current
         setIsTesting(true)
         setTestResult(null)
         try {
+            // Validate first — bail with a clear message if syntax is bad
+            const validation = await scriptsApi.validate(currentSource)
+            if (!validation.valid) {
+                setTestResult({ output: null, durationMs: 0, error: `Script has errors: ${validation.error}` })
+                return
+            }
+
             let parsedPath: Record<string, string> = {}
             let parsedQuery: Record<string, string> = {}
             let parsedHeader: Record<string, string> = {}
@@ -135,19 +177,15 @@ export default function ScriptEditor() {
             try { parsedQuery = JSON.parse(testQuery) } catch { /* ignore */ }
             try { parsedHeader = JSON.parse(testHeader) } catch { /* ignore */ }
             try { parsedBody = JSON.parse(testBody) } catch { /* ignore */ }
-            const result = await scriptsApi.test(scriptId, {
-                path: parsedPath,
-                query: parsedQuery,
-                header: parsedHeader,
-                body: parsedBody,
-            })
+            const input = { path: parsedPath, query: parsedQuery, header: parsedHeader, body: parsedBody }
+            const result = await scriptsApi.testSource(currentSource, currentTimeout, input)
             setTestResult(result)
         } catch (e) {
             setTestResult({ output: null, durationMs: 0, error: (e as Error).message })
         } finally {
             setIsTesting(false)
         }
-    }, [scriptId, isNew, testPath, testQuery, testHeader, testBody])
+    }, [testPath, testQuery, testHeader, testBody])
 
     if (!isNew && isLoadingScript && !formInitialised) {
         return (
@@ -228,7 +266,7 @@ export default function ScriptEditor() {
                                     type="number"
                                     value={timeout}
                                     min={0}
-                                    onChange={(e) => setTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                                    onChange={(e) => { const v = Math.max(0, parseInt(e.target.value) || 0); setTimeout(v); timeoutRef.current = v; }}
                                     placeholder="0 = global default"
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                                 />
@@ -321,11 +359,14 @@ export default function ScriptEditor() {
                     )}
 
                     <Editor
+                        key={scriptId ?? 'new'}
                         height="360px"
                         language="python"
                         value={source}
                         onChange={(val) => {
-                            setSource(val ?? '')
+                            const v = val ?? ''
+                            setSource(v)
+                            sourceRef.current = v
                             setValidateResult(null)
                         }}
                         theme="vs-dark"
@@ -340,9 +381,8 @@ export default function ScriptEditor() {
                     />
                 </div>
 
-                {/* Test panel (only in edit mode — needs a saved script to execute) */}
-                {!isNew && (
-                    <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
+                {/* Test panel — always runs current editor source */}
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
                         <button
                             onClick={() => setTestOpen(!testOpen)}
                             className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
@@ -350,7 +390,13 @@ export default function ScriptEditor() {
                             <div className="flex items-center gap-2">
                                 <Play className="w-4 h-4 text-gray-500 dark:text-slate-400" />
                                 <span className="text-base font-semibold text-gray-900 dark:text-slate-100">Test Execution</span>
-                                <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs the last saved version)</span>
+                                {isDirty
+                                    ? <span className="inline-flex items-center gap-1 text-xs text-amber-500 dark:text-amber-400 ml-1">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block"></span>
+                                        unsaved changes
+                                      </span>
+                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
+                                }
                             </div>
                             {testOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                         </button>
@@ -468,7 +514,6 @@ export default function ScriptEditor() {
                             </div>
                         )}
                     </div>
-                )}
 
                 {/* Builtin Reference panel */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
@@ -531,6 +576,21 @@ export default function ScriptEditor() {
                                     <RefEntry sig='store.has("key")' ret="bool" desc="Check existence" />
                                     <RefEntry sig='store.delete("key")' ret="None" desc="Remove key" />
                                     <RefEntry sig="store.keys()" ret="list" desc="All session keys" />
+                                </RefSection>
+
+                                {/* Collections */}
+                                <RefSection title='Collections (global) — store.collection("name")'>
+                                    <div className="text-xs text-gray-400 dark:text-slate-500 mb-1">Global across all sessions. Use for shared data sets.</div>
+                                    <RefEntry sig='col = store.collection("name")' ret="col" desc="Get collection handle" />
+                                    <RefEntry sig="col.findAll()" ret="list" desc="All documents" />
+                                    <RefEntry sig='col.findAll({"field": "value"})' ret="list" desc="Filtered (equality)" />
+                                    <RefEntry sig='col.findOne({"id": "x"})' ret="dict|None" desc="First match or None" />
+                                    <RefEntry sig="col.insert({...})" ret="None" desc="Append document" />
+                                    <RefEntry sig='col.update({"id":"x"}, {...})' ret="None" desc="Update matching docs" />
+                                    <RefEntry sig='col.remove({"id": "x"})' ret="None" desc="Remove matching docs" />
+                                    <RefEntry sig="col.count()" ret="int" desc="Total documents" />
+                                    <RefEntry sig='col.count({"status":"ok"})' ret="int" desc="Matching documents" />
+                                    <RefEntry sig="col.clear()" ret="None" desc="Remove all documents" />
                                 </RefSection>
 
                                 {/* Log */}

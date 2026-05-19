@@ -278,6 +278,38 @@ func (e *ScriptEngine) CompileAndValidate(scriptID, source string) error {
 	return err
 }
 
+// RunSource compiles and executes raw Starlark source without using or populating the cache.
+// Used for test-source requests where the source changes on every call.
+func (e *ScriptEngine) RunSource(
+	ctx context.Context,
+	source string,
+	timeoutMs int,
+	input *ScriptInput,
+) (any, []string, float64, error) {
+	compiled, err := e.runner.Compile("_adhoc", source)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+
+	if timeoutMs <= 0 {
+		timeoutMs = e.defaultTimeoutMs
+	}
+
+	var snapshot map[string]any
+	if e.globalStore != nil {
+		snapshot = e.globalStore.Snapshot()
+	}
+	ephemeral := store.NewEphemeralSession(snapshot)
+
+	var accessLog []models.StoreAccessEvent
+	var logBuf []string
+	start := time.Now()
+	result, execErr := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf)
+	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
+
+	return result, logBuf, durationMs, execErr
+}
+
 // TestScript compiles (or uses cache) and executes a script with a provided input.
 // Used for the /test endpoint.
 func (e *ScriptEngine) TestScript(
