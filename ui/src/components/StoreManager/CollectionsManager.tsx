@@ -12,6 +12,9 @@ export default function CollectionsManager() {
     const [addState, setAddState] = useState<{ name: string; value: string } | null>(null);
     const [clearConfirm, setClearConfirm] = useState<string | null>(null);
     const [editorError, setEditorError] = useState('');
+    // new collection creation state
+    const [newColName, setNewColName] = useState('');
+    const [showNewCol, setShowNewCol] = useState(false);
 
     const { data: collections = [], isLoading } = useQuery({
         queryKey: ['collections'],
@@ -33,6 +36,7 @@ export default function CollectionsManager() {
             setAddState(null);
             setEditorError('');
         },
+        onError: (err: Error) => setEditorError(err.message),
     });
 
     const updateMutation = useMutation({
@@ -43,6 +47,7 @@ export default function CollectionsManager() {
             setEditState(null);
             setEditorError('');
         },
+        onError: (err: Error) => setEditorError(err.message),
     });
 
     const deleteMutation = useMutation({
@@ -106,22 +111,104 @@ export default function CollectionsManager() {
         insertMutation.mutate({ name: addState.name, doc: parsed });
     };
 
+    // Creates a new collection by inserting the first document into it
+    const createCollection = () => {
+        const name = newColName.trim();
+        if (!name) return;
+        setNewColName('');
+        setShowNewCol(false);
+        // Expand and open add form for the new collection name
+        setExpanded(name);
+        setAddState({ name, value: '{}' });
+        setEditorError('');
+        // Invalidate so the new collection appears after insert
+        queryClient.invalidateQueries({ queryKey: ['collections'] });
+    };
+
     if (isLoading) {
         return <div className="text-sm text-gray-500 p-4">Loading collections…</div>;
     }
 
-    if (collections.length === 0) {
-        return (
-            <div className="text-center py-12 text-gray-500">
-                <Database className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p className="text-sm">No collections yet.</p>
-                <p className="text-xs mt-1 text-gray-400">Use <code className="bg-gray-100 px-1 rounded">store.collection("name")</code> in a script to create one.</p>
-            </div>
-        );
-    }
-
     return (
         <div className="space-y-2">
+            {/* Header: new collection button */}
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-gray-500">
+                    {collections.length === 0 ? 'No collections yet' : `${collections.length} collection${collections.length !== 1 ? 's' : ''}`}
+                </span>
+                <button
+                    onClick={() => setShowNewCol(v => !v)}
+                    className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors"
+                >
+                    <Plus className="h-3 w-3" /> New Collection
+                </button>
+            </div>
+
+            {/* New collection input */}
+            {showNewCol && (
+                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                    <input
+                        autoFocus
+                        type="text"
+                        placeholder="collection name"
+                        value={newColName}
+                        onChange={e => setNewColName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') createCollection(); if (e.key === 'Escape') { setShowNewCol(false); setNewColName(''); } }}
+                        className="flex-1 text-sm border border-blue-300 rounded px-2 py-1 bg-white font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                        onClick={createCollection}
+                        disabled={!newColName.trim()}
+                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+                    >Create</button>
+                    <button
+                        onClick={() => { setShowNewCol(false); setNewColName(''); }}
+                        className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50"
+                    >Cancel</button>
+                </div>
+            )}
+
+            {collections.length === 0 && !showNewCol && (
+                <div className="text-center py-10 text-gray-500">
+                    <Database className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">No collections yet.</p>
+                    <p className="text-xs mt-1 text-gray-400">Create one above, or use <code className="bg-gray-100 px-1 rounded">store.collection("name")</code> in a script.</p>
+                </div>
+            )}
+
+            {/* Add form for a not-yet-existing collection (created via New Collection button) */}
+            {addState && !collections.find((c: CollectionInfo) => c.name === addState.name) && (
+                <div className="border border-blue-300 rounded-lg overflow-hidden">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-blue-50">
+                        <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                        <span className="font-mono text-sm font-medium flex-1">{addState.name}</span>
+                        <span className="text-xs text-blue-400 italic">new</span>
+                    </div>
+                    <div className="p-4 bg-blue-50 space-y-2">
+                        <p className="text-xs font-medium text-blue-700">First document</p>
+                        <div className="h-40 border border-blue-300 rounded overflow-hidden">
+                            <Editor
+                                defaultLanguage="json"
+                                value={addState.value}
+                                onChange={v => setAddState(prev => prev ? { ...prev, value: v ?? '' } : null)}
+                                options={{ minimap: { enabled: false }, fontSize: 12, lineNumbers: 'off', scrollBeyondLastLine: false }}
+                                theme="light"
+                            />
+                        </div>
+                        {editorError && <p className="text-xs text-red-600">{editorError}</p>}
+                        <div className="flex gap-2">
+                            <button onClick={saveAdd} className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700">
+                                <Plus className="h-3 w-3" /> Insert
+                            </button>
+                            <button onClick={() => { setAddState(null); setEditorError(''); }} className="flex items-center gap-1 text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50">
+                                <X className="h-3 w-3" /> Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {collections.map((col: CollectionInfo) => (
                 <div key={col.name} className="border border-gray-200 rounded-lg overflow-hidden">
                     {/* Collection header */}
@@ -138,7 +225,7 @@ export default function CollectionsManager() {
                         <button
                             className="p-1 text-gray-400 hover:text-blue-600 rounded"
                             title="Add document"
-                            onClick={e => { e.stopPropagation(); toggleExpand(col.name); startAdd(col.name); }}
+                            onClick={e => { e.stopPropagation(); if (expanded !== col.name) toggleExpand(col.name); startAdd(col.name); }}
                         >
                             <Plus className="h-4 w-4" />
                         </button>

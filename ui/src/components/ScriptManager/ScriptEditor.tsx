@@ -533,6 +533,21 @@ export default function ScriptEditor() {
                                     <RefEntry sig="store.keys()" ret="list" desc="All session keys" />
                                 </RefSection>
 
+                                {/* Collections */}
+                                <RefSection title='Collections (global) — store.collection("name")'>
+                                    <div className="text-xs text-gray-400 dark:text-slate-500 mb-1">Global across all sessions. Use for shared data sets.</div>
+                                    <RefEntry sig='col = store.collection("name")' ret="col" desc="Get collection handle" />
+                                    <RefEntry sig="col.findAll()" ret="list" desc="All documents" />
+                                    <RefEntry sig='col.findAll({"field": "value"})' ret="list" desc="Filtered (equality)" />
+                                    <RefEntry sig='col.findOne({"id": "x"})' ret="dict|None" desc="First match or None" />
+                                    <RefEntry sig="col.insert({...})" ret="None" desc="Append document" />
+                                    <RefEntry sig='col.update({"id":"x"}, {...})' ret="None" desc="Update matching docs" />
+                                    <RefEntry sig='col.remove({"id": "x"})' ret="None" desc="Remove matching docs" />
+                                    <RefEntry sig="col.count()" ret="int" desc="Total documents" />
+                                    <RefEntry sig='col.count({"status":"ok"})' ret="int" desc="Matching documents" />
+                                    <RefEntry sig="col.clear()" ret="None" desc="Remove all documents" />
+                                </RefSection>
+
                                 {/* Log */}
                                 <RefSection title="Logging">
                                     <RefEntry sig="log(...)" ret="None" desc="Append to request trace log" />
