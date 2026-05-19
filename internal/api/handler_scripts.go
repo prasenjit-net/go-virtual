@@ -203,13 +203,6 @@ func (h *Handler) TestScriptSource(c *gin.Context) {
 		return
 	}
 
-	tempScript := &models.Script{
-		ID:      "_test_source",
-		Source:  body.Source,
-		Timeout: body.Timeout,
-		Enabled: true,
-	}
-
 	input := body.Input
 	if input == nil {
 		input = &scripting.ScriptInput{
@@ -220,7 +213,8 @@ func (h *Handler) TestScriptSource(c *gin.Context) {
 		}
 	}
 
-	output, logs, durationMs, execErr := h.scriptEngine.TestScript(c.Request.Context(), tempScript, input)
+	// Use RunSource — bypasses the cache so every call compiles fresh from the provided source
+	output, logs, durationMs, execErr := h.scriptEngine.RunSource(c.Request.Context(), body.Source, body.Timeout, input)
 
 	resp := gin.H{
 		"output":     output,
