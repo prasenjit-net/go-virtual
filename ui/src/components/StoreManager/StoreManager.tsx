@@ -10,6 +10,7 @@ export default function StoreManager() {
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState<'kv' | 'collections'>('kv');
 
+    // KV state
     const [search, setSearch] = useState('');
     const [editEntry, setEditEntry] = useState<StoreEntry | null>(null);
     const [newKey, setNewKey] = useState('');
@@ -17,6 +18,10 @@ export default function StoreManager() {
     const [editorError, setEditorError] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+    // Collections state (lifted so header button can control it)
+    const [showNewCol, setShowNewCol] = useState(false);
+    const [newColName, setNewColName] = useState('');
 
     const { data: entries = [], isLoading } = useQuery({
         queryKey: ['store'],
@@ -110,18 +115,18 @@ export default function StoreManager() {
                     </div>
                 </div>
                 <button
-                    onClick={openAdd}
-                    className={`flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors ${activeTab !== 'kv' ? 'invisible' : ''}`}
+                    onClick={activeTab === 'kv' ? openAdd : () => setShowNewCol(true)}
+                    className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                 >
                     <Plus className="w-5 h-5 mr-2" />
-                    Add Entry
+                    {activeTab === 'kv' ? 'Add Entry' : 'New Collection'}
                 </button>
             </div>
 
             {/* Tabs */}
             <div className="flex gap-1 mb-6 border-b border-gray-200 dark:border-slate-700">
                 <button
-                    onClick={() => setActiveTab('kv')}
+                    onClick={() => { setActiveTab('kv'); setShowNewCol(false); setNewColName(''); }}
                     className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                         activeTab === 'kv'
                             ? 'border-indigo-600 text-indigo-600'
@@ -132,7 +137,7 @@ export default function StoreManager() {
                     Key-Value Store
                 </button>
                 <button
-                    onClick={() => setActiveTab('collections')}
+                    onClick={() => { setActiveTab('collections'); setShowAddModal(false); }}
                     className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                         activeTab === 'collections'
                             ? 'border-indigo-600 text-indigo-600'
@@ -144,7 +149,13 @@ export default function StoreManager() {
                 </button>
             </div>
 
-            {activeTab === 'collections' && <CollectionsManager />}
+            {activeTab === 'collections' && <CollectionsManager
+                showNewCol={showNewCol}
+                newColName={newColName}
+                setNewColName={setNewColName}
+                onNewColConfirm={() => { setShowNewCol(false); setNewColName(''); }}
+                onNewColCancel={() => { setShowNewCol(false); setNewColName(''); }}
+            />}
 
             {activeTab === 'kv' && <>
             {/* Search */}

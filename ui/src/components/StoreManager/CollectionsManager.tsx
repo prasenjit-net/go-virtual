@@ -5,16 +5,21 @@ import Editor from '@monaco-editor/react';
 import { collectionsApi } from '../../services/api';
 import type { CollectionDocument, CollectionInfo } from '../../types';
 
-export default function CollectionsManager() {
+interface Props {
+    showNewCol: boolean;
+    newColName: string;
+    setNewColName: (v: string) => void;
+    onNewColConfirm: () => void;
+    onNewColCancel: () => void;
+}
+
+export default function CollectionsManager({ showNewCol, newColName, setNewColName, onNewColConfirm, onNewColCancel }: Props) {
     const queryClient = useQueryClient();
     const [expanded, setExpanded] = useState<string | null>(null);
     const [editState, setEditState] = useState<{ name: string; index: number; value: string } | null>(null);
     const [addState, setAddState] = useState<{ name: string; value: string } | null>(null);
     const [clearConfirm, setClearConfirm] = useState<string | null>(null);
     const [editorError, setEditorError] = useState('');
-    // new collection creation state
-    const [newColName, setNewColName] = useState('');
-    const [showNewCol, setShowNewCol] = useState(false);
 
     const { data: collections = [], isLoading } = useQuery({
         queryKey: ['collections'],
@@ -111,17 +116,14 @@ export default function CollectionsManager() {
         insertMutation.mutate({ name: addState.name, doc: parsed });
     };
 
-    // Creates a new collection by inserting the first document into it
+    // Creates a new collection: open add form for the named collection
     const createCollection = () => {
         const name = newColName.trim();
         if (!name) return;
-        setNewColName('');
-        setShowNewCol(false);
-        // Expand and open add form for the new collection name
+        onNewColConfirm();
         setExpanded(name);
         setAddState({ name, value: '{}' });
         setEditorError('');
-        // Invalidate so the new collection appears after insert
         queryClient.invalidateQueries({ queryKey: ['collections'] });
     };
 
@@ -131,22 +133,9 @@ export default function CollectionsManager() {
 
     return (
         <div className="space-y-2">
-            {/* Header: new collection button */}
-            <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-gray-500">
-                    {collections.length === 0 ? 'No collections yet' : `${collections.length} collection${collections.length !== 1 ? 's' : ''}`}
-                </span>
-                <button
-                    onClick={() => setShowNewCol(v => !v)}
-                    className="flex items-center gap-1 text-xs px-3 py-1.5 bg-primary-600 text-white rounded hover:bg-primary-700 transition-colors"
-                >
-                    <Plus className="h-3 w-3" /> New Collection
-                </button>
-            </div>
-
-            {/* New collection input */}
+            {/* New collection inline input — triggered from parent header button */}
             {showNewCol && (
-                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg mb-3">
                     <Database className="h-4 w-4 text-blue-500 flex-shrink-0" />
                     <input
                         autoFocus
@@ -154,16 +143,16 @@ export default function CollectionsManager() {
                         placeholder="collection name"
                         value={newColName}
                         onChange={e => setNewColName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') createCollection(); if (e.key === 'Escape') { setShowNewCol(false); setNewColName(''); } }}
+                        onKeyDown={e => { if (e.key === 'Enter') createCollection(); if (e.key === 'Escape') onNewColCancel(); }}
                         className="flex-1 text-sm border border-blue-300 rounded px-2 py-1 bg-white font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
                     <button
                         onClick={createCollection}
                         disabled={!newColName.trim()}
-                        className="text-xs px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40"
+                        className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-40"
                     >Create</button>
                     <button
-                        onClick={() => { setShowNewCol(false); setNewColName(''); }}
+                        onClick={onNewColCancel}
                         className="text-xs px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50"
                     >Cancel</button>
                 </div>
