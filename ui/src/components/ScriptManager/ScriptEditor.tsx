@@ -39,9 +39,9 @@ export default function ScriptEditor() {
     const [source, setSource] = useState(DEFAULT_SOURCE)
     const [formInitialised, setFormInitialised] = useState(false)
 
-    // Track the last-saved source to detect unsaved changes
-    const savedSourceRef = useRef<string>(isNew ? '' : DEFAULT_SOURCE)
-    const isDirty = isNew || source !== savedSourceRef.current
+    // Track the last-saved source to show the unsaved indicator badge
+    const savedSourceRef = useRef<string>(isNew ? '\0' : DEFAULT_SOURCE)
+    const isDirty = source !== savedSourceRef.current
 
     // Validate state
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
@@ -141,20 +141,15 @@ export default function ScriptEditor() {
             try { parsedHeader = JSON.parse(testHeader) } catch { /* ignore */ }
             try { parsedBody = JSON.parse(testBody) } catch { /* ignore */ }
             const input = { path: parsedPath, query: parsedQuery, header: parsedHeader, body: parsedBody }
-
-            let result
-            if (isDirty || !scriptId) {
-                result = await scriptsApi.testSource(source, timeout, input)
-            } else {
-                result = await scriptsApi.test(scriptId, input)
-            }
+            // Always run the current editor source so edits are tested without saving
+            const result = await scriptsApi.testSource(source, timeout, input)
             setTestResult(result)
         } catch (e) {
             setTestResult({ output: null, durationMs: 0, error: (e as Error).message })
         } finally {
             setIsTesting(false)
         }
-    }, [scriptId, isDirty, source, timeout, testPath, testQuery, testHeader, testBody])
+    }, [source, timeout, testPath, testQuery, testHeader, testBody])
 
     if (!isNew && isLoadingScript && !formInitialised) {
         return (
@@ -359,9 +354,9 @@ export default function ScriptEditor() {
                                 {isDirty
                                     ? <span className="text-xs text-amber-500 dark:text-amber-400 ml-1 flex items-center gap-1">
                                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                                        runs current unsaved source
+                                        unsaved changes
                                       </span>
-                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs saved version)</span>
+                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
                                 }
                             </div>
                             {testOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
