@@ -39,9 +39,10 @@ export default function ScriptEditor() {
     const [source, setSource] = useState(DEFAULT_SOURCE)
     const [formInitialised, setFormInitialised] = useState(false)
 
-    // Track the last-saved source to show the unsaved indicator badge
-    const savedSourceRef = useRef<string>(isNew ? '\0' : DEFAULT_SOURCE)
-    const isDirty = source !== savedSourceRef.current
+    // Keep a ref in sync with source so handleTest always reads the latest value
+    // regardless of closure staleness
+    const sourceRef = useRef(DEFAULT_SOURCE)
+    const timeoutRef = useRef(0)
 
     // Validate state
     const [validateResult, setValidateResult] = useState<{ valid: boolean; error: string | null } | null>(null)
@@ -82,7 +83,8 @@ export default function ScriptEditor() {
             setTimeout(0)
             setEnabled(true)
             setSource(DEFAULT_SOURCE)
-            savedSourceRef.current = isNew ? '\0' : DEFAULT_SOURCE
+            sourceRef.current = DEFAULT_SOURCE
+            timeoutRef.current = 0
             setValidateResult(null)
             setTestResult(null)
         }
@@ -99,10 +101,11 @@ export default function ScriptEditor() {
                 setName(data.name)
                 setDescription(data.description)
                 setTimeout(data.timeout)
+                timeoutRef.current = data.timeout
                 setEnabled(data.enabled)
                 if (data.source !== undefined) {
                     setSource(data.source || '')
-                    savedSourceRef.current = data.source || ''
+                    sourceRef.current = data.source || ''
                 }
                 setFormInitialised(true)
             }
@@ -120,7 +123,6 @@ export default function ScriptEditor() {
             if (!isNew) {
                 queryClient.invalidateQueries({ queryKey: ['script', scriptId] })
             }
-            savedSourceRef.current = source
             // Discard the AI conversation context on save.
             setAiHistory([])
             navigate(`/scripts`)
@@ -146,14 +148,16 @@ export default function ScriptEditor() {
     }, [source])
 
     const handleTest = useCallback(async () => {
+        // Read directly from refs — never stale, no closure capture issues
+        const currentSource = sourceRef.current
+        const currentTimeout = timeoutRef.current
         setIsTesting(true)
         setTestResult(null)
         try {
             // Validate first — bail with a clear message if syntax is bad
-            const validation = await scriptsApi.validate(source)
+            const validation = await scriptsApi.validate(currentSource)
             if (!validation.valid) {
                 setTestResult({ output: null, durationMs: 0, error: `Script has errors: ${validation.error}` })
-                setIsTesting(false)
                 return
             }
 
@@ -166,15 +170,14 @@ export default function ScriptEditor() {
             try { parsedHeader = JSON.parse(testHeader) } catch { /* ignore */ }
             try { parsedBody = JSON.parse(testBody) } catch { /* ignore */ }
             const input = { path: parsedPath, query: parsedQuery, header: parsedHeader, body: parsedBody }
-            // Always run the current editor source — never the saved version
-            const result = await scriptsApi.testSource(source, timeout, input)
+            const result = await scriptsApi.testSource(currentSource, currentTimeout, input)
             setTestResult(result)
         } catch (e) {
             setTestResult({ output: null, durationMs: 0, error: (e as Error).message })
         } finally {
             setIsTesting(false)
         }
-    }, [source, timeout, testPath, testQuery, testHeader, testBody])
+    }, [testPath, testQuery, testHeader, testBody])
 
     if (!isNew && isLoadingScript && !formInitialised) {
         return (
@@ -255,7 +258,7 @@ export default function ScriptEditor() {
                                     type="number"
                                     value={timeout}
                                     min={0}
-                                    onChange={(e) => setTimeout(Math.max(0, parseInt(e.target.value) || 0))}
+                                    onChange={(e) => { const v = Math.max(0, parseInt(e.target.value) || 0); setTimeout(v); timeoutRef.current = v; }}
                                     placeholder="0 = global default"
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                                 />
@@ -353,7 +356,9 @@ export default function ScriptEditor() {
                         language="python"
                         value={source}
                         onChange={(val) => {
-                            setSource(val ?? '')
+                            const v = val ?? ''
+                            setSource(v)
+                            sourceRef.current = v
                             setValidateResult(null)
                         }}
                         theme="vs-dark"
@@ -368,7 +373,7 @@ export default function ScriptEditor() {
                     />
                 </div>
 
-                {/* Test panel — always shown; dispatches to test-source when unsaved */}
+                {/* Test panel — always runs current editor source */}
                 <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 overflow-hidden">
                         <button
                             onClick={() => setTestOpen(!testOpen)}
@@ -377,13 +382,7 @@ export default function ScriptEditor() {
                             <div className="flex items-center gap-2">
                                 <Play className="w-4 h-4 text-gray-500 dark:text-slate-400" />
                                 <span className="text-base font-semibold text-gray-900 dark:text-slate-100">Test Execution</span>
-                                {isDirty
-                                    ? <span className="text-xs text-amber-500 dark:text-amber-400 ml-1 flex items-center gap-1">
-                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                                        unsaved changes
-                                      </span>
-                                    : <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
-                                }
+                                <span className="text-xs text-gray-400 dark:text-slate-500 ml-1">(runs current editor source)</span>
                             </div>
                             {testOpen ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
                         </button>
