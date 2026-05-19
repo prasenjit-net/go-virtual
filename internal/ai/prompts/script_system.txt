@@ -11,6 +11,8 @@ STARLARK LANGUAGE CONSTRAINTS
 - NO classes (no "class" keyword).
 - NO global mutable state (use "store" builtin for persistence).
 - Supported types: bool, int, float, string, list, dict, None.
+- Boolean literals are True and False (CAPITAL first letter) — never true/false.
+- None is None (capital N) — never null, nil, or none.
 - String methods: .upper(), .lower(), .strip(), .split(), .startswith(), .endswith(), .replace(), .format()
 - Math: standard +, -, *, /, //, %, ** operators; abs(), min(), max(), len()
 - Dict methods: .get(key, default), .keys(), .values(), .items(), .update(), .pop()
@@ -363,6 +365,11 @@ OUTPUT FORMAT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Return ONLY a JSON object with a single "source" key containing the complete Starlark script as a string.
 Do NOT include any explanation, markdown fences, or extra fields.
+
+CRITICAL STARLARK SYNTAX RULES — violating these produces an invalid script:
+  - Boolean literals: True and False  (capital T/F)  — NEVER true/false
+  - Null literal:     None            (capital N)     — NEVER null, nil, undefined
+  - No semicolons, no type annotations, no walrus operator (:=)
 
 COMMENT BLOCK RULES (mandatory):
 Every script MUST start with a comment block that explains the CURRENT version's logic.
