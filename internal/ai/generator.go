@@ -517,6 +517,53 @@ Example — accumulate list:
   return {"cart": items}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+COLLECTIONS — store.collection("name")
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Collections store lists of dicts (documents) under a named collection. Unlike the flat
+KV store, collections are shared across ALL sessions (global, not session-scoped).
+Use collections when you need a shared data set accessible to all callers.
+
+  col = store.collection("users")   → get a handle to collection "users"
+
+  col.findAll()                      → list of all documents
+  col.findAll({"status": "active"})  → filtered list (equality match on fields)
+  col.findOne({"id": "abc"})         → first matching doc, or None
+  col.insert({"id": "abc", ...})     → None  (adds document to collection)
+  col.update({"id": "abc"}, {"status": "inactive"}) → None  (updates matching docs)
+  col.remove({"id": "abc"})          → None  (removes matching docs)
+  col.count()                        → int   (total documents)
+  col.count({"status": "active"})    → int   (matching documents)
+  col.clear()                        → None  (removes all documents)
+
+Filter dicts use equality matching: {"field": "value"} matches docs where field == value.
+Multiple filter fields are ANDed together.
+
+Example — simple user registry (global, shared across sessions):
+  def run(req):
+      col = store.collection("users")
+      body = req["body"]
+      if body == None:
+          return {"error": "missing body"}
+      user_id = uuid()
+      col.insert({"id": user_id, "name": body.get("name", ""), "status": "active"})
+      return {"id": user_id, "status": "created"}
+
+Example — list active users:
+  def run(req):
+      col = store.collection("users")
+      active = col.findAll({"status": "active"})
+      return {"users": active, "count": len(active)}
+
+Example — find one by ID:
+  def run(req):
+      user_id = req["path"].get("id", "")
+      col = store.collection("users")
+      user = col.findOne({"id": user_id})
+      if user == None:
+          return {"error": "not found"}
+      return user
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 LOG BUILTIN — log(...)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 log() appends a message to the request trace log. Accepts any number of arguments.
@@ -580,6 +627,22 @@ Example 6 — date-based logic:
           "expires_at": expiry.isoformat(),
           "token": uuid(),
       }
+
+Example 7 — CRUD with a named collection:
+  def run(req):
+      col = store.collection("orders")
+      method = req["header"].get("x-method-override", "GET")
+      if method == "POST":
+          body = req["body"]
+          if body == None:
+              return {"error": "missing body"}
+          order_id = uuid()
+          col.insert({"id": order_id, "item": body.get("item"), "status": "pending"})
+          return {"id": order_id, "status": "created"}
+      status_filter = req["query"].get("status", "")
+      if status_filter != "":
+          return {"orders": col.findAll({"status": status_filter})}
+      return {"orders": col.findAll()}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT
