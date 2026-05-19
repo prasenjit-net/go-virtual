@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Code2, Trash2, Edit2, ToggleLeft, ToggleRight, Clock, FileCode, Eye } from 'lucide-react'
+import { Plus, Code2, Trash2, ToggleLeft, ToggleRight, Clock, FileCode } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi } from '../../services/api'
 import type { Script } from '../../types'
@@ -88,7 +88,7 @@ export default function ScriptList() {
                     {scripts.map((script) => (
                         <div
                             key={script.id}
-                            onClick={() => navigate(`/scripts/${script.id}`)}
+                            onClick={() => navigate(`/scripts/${script.id}/edit`)}
                             className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800 p-5 cursor-pointer hover:border-primary-300 dark:hover:border-primary-700 hover:shadow-md transition-all"
                         >
                             <div className="flex items-center justify-between">
@@ -135,9 +135,9 @@ export default function ScriptList() {
                                 </div>
 
                                 <div className="flex items-center gap-1 flex-shrink-0 ml-4">
-                                    {/* View hint */}
+                                    {/* Click to open hint */}
                                     <span className="text-xs text-gray-300 dark:text-slate-600 mr-1 hidden sm:flex items-center gap-1">
-                                        <Eye className="w-3.5 h-3.5" /> View
+                                        Open
                                     </span>
 
                                     {/* Enable/disable toggle */}
@@ -156,15 +156,6 @@ export default function ScriptList() {
                                             ? <ToggleRight className="w-5 h-5" />
                                             : <ToggleLeft className="w-5 h-5" />
                                         }
-                                    </button>
-
-                                    {/* Edit */}
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); navigate(`/scripts/${script.id}/edit`) }}
-                                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
-                                        title="Edit script"
-                                    >
-                                        <Edit2 className="w-5 h-5" />
                                     </button>
 
                                     {/* Delete */}
