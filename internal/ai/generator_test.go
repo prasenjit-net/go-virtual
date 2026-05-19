@@ -486,10 +486,10 @@ func TestBuildScriptSystemPrompt_WithOperationInputs(t *testing.T) {
 	if !strings.Contains(prompt, "AVAILABLE REQUEST INPUTS FOR THIS OPERATION") {
 		t.Error("prompt missing operation inputs section")
 	}
-	if !strings.Contains(prompt, `req["path"]["petId"]`) {
+	if !strings.Contains(prompt, `req.path("petId")`) {
 		t.Error("prompt missing path param")
 	}
-	if !strings.Contains(prompt, `req["query"]["format"]`) {
+	if !strings.Contains(prompt, `req.query("format")`) {
 		t.Error("prompt missing query param")
 	}
 	if !strings.Contains(prompt, "tags.0") {

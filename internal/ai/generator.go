@@ -304,7 +304,7 @@ func buildScriptSystemPrompt(sctx ScriptContext) string {
 			sb.WriteString("AVAILABLE REQUEST INPUTS FOR THIS OPERATION\n")
 			sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			for _, p := range sctx.Inputs.PathParams {
-				fmt.Fprintf(&sb, "\n  req[\"path\"][\"%s\"]    type=%s", p.Name, p.Type)
+				fmt.Fprintf(&sb, "\n  req.path(%q)    type=%s", p.Name, p.Type)
 				if p.Description != "" {
 					fmt.Fprintf(&sb, "  // %s", p.Description)
 				}
@@ -314,13 +314,13 @@ func buildScriptSystemPrompt(sctx ScriptContext) string {
 				if p.Required {
 					req = " (required)"
 				}
-				fmt.Fprintf(&sb, "\n  req[\"query\"][\"%s\"]   type=%s%s", p.Name, p.Type, req)
+				fmt.Fprintf(&sb, "\n  req.query(%q)   type=%s%s", p.Name, p.Type, req)
 				if p.Description != "" {
 					fmt.Fprintf(&sb, "  // %s", p.Description)
 				}
 			}
 			if len(sctx.Inputs.BodyFields) > 0 {
-				sb.WriteString("\n  Request body fields (access via req[\"body\"].get(...)):")
+				sb.WriteString("\n  Request body fields (access via req.body(\"path\", default)):")
 				for _, f := range sctx.Inputs.BodyFields {
 					fmt.Fprintf(&sb, "\n    %-30s type=%s", f.GjsonPath, f.Type)
 					if f.Description != "" {

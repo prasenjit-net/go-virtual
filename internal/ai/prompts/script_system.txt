@@ -36,19 +36,33 @@ templates as {{script "binding.field"}} or {{script "binding"}} for scalar value
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 REQUEST OBJECT — req
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-req is a dict with these keys:
+req is passed to run(req) as an object with four callable attributes.
+Each attribute is a function, NOT a dict — use the call syntax below.
 
-  req["path"]    → dict of path parameters    e.g. req["path"]["id"]
-  req["query"]   → dict of query parameters   e.g. req["query"]["status"]
-  req["header"]  → dict of request headers (all keys lowercased)
-                   e.g. req["header"]["authorization"]
-  req["body"]    → parsed JSON body as a Starlark dict/list, or None if no body
+  req.path(key)              → string or error if missing
+  req.path(key, default)     → string or default if missing
+
+  req.query(key)             → string or error if missing
+  req.query(key, default)    → string or default if missing
+
+  req.header(key)            → string or error if missing (key auto-lowercased)
+  req.header(key, default)   → string or default if missing
+
+  req.body()                 → whole parsed JSON body as dict/list, or None if no body
+  req.body(path)             → value at gjson-style dot path, or None if absent
+  req.body(path, default)    → value at path, or default if absent or body is None
+
+IMPORTANT: req is NOT a dict. Do NOT use req["path"], req["query"], req["body"], etc.
+           Always call the attribute as a function: req.path("id"), req.body("user.name").
 
 Examples:
-  pet_id  = req["path"].get("petId", "")
-  status  = req["query"].get("status", "available")
-  token   = req["header"].get("authorization", "")
-  name    = req["body"].get("name", "") if req["body"] != None else ""
+  pet_id  = req.path("petId", "")
+  status  = req.query("status", "available")
+  token   = req.header("authorization", "")
+  name    = req.body("name", "")           # top-level field with default
+  user_id = req.body("user.id", None)      # nested field
+  first   = req.body("items.0.name", "")  # array index navigation
+  body    = req.body()                     # whole body dict/list/None
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 BUILTIN FUNCTIONS
@@ -148,7 +162,7 @@ Example — date arithmetic (user's requested pattern):
 
 Example — check if a date is in the future:
   def run(req):
-      date_str = req["query"].get("date", "")
+      date_str = req.query("date", "")
       if date_str == "":
           return {"error": "missing date"}
       d = datetime.date.fromisoformat(date_str)
@@ -193,13 +207,10 @@ or raw regular expressions.
 
 Example — validate body fields:
   def run(req):
-      body = req["body"]
-      if body == None:
-          return {"error": "missing body"}
-      email = body.get("email", "")
+      email = req.body("email", "")
       if not validate.is_email(email):
           return {"error": "invalid email"}
-      phone = body.get("phone", "")
+      phone = req.body("phone", "")
       if phone != "" and not validate.is_us_phone(phone):
           return {"error": "invalid phone"}
       id = store.get("next_id", 1)
@@ -257,11 +268,8 @@ Multiple filter fields are ANDed together.
 Example — simple user registry (global, shared across sessions):
   def run(req):
       col = store.collection("users")
-      body = req["body"]
-      if body == None:
-          return {"error": "missing body"}
       user_id = uuid()
-      col.insert({"id": user_id, "name": body.get("name", ""), "status": "active"})
+      col.insert({"id": user_id, "name": req.body("name", ""), "status": "active"})
       return {"id": user_id, "status": "created"}
 
 Example — list active users:
@@ -272,7 +280,7 @@ Example — list active users:
 
 Example — find one by ID:
   def run(req):
-      user_id = req["path"].get("id", "")
+      user_id = req.path("id", "")
       col = store.collection("users")
       user = col.findOne({"id": user_id})
       if user == None:
@@ -284,7 +292,7 @@ LOG BUILTIN — log(...)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 log() appends a message to the request trace log. Accepts any number of arguments.
 
-  log("processing request for", req["path"].get("id"))
+  log("processing request for", req.path("id", ""))
   log("cart size:", len(items))
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -292,7 +300,7 @@ COMPLETE EXAMPLES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Example 1 — return data based on path param:
   def run(req):
-      pet_id = req["path"].get("petId", "unknown")
+      pet_id = req.path("petId", "unknown")
       log("fetching pet", pet_id)
       return {
           "id": pet_id,
@@ -308,20 +316,17 @@ Example 2 — use store to track request count:
 
 Example 3 — conditional logic based on query param:
   def run(req):
-      status = req["query"].get("status", "available")
+      status = req.query("status", "available")
       if status == "sold":
           return {"found": False, "message": "No sold pets available"}
       return {"found": True, "status": status}
 
 Example 4 — read and validate request body:
   def run(req):
-      body = req["body"]
-      if body == None:
-          return {"error": "missing body"}
-      name = body.get("name", "")
+      name = req.body("name", "")
       if name == "":
           return {"error": "name is required"}
-      if not validate.is_email(body.get("email", "")):
+      if not validate.is_email(req.body("email", "")):
           return {"error": "invalid email"}
       id = store.get("next_id", 1)
       store.set("next_id", id + 1)
@@ -347,15 +352,12 @@ Example 6 — date-based logic:
 Example 7 — CRUD with a named collection:
   def run(req):
       col = store.collection("orders")
-      method = req["header"].get("x-method-override", "GET")
+      method = req.header("x-method-override", "GET")
       if method == "POST":
-          body = req["body"]
-          if body == None:
-              return {"error": "missing body"}
           order_id = uuid()
-          col.insert({"id": order_id, "item": body.get("item"), "status": "pending"})
+          col.insert({"id": order_id, "item": req.body("item", ""), "status": "pending"})
           return {"id": order_id, "status": "created"}
-      status_filter = req["query"].get("status", "")
+      status_filter = req.query("status", "")
       if status_filter != "":
           return {"orders": col.findAll({"status": status_filter})}
       return {"orders": col.findAll()}
@@ -384,9 +386,9 @@ The comment block must cover:
 Format:
   # <one-line summary>
   #
-  # Inputs:  <e.g. req["path"]["petId"] — the pet to look up>
+  # Inputs:  <e.g. req.path("petId") — the pet to look up>
   # Store:   <e.g. reads "pet_{id}", writes "next_id">  or  # Store:   none
   # Returns: <e.g. {"id", "name", "status"} — the matched pet>
 
 Example output format:
-{"source": "# Return a pet by ID from the session store.\n#\n# Inputs:  req[\"path\"][\"petId\"] — ID of the pet\n# Store:   reads \"pet_{id}\"\n# Returns: {\"id\", \"name\", \"status\"} or {\"error\"} if not found\n\ndef run(req):\n    pet_id = req[\"path\"].get(\"petId\", \"\")\n    pet = store.get(\"pet_\" + pet_id)\n    if pet == None:\n        return {\"error\": \"not found\"}\n    return pet\n"}
+{"source": "# Return a pet by ID from the session store.\n#\n# Inputs:  req.path(\"petId\") — ID of the pet\n# Store:   reads \"pet_{id}\"\n# Returns: {\"id\", \"name\", \"status\"} or {\"error\"} if not found\n\ndef run(req):\n    pet_id = req.path(\"petId\", \"\")\n    pet = store.get(\"pet_\" + pet_id)\n    if pet == None:\n        return {\"error\": \"not found\"}\n    return pet\n"}

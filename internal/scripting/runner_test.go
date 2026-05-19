@@ -38,9 +38,9 @@ func TestExecute_ReturnsDict(t *testing.T) {
 	src := `
 def run(req):
     return {
-        "userId": req["path"]["id"],
-        "format": req["query"]["fmt"],
-        "auth":   req["header"]["authorization"],
+        "userId": req.path("id"),
+        "format": req.query("fmt"),
+        "auth":   req.header("authorization"),
     }
 `
 	cs, err := runner.Compile("s1", src)
@@ -126,8 +126,8 @@ func TestExecute_RuntimeError(t *testing.T) {
 	runner := &StarlarkRunner{}
 	src := `
 def run(req):
-    x = req["path"]["missing_key"]  # key access on empty dict - ok, returns None in Starlark
-    return 1 // 0  # division by zero
+    x = req.path("missing_key")  # raises error — no default provided
+    return x
 `
 	cs, err := runner.Compile("s6", src)
 	if err != nil {
@@ -176,7 +176,7 @@ func TestExecute_BodyAccess(t *testing.T) {
 	runner := &StarlarkRunner{}
 	src := `
 def run(req):
-    name = req["body"]["name"]
+    name = req.body("name")
     return "Hello, " + name
 `
 	cs, _ := runner.Compile("s8", src)
