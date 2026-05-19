@@ -6,7 +6,7 @@ import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Play, ChevronDown, ChevronUp,
     Clock, ToggleLeft, ToggleRight, Loader2, Sparkles, BookOpen,
-    ChevronLeft, ChevronRight, GripHorizontal
+    Settings, GripHorizontal
 } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi, aiApi } from '../../services/api'
@@ -156,8 +156,7 @@ export default function ScriptEditor() {
     const [refOpen, setRefOpen] = useState(false)
 
     // ── IDE layout state (desktop only) ───────────────────────────────────────
-    const [ideMetaOpen, setIdeMetaOpen] = useState(true)
-    const [ideActiveTab, setIdeActiveTab] = useState<'test' | 'reference'>('test')
+    const [ideActiveTab, setIdeActiveTab] = useState<'test' | 'metadata' | 'reference'>('test')
     const [ideBottomHeight, setIdeBottomHeight] = useState(280)
     const ideDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
 
@@ -426,96 +425,8 @@ export default function ScriptEditor() {
                 </div>
             )}
 
-            {/* ── Body: sidebar + editor + bottom panel ────────────────────── */}
+            {/* ── Body: editor + bottom panel (full width, no sidebar) ──────── */}
             <div className="flex flex-1 min-h-0 overflow-hidden">
-
-                {/* Metadata sidebar */}
-                <div className={clsx(
-                    'flex-shrink-0 flex flex-col border-r border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 transition-all duration-200 overflow-hidden',
-                    ideMetaOpen ? 'w-72' : 'w-10'
-                )}>
-                    {/* Sidebar toggle */}
-                    <div className="flex-shrink-0 h-10 flex items-center justify-center border-b border-gray-200 dark:border-slate-800">
-                        <button
-                            onClick={() => setIdeMetaOpen(!ideMetaOpen)}
-                            title={ideMetaOpen ? 'Collapse sidebar' : 'Expand sidebar'}
-                            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 rounded-md hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                        >
-                            {ideMetaOpen ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                        </button>
-                    </div>
-
-                    {ideMetaOpen && (
-                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                            <div className="text-xs font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Metadata</div>
-
-                            {/* Name */}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
-                                    Name <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="e.g. Enrich User Data"
-                                    className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
-                                />
-                            </div>
-
-                            {/* Description */}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Description</label>
-                                <input
-                                    type="text"
-                                    value={description}
-                                    onChange={(e) => setDescription(e.target.value)}
-                                    placeholder="Optional description"
-                                    className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
-                                />
-                            </div>
-
-                            {/* Timeout */}
-                            <div>
-                                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
-                                    <span className="flex items-center gap-1">
-                                        <Clock className="w-3 h-3" /> Timeout (ms)
-                                    </span>
-                                </label>
-                                <input
-                                    type="number"
-                                    value={timeout}
-                                    min={0}
-                                    onChange={(e) => { const v = Math.max(0, parseInt(e.target.value) || 0); setTimeout(v); timeoutRef.current = v; }}
-                                    placeholder="0 = global default"
-                                    className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
-                                />
-                                <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">0 = use global default</p>
-                            </div>
-
-                            {/* Enabled */}
-                            <div className="flex items-center justify-between">
-                                <label className="text-xs font-medium text-gray-700 dark:text-slate-300">Enabled</label>
-                                <button
-                                    type="button"
-                                    onClick={() => setEnabled(!enabled)}
-                                    className={clsx(
-                                        'transition-colors',
-                                        enabled ? 'text-emerald-600 hover:text-emerald-700' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600'
-                                    )}
-                                >
-                                    {enabled ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
-                                </button>
-                            </div>
-
-                            <div className="pt-2 border-t border-gray-100 dark:border-slate-800">
-                                <p className="text-[10px] text-gray-400 dark:text-slate-500">
-                                    Press <kbd className="font-mono bg-gray-100 dark:bg-slate-700 px-1 rounded">Ctrl+S</kbd> to save
-                                </p>
-                            </div>
-                        </div>
-                    )}
-                </div>
 
                 {/* Editor pane + resizable bottom panel */}
                 <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
@@ -576,6 +487,17 @@ export default function ScriptEditor() {
                                 )}
                             >
                                 <Play className="w-3 h-3" /> Test
+                            </button>
+                            <button
+                                onClick={() => setIdeActiveTab('metadata')}
+                                className={clsx(
+                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                    ideActiveTab === 'metadata'
+                                        ? 'border-primary-600 text-primary-600 dark:text-primary-400 dark:border-primary-400'
+                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300'
+                                )}
+                            >
+                                <Settings className="w-3 h-3" /> Metadata
                             </button>
                             <button
                                 onClick={() => setIdeActiveTab('reference')}
@@ -699,6 +621,73 @@ export default function ScriptEditor() {
                             {ideActiveTab === 'reference' && (
                                 <div className="p-3">
                                     <BuiltinReferenceContent />
+                                </div>
+                            )}
+
+                            {ideActiveTab === 'metadata' && (
+                                <div className="p-4 space-y-4 max-w-2xl">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* Name */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
+                                                Name <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={name}
+                                                onChange={(e) => setName(e.target.value)}
+                                                placeholder="e.g. Enrich User Data"
+                                                className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
+                                            />
+                                        </div>
+
+                                        {/* Description */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Description</label>
+                                            <input
+                                                type="text"
+                                                value={description}
+                                                onChange={(e) => setDescription(e.target.value)}
+                                                placeholder="Optional description"
+                                                className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
+                                            />
+                                        </div>
+
+                                        {/* Timeout */}
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">
+                                                <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Timeout (ms)</span>
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={timeout}
+                                                min={0}
+                                                onChange={(e) => { const v = Math.max(0, parseInt(e.target.value) || 0); setTimeout(v); timeoutRef.current = v; }}
+                                                placeholder="0 = global default"
+                                                className="w-full px-2.5 py-1.5 border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 text-xs"
+                                            />
+                                            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1">0 = use global default from config</p>
+                                        </div>
+
+                                        {/* Enabled */}
+                                        <div className="flex items-center gap-3 pt-4">
+                                            <label className="text-xs font-medium text-gray-700 dark:text-slate-300">Enabled</label>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEnabled(!enabled)}
+                                                className={clsx(
+                                                    'transition-colors',
+                                                    enabled ? 'text-emerald-600 hover:text-emerald-700' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600'
+                                                )}
+                                            >
+                                                {enabled ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-1 text-[10px] text-gray-400 dark:text-slate-500">
+                                        Press <kbd className="font-mono bg-gray-100 dark:bg-slate-700 px-1 rounded">Ctrl+S</kbd> to save after editing
+                                    </div>
                                 </div>
                             )}
                         </div>
