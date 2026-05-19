@@ -372,6 +372,13 @@ export interface StoreEntryInput {
     value: any;
 }
 
+export interface CollectionInfo {
+    name: string;
+    count: number;
+}
+
+export type CollectionDocument = Record<string, any>;
+
 export interface SessionInfo {
     id: string;
     createdAt: string;

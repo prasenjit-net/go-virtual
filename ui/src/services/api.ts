@@ -624,6 +624,57 @@ export const storeApi = {
     },
 };
 
+// Collections API
+export const collectionsApi = {
+    list: async () => {
+        const response = await fetch(`${API_BASE}/store/collections`);
+        return handleResponse<import('../types').CollectionInfo[]>(response);
+    },
+
+    get: async (name: string) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`);
+        return handleResponse<import('../types').CollectionDocument[]>(response);
+    },
+
+    insert: async (name: string, doc: import('../types').CollectionDocument) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(doc),
+        });
+        return handleResponse<import('../types').CollectionDocument>(response);
+    },
+
+    update: async (name: string, index: number, changes: import('../types').CollectionDocument) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}/${index}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(changes),
+        });
+        return handleResponse<import('../types').CollectionDocument>(response);
+    },
+
+    deleteDoc: async (name: string, index: number) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}/${index}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+
+    clear: async (name: string) => {
+        const response = await fetch(`${API_BASE}/store/collections/${encodeURIComponent(name)}`, {
+            method: 'DELETE',
+        });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};
+
 // Sessions API
 export const sessionsApi = {
     list: async () => {

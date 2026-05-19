@@ -561,7 +561,7 @@ func TestStoreBuiltin_AttrNames(t *testing.T) {
 	sb, _ := makeBuiltin(t)
 	names := sb.AttrNames()
 
-	expected := map[string]bool{"get": true, "set": true, "has": true, "delete": true, "keys": true}
+	expected := map[string]bool{"get": true, "set": true, "has": true, "delete": true, "keys": true, "collection": true}
 	for _, n := range names {
 		if !expected[n] {
 			t.Errorf("unexpected attr: %s", n)

@@ -49,13 +49,15 @@ func (sb *StoreBuiltin) Attr(name string) (starlark.Value, error) {
 		return starlark.NewBuiltin("store.delete", sb.builtinDelete), nil
 	case "keys":
 		return starlark.NewBuiltin("store.keys", sb.builtinKeys), nil
+	case "collection":
+		return starlark.NewBuiltin("store.collection", sb.builtinCollection), nil
 	}
 	return nil, nil
 }
 
 // AttrNames returns all available method names (for dir()).
 func (sb *StoreBuiltin) AttrNames() []string {
-	return []string{"get", "set", "has", "delete", "keys"}
+	return []string{"get", "set", "has", "delete", "keys", "collection"}
 }
 
 // ── Method implementations ──────────────────────────────────────────────────
@@ -159,7 +161,17 @@ func (sb *StoreBuiltin) builtinKeys(_ *starlark.Thread, _ *starlark.Builtin, arg
 	return starlark.NewList(elems), nil
 }
 
-// ── Conversion helpers (local copies, keep package self-contained) ──────────
+// store.collection("name") → CollectionBuiltin
+func (sb *StoreBuiltin) builtinCollection(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var name string
+	if err := starlark.UnpackPositionalArgs("store.collection", args, kwargs, 1, &name); err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, fmt.Errorf("store.collection: name must not be empty")
+	}
+	return newCollectionBuiltin(name, sb.session, sb.accessLog), nil
+}
 
 func goToStar(v any) starlark.Value {
 	if v == nil {

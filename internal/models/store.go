@@ -2,6 +2,10 @@ package models
 
 import "time"
 
+// CollectionKeyPrefix is prepended to every collection name when persisted in
+// the flat key-value store. This ensures collections never collide with plain keys.
+const CollectionKeyPrefix = "__col__"
+
 // StoreEntry represents one key-value pair in the global store.
 // Values can be any JSON-serialisable type: string, number, boolean, array, or object.
 type StoreEntry struct {
@@ -10,6 +14,15 @@ type StoreEntry struct {
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
+
+// CollectionInfo summarises one named collection for the Admin API.
+type CollectionInfo struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// CollectionDocument is one document inside a named collection.
+type CollectionDocument = map[string]any
 
 // SessionInfo is a read-only summary of a live session, used by the Admin API.
 type SessionInfo struct {

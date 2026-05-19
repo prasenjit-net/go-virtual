@@ -208,6 +208,14 @@ func (r *Router) setupRoutes() {
 		api.DELETE("/store/:key", r.handler.DeleteStoreEntry)
 		api.DELETE("/store", r.handler.ClearStore)
 
+		// Named collections (backed by the global store)
+		api.GET("/store/collections", r.handler.ListCollections)
+		api.GET("/store/collections/:name", r.handler.GetCollection)
+		api.POST("/store/collections/:name", r.handler.InsertCollectionDoc)
+		api.PUT("/store/collections/:name/:index", r.handler.UpdateCollectionDoc)
+		api.DELETE("/store/collections/:name/:index", r.handler.DeleteCollectionDoc)
+		api.DELETE("/store/collections/:name", r.handler.ClearCollection)
+
 		// Sessions (Phase 2)
 		api.GET("/sessions", r.handler.ListSessions)
 		api.GET("/sessions/:id", r.handler.GetSession)

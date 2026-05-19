@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Trash2, Edit2, Database, AlertTriangle, Save, X } from 'lucide-react';
+import { Plus, Trash2, Edit2, Database, AlertTriangle, Save, X, List } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import { storeApi } from '../../services/api';
 import type { StoreEntry } from '../../types';
+import CollectionsManager from './CollectionsManager';
 
 export default function StoreManager() {
     const queryClient = useQueryClient();
+    const [activeTab, setActiveTab] = useState<'kv' | 'collections'>('kv');
 
     const [search, setSearch] = useState('');
     const [editEntry, setEditEntry] = useState<StoreEntry | null>(null);
@@ -109,13 +111,42 @@ export default function StoreManager() {
                 </div>
                 <button
                     onClick={openAdd}
-                    className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+                    className={`flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors ${activeTab !== 'kv' ? 'invisible' : ''}`}
                 >
                     <Plus className="w-5 h-5 mr-2" />
                     Add Entry
                 </button>
             </div>
 
+            {/* Tabs */}
+            <div className="flex gap-1 mb-6 border-b border-gray-200 dark:border-slate-700">
+                <button
+                    onClick={() => setActiveTab('kv')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'kv'
+                            ? 'border-indigo-600 text-indigo-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                >
+                    <List className="h-4 w-4" />
+                    Key-Value Store
+                </button>
+                <button
+                    onClick={() => setActiveTab('collections')}
+                    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                        activeTab === 'collections'
+                            ? 'border-indigo-600 text-indigo-600'
+                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-white'
+                    }`}
+                >
+                    <Database className="h-4 w-4" />
+                    Collections
+                </button>
+            </div>
+
+            {activeTab === 'collections' && <CollectionsManager />}
+
+            {activeTab === 'kv' && <>
             {/* Search */}
             <div className="mb-4">
                 <input
@@ -211,6 +242,7 @@ export default function StoreManager() {
                     </div>
                 </details>
             )}
+            </> /* end kv tab */}
 
             {/* Add / Edit Modal */}
             {showAddModal && (
