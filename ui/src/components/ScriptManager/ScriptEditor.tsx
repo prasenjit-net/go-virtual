@@ -71,6 +71,23 @@ export default function ScriptEditor() {
     const aiConfigured = aiStatus.configured
     const aiProviderLabel = aiStatus.provider === 'claude' ? 'Claude' : aiStatus.provider === 'openai' ? 'OpenAI' : 'AI provider'
 
+    // Reset all form state when scriptId changes (e.g. navigating between scripts)
+    const prevScriptIdRef = useRef<string | undefined>(undefined)
+    if (prevScriptIdRef.current !== scriptId) {
+        prevScriptIdRef.current = scriptId
+        if (formInitialised) {
+            setFormInitialised(false)
+            setName('')
+            setDescription('')
+            setTimeout(0)
+            setEnabled(true)
+            setSource(DEFAULT_SOURCE)
+            savedSourceRef.current = isNew ? '\0' : DEFAULT_SOURCE
+            setValidateResult(null)
+            setTestResult(null)
+        }
+    }
+
     // Load existing script for edit mode
     const { isLoading: isLoadingScript } = useQuery<Script>({
         queryKey: ['script', scriptId],
@@ -132,6 +149,14 @@ export default function ScriptEditor() {
         setIsTesting(true)
         setTestResult(null)
         try {
+            // Validate first — bail with a clear message if syntax is bad
+            const validation = await scriptsApi.validate(source)
+            if (!validation.valid) {
+                setTestResult({ output: null, durationMs: 0, error: `Script has errors: ${validation.error}` })
+                setIsTesting(false)
+                return
+            }
+
             let parsedPath: Record<string, string> = {}
             let parsedQuery: Record<string, string> = {}
             let parsedHeader: Record<string, string> = {}
@@ -141,7 +166,7 @@ export default function ScriptEditor() {
             try { parsedHeader = JSON.parse(testHeader) } catch { /* ignore */ }
             try { parsedBody = JSON.parse(testBody) } catch { /* ignore */ }
             const input = { path: parsedPath, query: parsedQuery, header: parsedHeader, body: parsedBody }
-            // Always run the current editor source so edits are tested without saving
+            // Always run the current editor source — never the saved version
             const result = await scriptsApi.testSource(source, timeout, input)
             setTestResult(result)
         } catch (e) {
@@ -323,6 +348,7 @@ export default function ScriptEditor() {
                     )}
 
                     <Editor
+                        key={scriptId ?? 'new'}
                         height="360px"
                         language="python"
                         value={source}
