@@ -16,7 +16,7 @@ func TestTestScriptSource_Success(t *testing.T) {
 	r.POST("/scripts/test-source", handler.TestScriptSource)
 
 	body := map[string]any{
-		"source":  "def run(req):\n    return {\"path\": req[\"path\"][\"id\"], \"body\": req[\"body\"][\"name\"]}",
+		"source":  "def run(req):\n    return {\"path\": req.path(\"id\", \"\"), \"body\": req.body(\"name\", \"\")}",
 		"timeout": 100,
 		"input": map[string]any{
 			"path":   map[string]string{"id": "42"},

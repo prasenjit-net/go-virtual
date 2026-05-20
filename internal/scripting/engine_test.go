@@ -77,7 +77,7 @@ func TestSetGlobalStore(t *testing.T) {
 func TestRunBindings_SingleBinding(t *testing.T) {
 	src := `
 def run(req):
-    return {"id": req["path"]["userId"], "ok": True}
+    return {"id": req.path("userId", ""), "ok": True}
 `
 	script := makeScript("s1", src)
 	binding := makeBinding("b1", "op-1", "s1", "user", 0)
@@ -321,7 +321,7 @@ func TestRunSpecBindings_NoBindings(t *testing.T) {
 }
 
 func TestRunSpecBindings_SingleBinding(t *testing.T) {
-	script := makeScript("s1", `def run(req): return {"scope": "spec", "id": req["path"]["specId"]}`)
+	script := makeScript("s1", `def run(req): return {"scope": "spec", "id": req.path("specId", "")}`)
 	binding := &models.ScriptBinding{
 		ID:        "b1",
 		SpecID:    "spec-1",
@@ -387,7 +387,7 @@ func TestRunResponseBindings_NoBindings(t *testing.T) {
 }
 
 func TestRunResponseBindings_SingleBinding(t *testing.T) {
-	script := makeScript("s1", `def run(req): return {"scope": "response", "id": req["path"]["responseId"]}`)
+	script := makeScript("s1", `def run(req): return {"scope": "response", "id": req.path("responseId", "")}`)
 	binding := &models.ScriptBinding{
 		ID:               "b1",
 		ResponseConfigID: "resp-1",

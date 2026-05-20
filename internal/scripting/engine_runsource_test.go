@@ -26,7 +26,7 @@ func TestRunSource_SuccessUsesEphemeralStore(t *testing.T) {
 def run(req):
     log("running")
     store.set("seed", "changed")
-    return {"seed": store.get("seed"), "path": req["path"]["id"]}
+    return {"seed": store.get("seed"), "path": req.path("id", "")}
 `
 	result, logs, durationMs, err := engine.RunSource(context.Background(), src, 0, &ScriptInput{Path: map[string]string{"id": "42"}})
 	if err != nil {

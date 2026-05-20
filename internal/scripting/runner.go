@@ -112,8 +112,8 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 	}
 	globals.Freeze()
 
-	// Build the req dict
-	reqDict := buildReqDict(input)
+	// Build the req value
+	reqDict := buildReqValue(input)
 
 	// Look up the `run` function
 	runFn, ok := globals["run"]
@@ -147,35 +147,4 @@ func (s *starlarkScript) Execute(ctx context.Context, input *ScriptInput, timeou
 	}
 
 	return StarToGo(retVal), nil
-}
-
-// buildReqDict constructs the Starlark dict passed to run(req).
-func buildReqDict(input *ScriptInput) *starlark.Dict {
-	req := new(starlark.Dict)
-
-	// path
-	pathDict := new(starlark.Dict)
-	for k, v := range input.Path {
-		_ = pathDict.SetKey(starlark.String(k), starlark.String(v))
-	}
-	_ = req.SetKey(starlark.String("path"), pathDict)
-
-	// query
-	queryDict := new(starlark.Dict)
-	for k, v := range input.Query {
-		_ = queryDict.SetKey(starlark.String(k), starlark.String(v))
-	}
-	_ = req.SetKey(starlark.String("query"), queryDict)
-
-	// header
-	headerDict := new(starlark.Dict)
-	for k, v := range input.Header {
-		_ = headerDict.SetKey(starlark.String(k), starlark.String(v))
-	}
-	_ = req.SetKey(starlark.String("header"), headerDict)
-
-	// body
-	_ = req.SetKey(starlark.String("body"), GoToStar(input.Body))
-
-	return req
 }

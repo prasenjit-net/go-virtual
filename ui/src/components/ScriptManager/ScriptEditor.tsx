@@ -55,10 +55,10 @@ function registerStarlarkCompletions(monaco: Monaco) {
             // req.*
             if (/\breq\.$/.test(textBefore) || /\breq\.\w+$/.test(textBefore)) {
                 return { suggestions: [
-                    s('path',   CIK.Property, 'dict  path parameters',   'path',   'Dict of path parameters from the URL template, e.g. req.path["id"]'),
-                    s('query',  CIK.Property, 'dict  query parameters',  'query',  'Dict of query string parameters, e.g. req.query["page"]'),
-                    s('header', CIK.Property, 'dict  request headers',   'header', 'Dict of request headers (lowercase keys), e.g. req.header["authorization"]'),
-                    s('body',   CIK.Property, 'value  parsed JSON body', 'body',   'Parsed JSON body (dict/list/None), e.g. req.body["name"]'),
+                    s('path',   CIK.Method, 'req.path(key[, default]) → string',  'path("${1:key}", "${2:}")',   'Read a path parameter. Raises if missing and no default given.\nExample: req.path("id", "")'),
+                    s('query',  CIK.Method, 'req.query(key[, default]) → string', 'query("${1:key}", "${2:}")',  'Read a query parameter. Raises if missing and no default given.\nExample: req.query("page", "1")'),
+                    s('header', CIK.Method, 'req.header(key[, default]) → string','header("${1:key}", "${2:}")', 'Read a request header (key auto-lowercased). Raises if missing and no default given.\nExample: req.header("authorization", "")'),
+                    s('body',   CIK.Method, 'req.body([path[, default]]) → value','body()',                      'No args: returns whole body (dict/list/None).\nWith path: req.body("field.nested", default) for gjson-style navigation.\nExample: req.body("user.name", "")'),
                 ]}
             }
 
@@ -200,19 +200,20 @@ function registerStarlarkCompletions(monaco: Monaco) {
                 s('validate', CIK.Module,   'value validation helpers', 'validate', 'validate module. Methods: matches, regex, is_email, is_uuid, is_url, …'),
 
                 // req variable — appears in run(req) context
-                s('req', CIK.Variable, 'request object', 'req', 'Request object. Fields: req.path, req.query, req.header, req.body'),
+                s('req', CIK.Variable, 'request object', 'req', 'Request object with callable attrs: req.path(key,default), req.query(key,default), req.header(key,default), req.body([path,default])'),
             ]}
         },
     })
 }
 
 const DEFAULT_SOURCE = `# Starlark script — define a run(req) function that returns a dict.
-# req.path   → dict of path parameters
-# req.query  → dict of query parameters
-# req.header → dict of request headers (lowercased keys)
-# req.body   → parsed JSON body (or None)
-# store      → session key-value store (get, set, has, delete, keys)
-# log(...)   → append message to trace logs
+# req.path("id", "")           → path parameter with default
+# req.query("page", "1")       → query parameter with default
+# req.header("authorization", "") → request header (lowercased key)
+# req.body()                   → whole parsed JSON body (dict/list/None)
+# req.body("user.name", "")    → gjson-style nested path with default
+# store                        → session key-value store (get, set, has, delete, keys)
+# log(...)                     → append message to trace logs
 
 def run(req):
     return {
@@ -1127,6 +1128,23 @@ export default function ScriptEditor() {
 function BuiltinReferenceContent() {
     return (
         <div className="space-y-5 text-sm">
+            <RefSection title="Request Object — req">
+                <div className="text-xs text-gray-400 dark:text-slate-500 mb-1">
+                    <code className="font-mono">req</code> is passed to <code className="font-mono">run(req)</code>. Each attribute is a callable, not a dict.
+                </div>
+                <RefEntry sig='req.path("key")' ret="string" desc="Path param — raises if missing" />
+                <RefEntry sig='req.path("key", "")' ret="string" desc="Path param with default" />
+                <RefEntry sig='req.query("key", "default")' ret="string" desc="Query parameter with default" />
+                <RefEntry sig='req.header("authorization", "")' ret="string" desc="Request header (auto-lowercased)" />
+                <RefEntry sig='req.body()' ret="dict|list|None" desc="Whole parsed JSON body" />
+                <RefEntry sig='req.body("name", "")' ret="value" desc="Top-level body field with default" />
+                <RefEntry sig='req.body("user.name", "")' ret="value" desc="Nested gjson path" />
+                <RefEntry sig='req.body("items.0.id", None)' ret="value" desc="Array index navigation" />
+                <div className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded px-2 py-1 mt-1">
+                    ⚠ Do NOT use <code className="font-mono">req["path"]</code> or <code className="font-mono">req["body"]</code> — req is not a dict.
+                </div>
+            </RefSection>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <RefSection title="Identifiers &amp; Time">
                     <RefEntry sig="uuid()" ret="string" desc="Random UUID v4" />

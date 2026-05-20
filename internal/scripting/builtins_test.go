@@ -300,7 +300,7 @@ func TestBuiltin_Base64RoundTrip(t *testing.T) {
 	input := "Hello, Starlark!"
 	src := `
 def run(req):
-    enc = base64_encode(req["body"])
+    enc = base64_encode(req.body())
     dec = base64_decode(enc)
     return dec
 `
