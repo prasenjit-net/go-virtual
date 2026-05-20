@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import Editor, { type Monaco } from '@monaco-editor/react'
 import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
-    GripHorizontal, Plus, Trash2, AlertCircle, Wand2, X, Settings
+    Plus, Trash2, AlertCircle, Wand2, X, Settings, Code2
 } from 'lucide-react'
 import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
@@ -463,10 +463,8 @@ export default function ResponseConfigIDE({
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
     const [isDirty, setIsDirty] = useState(false)
-    const [ideBottomHeight, setIdeBottomHeight] = useState(220)
-    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
+    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
     const [refDrawerOpen, setRefDrawerOpen] = useState(false)
-    const ideDragRef = useRef<{ startY: number; startHeight: number } | null>(null)
     const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -710,22 +708,6 @@ export default function ResponseConfigIDE({
         setIsDirty(true)
     }
 
-    const handleIdeDragStart = (e: React.MouseEvent) => {
-        ideDragRef.current = { startY: e.clientY, startHeight: ideBottomHeight }
-        const onMove = (ev: MouseEvent) => {
-            if (!ideDragRef.current) return
-            const delta = ideDragRef.current.startY - ev.clientY
-            setIdeBottomHeight(Math.max(100, Math.min(480, ideDragRef.current.startHeight + delta)))
-        }
-        const onUp = () => {
-            ideDragRef.current = null
-            window.removeEventListener('mousemove', onMove)
-            window.removeEventListener('mouseup', onUp)
-        }
-        window.addEventListener('mousemove', onMove)
-        window.addEventListener('mouseup', onUp)
-    }
-
     const handleEditorMount = (editor: any, monaco: Monaco) => {
         editorRef.current = editor
         monacoRef.current = monaco
@@ -782,10 +764,10 @@ export default function ResponseConfigIDE({
                         </span>
                     )}
                     <button
-                        onClick={prettifyBody}
+                        onClick={() => { prettifyBody(); setIdeActiveTab('body') }}
                         disabled={readOnly}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs border border-gray-300 dark:border-slate-600 rounded-md text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50"
-                        title="Prettify JSON"
+                        title="Prettify JSON body"
                     >
                         <Wand2 className="w-3.5 h-3.5" />
                         Prettify
@@ -837,95 +819,95 @@ export default function ResponseConfigIDE({
 
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
+                    <div className="flex-shrink-0 flex items-center border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-1">
+                        <button
+                            onClick={() => setIdeActiveTab('metadata')}
+                            className={clsx(
+                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                ideActiveTab === 'metadata'
+                                    ? 'border-primary-600 text-primary-600'
+                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                            )}
+                        >
+                            <Settings className="w-3 h-3" /> Metadata
+                        </button>
+                        <button
+                            onClick={() => setIdeActiveTab('body')}
+                            className={clsx(
+                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                ideActiveTab === 'body'
+                                    ? 'border-primary-600 text-primary-600'
+                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                            )}
+                        >
+                            <Code2 className="w-3 h-3" /> Body
+                        </button>
+                        <button
+                            onClick={() => setIdeActiveTab('conditions')}
+                            className={clsx(
+                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                ideActiveTab === 'conditions'
+                                    ? 'border-primary-600 text-primary-600'
+                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                            )}
+                        >
+                            Conditions
+                        </button>
+                        <button
+                            onClick={() => setIdeActiveTab('headers')}
+                            className={clsx(
+                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                ideActiveTab === 'headers'
+                                    ? 'border-primary-600 text-primary-600'
+                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                            )}
+                        >
+                            Headers
+                        </button>
+                        <button
+                            onClick={() => setIdeActiveTab('scriptbindings')}
+                            className={clsx(
+                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                ideActiveTab === 'scriptbindings'
+                                    ? 'border-primary-600 text-primary-600'
+                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                            )}
+                        >
+                            Script Bindings
+                        </button>
+                    </div>
+
                     <div className="flex-1 min-h-0 overflow-hidden">
-                        <Editor
-                            key={config?.id ?? 'new-response'}
-                            height="100%"
-                            language="go-template"
-                            theme="vs-dark"
-                            value={body}
-                            onMount={handleEditorMount}
-                            onChange={(value) => {
-                                const next = value || ''
-                                setBody(next)
-                                setIsDirty(true)
-                                scheduleTemplateValidation(next)
-                            }}
-                            options={{
-                                minimap: { enabled: true },
-                                fontSize: 14,
-                                lineNumbers: 'on',
-                                scrollBeyondLastLine: false,
-                                wordWrap: 'on',
-                                folding: true,
-                                bracketPairColorization: { enabled: true },
-                                automaticLayout: true,
-                                padding: { top: 12 },
-                                readOnly: readOnly,
-                            }}
-                        />
-                    </div>
-
-                    <div
-                        className="flex-shrink-0 h-2 bg-gray-100 dark:bg-slate-800 border-y border-gray-200 dark:border-slate-700 cursor-row-resize hover:bg-primary-100 dark:hover:bg-primary-900/30 flex items-center justify-center select-none transition-colors"
-                        onMouseDown={handleIdeDragStart}
-                        title="Drag to resize panel"
-                    >
-                        <GripHorizontal className="w-5 h-3 text-gray-300 dark:text-slate-600" />
-                    </div>
-
-                    <div
-                        className="flex-shrink-0 flex flex-col overflow-hidden bg-white dark:bg-slate-900"
-                        style={{ height: ideBottomHeight }}
-                    >
-                        <div className="flex-shrink-0 flex items-center border-b border-gray-200 dark:border-slate-800 px-1">
-                            <button
-                                onClick={() => setIdeActiveTab('metadata')}
-                                className={clsx(
-                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                    ideActiveTab === 'metadata'
-                                        ? 'border-primary-600 text-primary-600'
-                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                                )}
-                            >
-                                <Settings className="w-3 h-3" /> Metadata
-                            </button>
-                            <button
-                                onClick={() => setIdeActiveTab('conditions')}
-                                className={clsx(
-                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                    ideActiveTab === 'conditions'
-                                        ? 'border-primary-600 text-primary-600'
-                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                                )}
-                            >
-                                Conditions
-                            </button>
-                            <button
-                                onClick={() => setIdeActiveTab('headers')}
-                                className={clsx(
-                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                    ideActiveTab === 'headers'
-                                        ? 'border-primary-600 text-primary-600'
-                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                                )}
-                            >
-                                Headers
-                            </button>
-                            <button
-                                onClick={() => setIdeActiveTab('scriptbindings')}
-                                className={clsx(
-                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                    ideActiveTab === 'scriptbindings'
-                                        ? 'border-primary-600 text-primary-600'
-                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                                )}
-                            >
-                                Script Bindings
-                            </button>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto">
+                        {ideActiveTab === 'body' && (
+                            <Editor
+                                key={config?.id ?? 'new-response'}
+                                height="100%"
+                                language="go-template"
+                                theme="vs-dark"
+                                value={body}
+                                onMount={handleEditorMount}
+                                onChange={(value) => {
+                                    const next = value || ''
+                                    setBody(next)
+                                    setIsDirty(true)
+                                    scheduleTemplateValidation(next)
+                                }}
+                                options={{
+                                    minimap: { enabled: true },
+                                    fontSize: 14,
+                                    lineNumbers: 'on',
+                                    scrollBeyondLastLine: false,
+                                    wordWrap: 'on',
+                                    folding: true,
+                                    bracketPairColorization: { enabled: true },
+                                    automaticLayout: true,
+                                    padding: { top: 12 },
+                                    readOnly: readOnly,
+                                }}
+                            />
+                        )}
+                        {ideActiveTab !== 'body' && (
+                        <div className="overflow-y-auto h-full">
                             {ideActiveTab === 'metadata' && (
                                 <div className="p-4 space-y-4 max-w-2xl">
                                     <div className="grid grid-cols-2 gap-4">
@@ -1322,6 +1304,7 @@ export default function ResponseConfigIDE({
                                 </div>
                             )}
                         </div>
+                        )}
                     </div>
                 </div>
 
