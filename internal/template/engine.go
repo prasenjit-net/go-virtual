@@ -2,6 +2,7 @@ package template
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"regexp"
@@ -35,28 +36,60 @@ type Context struct {
 	RNG          *rand.Rand
 	// ScriptOutput holds results from script bindings, keyed by outputKey.
 	ScriptOutput map[string]any
+
+	// New optional fields — all zero-value safe.
+	Method    string // HTTP method, e.g. "GET"
+	RequestURL string // full request URL string
+	RequestID string  // stable UUID for this request
+
+	// StoreReader reads from the session store; nil = no store access.
+	StoreReader func(key string) string
+	// StoreWriter increments a named counter and returns its value.
+	StoreWriter func(name string) string
 }
 
-type bodyTemplateData struct {
-	Path   map[string]string
-	Query  map[string]string
-	Header map[string]string
-	Body   string
+// TemplateData is the dot value (.) passed to all Go text/template execution.
+// Fields are directly accessible via native Go template dot-notation.
+type TemplateData struct {
+	// Request sources
+	Path   map[string]string // {{.Path.id}}
+	Query  map[string]string // {{.Query.page}}
+	Header map[string]string // {{.Header.authorization}} (lowercased keys)
+
+	// Body is the parsed JSON body as map[string]any.
+	// Enables native Go template traversal: {{.Body.user.name}}
+	// For array/complex gjson paths use {{body "items.0.id"}} instead.
+	Body    map[string]any // {{.Body.name}}, {{.Body.user.address.city}}
+	RawBody string         // {{.RawBody}} — original body string
+
+	// Request metadata
+	Method    string // {{.Method}}
+	URL       string // {{.URL}}
+	RequestID string // {{.RequestID}}
+
 	// Script holds script binding output, keyed by outputKey.
 	// Access as {{.Script.pricing.total}} in templates.
 	Script map[string]any
 }
 
+// bodyTemplateData is a legacy alias kept for internal backward compat.
+type bodyTemplateData = TemplateData
+
 // templateVarPattern matches template variables like {{variable}}
 var templateVarPattern = regexp.MustCompile(`\{\{([^}]+)\}\}`)
 
-// Process processes a template string and replaces all variables
-func (e *Engine) Process(template string, ctx *Context) string {
-	return templateVarPattern.ReplaceAllStringFunc(template, func(match string) string {
-		// Extract variable name (remove {{ and }})
-		varName := strings.TrimSpace(match[2 : len(match)-2])
-		return e.resolveVariable(varName, ctx)
-	})
+// Process processes a template string by running it through the full Go template engine.
+// This ensures headers and simple string templates have access to all helpers.
+func (e *Engine) Process(tmplStr string, ctx *Context) string {
+	result, err := e.RenderBodyTemplate(tmplStr, ctx)
+	if err != nil {
+		// Fallback: simple variable replacement for templates that fail to parse
+		return templateVarPattern.ReplaceAllStringFunc(tmplStr, func(match string) string {
+			varName := strings.TrimSpace(match[2 : len(match)-2])
+			return e.resolveVariable(varName, ctx)
+		})
+	}
+	return result
 }
 
 // ProcessHeaders processes all headers and replaces template variables
@@ -102,7 +135,7 @@ func (e *Engine) ValidateBodyTemplate(body string) error {
 	return err
 }
 
-func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, texttmpl.FuncMap) {
+func (e *Engine) buildBodyTemplateContext(ctx *Context) (TemplateData, texttmpl.FuncMap) {
 	if ctx == nil {
 		ctx = &Context{}
 	}
@@ -113,15 +146,26 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, textt
 
 	scriptOutput := ctx.ScriptOutput
 
-	data := bodyTemplateData{
-		Path:   ctx.PathParams,
-		Query:  query,
-		Header: headers,
-		Body:   ctx.Body,
-		Script: scriptOutput,
+	// Parse JSON body into a map for native dot-traversal.
+	var parsedBody map[string]any
+	if ctx.Body != "" {
+		_ = json.Unmarshal([]byte(ctx.Body), &parsedBody)
+	}
+
+	data := TemplateData{
+		Path:      ctx.PathParams,
+		Query:     query,
+		Header:    headers,
+		Body:      parsedBody,
+		RawBody:   ctx.Body,
+		Script:    scriptOutput,
+		Method:    ctx.Method,
+		URL:       ctx.RequestURL,
+		RequestID: ctx.RequestID,
 	}
 
 	funcMap := texttmpl.FuncMap{
+		// ── Source functions (legacy function-call style) ──────────────────────
 		"path": func(key string) string {
 			if key == "" || ctx.PathParams == nil {
 				return ""
@@ -161,6 +205,7 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, textt
 			}
 			return ""
 		},
+		"rawBody": func() string { return ctx.Body },
 		"random": func(args ...interface{}) string {
 			return e.resolveRandom(buildKeyFromArgs(args), rng)
 		},
@@ -170,17 +215,63 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (bodyTemplateData, textt
 		"timestamp": func(args ...interface{}) string {
 			return e.resolveTimestamp(buildKeyFromArgs(args))
 		},
-		"env": func(string) string {
-			return ""
-		},
+		"env": func(string) string { return "" },
 		// script resolves a dot-path into the script output map.
-		// e.g. {{script "pricing.total"}} → ScriptOutput["pricing"]["total"]
 		"script": func(path string) string {
 			if path == "" || scriptOutput == nil {
 				return ""
 			}
 			return resolveScriptOutputPath(scriptOutput, path)
 		},
+		// store reads a key from the session store (empty if not available).
+		"store": func(key string) string {
+			if ctx.StoreReader == nil {
+				return ""
+			}
+			return ctx.StoreReader(key)
+		},
+		// counter increments a named session counter and returns its value.
+		"counter": func(name string) string {
+			if ctx.StoreWriter == nil {
+				return "0"
+			}
+			return ctx.StoreWriter(name)
+		},
+		// ── now / dateFormat ───────────────────────────────────────────────────
+		"now": func() time.Time { return time.Now().UTC() },
+		"dateFormat": func(layout string, t time.Time) string {
+			return t.Format(layout)
+		},
+		// ── toJSON ────────────────────────────────────────────────────────────
+		"toJSON": func(v interface{}) string {
+			b, err := json.Marshal(v)
+			if err != nil {
+				return ""
+			}
+			return string(b)
+		},
+		// jsonGet extracts a gjson path from a JSON string field.
+		"jsonGet": func(path, jsonStr string) string {
+			result := gjson.Get(jsonStr, path)
+			if result.Exists() {
+				return result.String()
+			}
+			return ""
+		},
+	}
+
+	// Merge string, math, iter, json formatting funcMaps
+	for k, v := range buildStringFuncMap() {
+		funcMap[k] = v
+	}
+	for k, v := range buildMathFuncMap() {
+		funcMap[k] = v
+	}
+	for k, v := range buildIterFuncMap() {
+		funcMap[k] = v
+	}
+	for k, v := range buildFormatFuncMap() {
+		funcMap[k] = v
 	}
 
 	return data, funcMap
@@ -283,12 +374,11 @@ func (e *Engine) resolveRandom(key string, rng *rand.Rand) string {
 	}
 
 	switch {
-	case key == "uuid":
+	case key == "uuid" || key == "uuid4":
 		return uuid.New().String()
 	case key == "int":
 		return strconv.Itoa(rng.Intn(1000000))
 	case strings.HasPrefix(key, "int("):
-		// Parse int(min,max)
 		params := parseParams(key, "int")
 		if len(params) == 2 {
 			min, _ := strconv.Atoi(params[0])
@@ -310,7 +400,7 @@ func (e *Engine) resolveRandom(key string, rng *rand.Rand) string {
 			}
 		}
 		return fmt.Sprintf("%.2f", rng.Float64()*1000)
-	case key == "string":
+	case key == "string" || key == "alphanumeric":
 		return randomString(rng, 10)
 	case strings.HasPrefix(key, "string("):
 		params := parseParams(key, "string")
@@ -321,13 +411,66 @@ func (e *Engine) resolveRandom(key string, rng *rand.Rand) string {
 			}
 		}
 		return randomString(rng, 10)
+	case strings.HasPrefix(key, "alphanumeric("):
+		params := parseParams(key, "alphanumeric")
+		if len(params) == 1 {
+			length, _ := strconv.Atoi(params[0])
+			if length > 0 {
+				return randomString(rng, length)
+			}
+		}
+		return randomString(rng, 10)
+	case key == "alpha":
+		return randomAlpha(rng, 10, false)
+	case strings.HasPrefix(key, "alpha("):
+		params := parseParams(key, "alpha")
+		if len(params) == 1 {
+			length, _ := strconv.Atoi(params[0])
+			if length > 0 {
+				return randomAlpha(rng, length, false)
+			}
+		}
+		return randomAlpha(rng, 10, false)
+	case key == "ALPHA":
+		return randomAlpha(rng, 10, true)
+	case strings.HasPrefix(key, "ALPHA("):
+		params := parseParams(key, "ALPHA")
+		if len(params) == 1 {
+			length, _ := strconv.Atoi(params[0])
+			if length > 0 {
+				return randomAlpha(rng, length, true)
+			}
+		}
+		return randomAlpha(rng, 10, true)
+	case key == "numeric":
+		return randomNumeric(rng, 6)
+	case strings.HasPrefix(key, "numeric("):
+		params := parseParams(key, "numeric")
+		if len(params) == 1 {
+			length, _ := strconv.Atoi(params[0])
+			if length > 0 {
+				return randomNumeric(rng, length)
+			}
+		}
+		return randomNumeric(rng, 6)
+	case key == "hex":
+		return randomHex(rng, 8)
+	case strings.HasPrefix(key, "hex("):
+		params := parseParams(key, "hex")
+		if len(params) == 1 {
+			length, _ := strconv.Atoi(params[0])
+			if length > 0 {
+				return randomHex(rng, length)
+			}
+		}
+		return randomHex(rng, 8)
 	case key == "bool":
 		if rng.Intn(2) == 0 {
 			return "false"
 		}
 		return "true"
 	case key == "email":
-		return fmt.Sprintf("%s@example.com", randomString(rng, 8))
+		return fmt.Sprintf("%s@example.com", randomAlpha(rng, 8, false))
 	case key == "name":
 		names := []string{"John", "Jane", "Bob", "Alice", "Charlie", "Diana", "Eve", "Frank"}
 		return names[rng.Intn(len(names))]
@@ -336,6 +479,41 @@ func (e *Engine) resolveRandom(key string, rng *rand.Rand) string {
 	}
 
 	return ""
+}
+
+// randomAlpha generates a random alpha string (lower or upper case).
+func randomAlpha(rng *rand.Rand, length int, upper bool) string {
+	const lower = "abcdefghijklmnopqrstuvwxyz"
+	const upperC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	chars := lower
+	if upper {
+		chars = upperC
+	}
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = chars[rng.Intn(len(chars))]
+	}
+	return string(b)
+}
+
+// randomNumeric generates a random string of digits.
+func randomNumeric(rng *rand.Rand, length int) string {
+	const digits = "0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = digits[rng.Intn(len(digits))]
+	}
+	return string(b)
+}
+
+// randomHex generates a random lowercase hex string.
+func randomHex(rng *rand.Rand, length int) string {
+	const hexChars = "0123456789abcdef"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = hexChars[rng.Intn(len(hexChars))]
+	}
+	return string(b)
 }
 
 func (e *Engine) rngForContext(ctx *Context) *rand.Rand {
@@ -390,6 +568,20 @@ func (e *Engine) resolveFaker(key string, rng *rand.Rand) string {
 		return fakerName("last", rng)
 	case "fullName":
 		return fakerName("full", rng)
+	case "date":
+		return fakerDate(field, rng)
+	case "finance":
+		return fakerFinance(field, rng)
+	case "product":
+		return fakerProduct(field, rng)
+	case "location":
+		return fakerLocation(field, rng)
+	case "id":
+		return fakerID(field, rng)
+	case "color":
+		return fakerColor(field, rng)
+	case "number":
+		return fakerNumber(field, rng)
 	}
 
 	return ""
@@ -464,7 +656,7 @@ func fakerAddress(field string, rng *rand.Rand) string {
 
 func fakerInternet(field string, rng *rand.Rand) string {
 	domains := []string{"example.com", "demo.dev", "mock.io", "test.net"}
-	username := randomString(rng, 10)
+	username := randomAlpha(rng, 10, false)
 	domain := domains[rng.Intn(len(domains))]
 
 	switch field {
@@ -473,10 +665,19 @@ func fakerInternet(field string, rng *rand.Rand) string {
 	case "domain":
 		return domain
 	case "url", "":
-		return fmt.Sprintf("https://%s/%s", domain, randomString(rng, 6))
+		return fmt.Sprintf("https://%s/%s", domain, randomAlpha(rng, 6, false))
+	case "ip":
+		return fmt.Sprintf("%d.%d.%d.%d", rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256))
+	case "ipv6":
+		return fmt.Sprintf("2001:%04x:%04x:%04x::%04x", rng.Intn(0x10000), rng.Intn(0x10000), rng.Intn(0x10000), rng.Intn(0x10000))
+	case "mac":
+		return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
+			rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256))
+	case "port":
+		return strconv.Itoa(1024 + rng.Intn(64511))
 	}
 
-	return fmt.Sprintf("https://%s/%s", domain, randomString(rng, 6))
+	return fmt.Sprintf("https://%s/%s", domain, randomAlpha(rng, 6, false))
 }
 
 func fakerLorem(field string, rng *rand.Rand) string {
@@ -502,30 +703,43 @@ func (e *Engine) resolveTimestamp(key string) string {
 	switch {
 	case key == "" || key == "unix":
 		return strconv.FormatInt(now.Unix(), 10)
-	case key == "unixMilli":
+	case key == "unixMilli" || key == "unix_ms":
 		return strconv.FormatInt(now.UnixMilli(), 10)
-	case key == "unixNano":
+	case key == "unixNano" || key == "unix_ns":
 		return strconv.FormatInt(now.UnixNano(), 10)
-	case key == "iso":
-		return now.Format(time.RFC3339)
+	case key == "iso" || key == "utc":
+		return now.UTC().Format(time.RFC3339)
 	case key == "date":
 		return now.Format("2006-01-02")
 	case key == "time":
 		return now.Format("15:04:05")
 	case key == "datetime":
 		return now.Format("2006-01-02 15:04:05")
+	case key == "year":
+		return now.Format("2006")
+	case key == "month":
+		return now.Format("01")
+	case key == "day":
+		return now.Format("02")
 	case strings.HasPrefix(key, "format("):
 		params := parseParams(key, "format")
 		if len(params) == 1 {
 			return now.Format(params[0])
 		}
 	case strings.HasPrefix(key, "add("):
-		// Add duration to current time: timestamp.add(1h)
 		params := parseParams(key, "add")
 		if len(params) == 1 {
 			duration, err := time.ParseDuration(params[0])
 			if err == nil {
 				return now.Add(duration).Format(time.RFC3339)
+			}
+		}
+	case strings.HasPrefix(key, "sub("):
+		params := parseParams(key, "sub")
+		if len(params) == 1 {
+			duration, err := time.ParseDuration(params[0])
+			if err == nil {
+				return now.Add(-duration).Format(time.RFC3339)
 			}
 		}
 	}
@@ -673,4 +887,150 @@ func buildDotKeyFromArgs(args []interface{}) string {
 		parts = append(parts, fmt.Sprint(arg))
 	}
 	return strings.Join(parts, ".")
+}
+
+// fakerDate generates date-related fake values.
+func fakerDate(field string, rng *rand.Rand) string {
+	now := time.Now()
+	switch field {
+	case "past":
+		days := rng.Intn(365) + 1
+		return now.AddDate(0, 0, -days).Format("2006-01-02")
+	case "future":
+		days := rng.Intn(365) + 1
+		return now.AddDate(0, 0, days).Format("2006-01-02")
+	case "recent":
+		days := rng.Intn(30) + 1
+		return now.AddDate(0, 0, -days).Format("2006-01-02")
+	case "birthdate":
+		years := 18 + rng.Intn(62)
+		return now.AddDate(-years, -rng.Intn(12), -rng.Intn(28)).Format("2006-01-02")
+	}
+	return now.Format("2006-01-02")
+}
+
+// fakerFinance generates finance-related fake values.
+func fakerFinance(field string, rng *rand.Rand) string {
+	currencies := []string{"USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF"}
+	symbols := []string{"$", "€", "£", "¥", "CA$", "A$", "Fr"}
+	switch field {
+	case "amount":
+		return fmt.Sprintf("%.2f", float64(rng.Intn(100000))/100.0)
+	case "currency":
+		return currencies[rng.Intn(len(currencies))]
+	case "currencySymbol":
+		return symbols[rng.Intn(len(symbols))]
+	case "iban":
+		return fmt.Sprintf("GB%02d MOCK %04d %04d %04d %02d",
+			rng.Intn(100), rng.Intn(10000), rng.Intn(10000), rng.Intn(10000), rng.Intn(100))
+	case "creditCard":
+		return fmt.Sprintf("4%03d-%04d-%04d-%04d",
+			rng.Intn(1000), rng.Intn(10000), rng.Intn(10000), rng.Intn(10000))
+	}
+	return fmt.Sprintf("%.2f", float64(rng.Intn(100000))/100.0)
+}
+
+// fakerProduct generates product/commerce fake values.
+func fakerProduct(field string, rng *rand.Rand) string {
+	adjectives := []string{"Ergonomic", "Sleek", "Robust", "Premium", "Ultra", "Smart", "Compact"}
+	materials := []string{"Steel", "Plastic", "Wooden", "Aluminum", "Carbon", "Titanium"}
+	types := []string{"Chair", "Desk", "Lamp", "Monitor", "Keyboard", "Mouse", "Headset"}
+	categories := []string{"Electronics", "Furniture", "Clothing", "Tools", "Sports", "Books"}
+	switch field {
+	case "name":
+		return fmt.Sprintf("%s %s %s",
+			adjectives[rng.Intn(len(adjectives))],
+			materials[rng.Intn(len(materials))],
+			types[rng.Intn(len(types))])
+	case "category":
+		return categories[rng.Intn(len(categories))]
+	case "price":
+		return fmt.Sprintf("%.2f", float64(rng.Intn(99900)+100)/100.0)
+	case "sku":
+		return fmt.Sprintf("SKU-%s-%04d", randomAlpha(rng, 3, true), rng.Intn(10000))
+	}
+	return fmt.Sprintf("%s %s %s",
+		adjectives[rng.Intn(len(adjectives))],
+		materials[rng.Intn(len(materials))],
+		types[rng.Intn(len(types))])
+}
+
+// fakerLocation generates geo/location fake values.
+func fakerLocation(field string, rng *rand.Rand) string {
+	countries := []string{"United States", "Germany", "France", "Japan", "Brazil", "India", "Canada", "Australia"}
+	codes := []string{"US", "DE", "FR", "JP", "BR", "IN", "CA", "AU"}
+	timezones := []string{"America/New_York", "Europe/Berlin", "Europe/Paris", "Asia/Tokyo", "America/Sao_Paulo", "Asia/Kolkata", "America/Toronto", "Australia/Sydney"}
+	idx := rng.Intn(len(countries))
+	switch field {
+	case "country":
+		return countries[idx]
+	case "countryCode":
+		return codes[idx]
+	case "timezone":
+		return timezones[idx]
+	case "latitude":
+		return fmt.Sprintf("%.4f", (rng.Float64()*180.0)-90.0)
+	case "longitude":
+		return fmt.Sprintf("%.4f", (rng.Float64()*360.0)-180.0)
+	}
+	return countries[idx]
+}
+
+// fakerID generates various ID formats.
+func fakerID(field string, rng *rand.Rand) string {
+	switch field {
+	case "objectId":
+		return randomHex(rng, 24)
+	case "nanoid":
+		const nanoidChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+		b := make([]byte, 21)
+		for i := range b {
+			b[i] = nanoidChars[rng.Intn(len(nanoidChars))]
+		}
+		return string(b)
+	case "shortId":
+		return randomString(rng, 8)
+	}
+	return uuid.New().String()
+}
+
+// fakerColor generates color fake values.
+func fakerColor(field string, rng *rand.Rand) string {
+	names := []string{"coral", "teal", "slate", "amber", "violet", "indigo", "rose", "emerald", "sky", "fuchsia"}
+	switch field {
+	case "hex":
+		return fmt.Sprintf("#%s", randomHex(rng, 6))
+	case "name":
+		return names[rng.Intn(len(names))]
+	case "rgb":
+		return fmt.Sprintf("rgb(%d, %d, %d)", rng.Intn(256), rng.Intn(256), rng.Intn(256))
+	}
+	return fmt.Sprintf("#%s", randomHex(rng, 6))
+}
+
+// fakerNumber generates number fake values.
+func fakerNumber(field string, rng *rand.Rand) string {
+	switch field {
+	case "int":
+		return strconv.Itoa(rng.Intn(1000000))
+	case "float":
+		return fmt.Sprintf("%.2f", rng.Float64()*1000)
+	}
+	return strconv.Itoa(rng.Intn(1000000))
+}
+
+// fakerInternet extended with ip/ipv6/mac/port fields.
+func fakerInternetExtended(field string, rng *rand.Rand) string {
+	switch field {
+	case "ip":
+		return fmt.Sprintf("%d.%d.%d.%d", rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256))
+	case "ipv6":
+		return fmt.Sprintf("2001:%04x:%04x:%04x::%04x", rng.Intn(0x10000), rng.Intn(0x10000), rng.Intn(0x10000), rng.Intn(0x10000))
+	case "mac":
+		return fmt.Sprintf("%02x:%02x:%02x:%02x:%02x:%02x",
+			rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256), rng.Intn(256))
+	case "port":
+		return strconv.Itoa(1024 + rng.Intn(64511))
+	}
+	return fakerInternet(field, rng)
 }

@@ -79,30 +79,79 @@ const sources = ['path', 'query', 'header', 'body', 'signature', 'script'] as co
 
 const templateDocs = {
     request: [
-        { key: '{{.Path.id}}', desc: 'Path parameters map (use .Path.<name>)', example: '.Path.userId → 42' },
-        { key: '{{index .Query "status"}}', desc: 'Query params (lowercased keys, first value)', example: 'query status → active' },
-        { key: '{{index .Header "authorization"}}', desc: 'Headers (lowercased keys, first value)', example: 'authorization → Bearer ...' },
-        { key: '{{body "user.name"}}', desc: 'JSON path from request body', example: 'user.name → Alice' },
+        { key: '{{.Path.id}}', desc: 'Path parameter (dot-notation)', example: '.Path.userId → 42' },
+        { key: '{{.Query.status}}', desc: 'Query parameter (dot-notation)', example: '.Query.page → 2' },
+        { key: '{{.Header.authorization}}', desc: 'Request header (lowercased key)', example: 'Bearer ...' },
+        { key: '{{.Body.user.name}}', desc: 'JSON body field (native dot-traversal)', example: 'user.name → Alice' },
+        { key: '{{body "items.0.id"}}', desc: 'JSON body via gjson path (arrays/complex)', example: 'items.0.id → 99' },
+        { key: '{{.RawBody}}', desc: 'Entire raw request body string', example: '{"name":"alice"}' },
+        { key: '{{.Method}}', desc: 'HTTP method of the request', example: 'POST' },
+        { key: '{{.URL}}', desc: 'Full request URL string', example: '/api/v1/pets?page=2' },
+        { key: '{{.RequestID}}', desc: 'Stable UUID for this request', example: '3d7b9c2e-...' },
+        { key: '{{store "key"}}', desc: 'Read from session store', example: 'store "userId" → abc' },
+        { key: '{{counter "hits"}}', desc: 'Increment session counter, return value', example: '1, 2, 3 ...' },
+        // Legacy function-call style (still works)
+        { key: '{{path "id"}}', desc: 'Path param (legacy style)', example: '42' },
+        { key: '{{query "status"}}', desc: 'Query param (legacy style)', example: 'active' },
+        { key: '{{header "authorization"}}', desc: 'Header value (legacy style)', example: 'Bearer ...' },
     ],
     control: [
-        { key: '{{if (eq (index .Query "status") "active")}}...{{else}}...{{end}}', desc: 'Conditional rendering with comparisons', example: 'Show block when status=active' },
-        { key: '{{if (index .Header "x-feature")}}...{{end}}', desc: 'Truthy checks (non-empty values)', example: 'Feature flag header present' },
-        { key: '{{range $k, $v := .Query}}...{{end}}', desc: 'Loop over query params (lowercased keys)', example: 'Render all query key/value pairs' },
-        { key: '{{range $k, $v := .Header}}...{{end}}', desc: 'Loop over headers (lowercased keys)', example: 'Render all header key/value pairs' },
+        { key: '{{if eq .Query.status "active"}}...{{end}}', desc: 'Conditional on query param', example: 'Show block when status=active' },
+        { key: '{{if contains "admin" .Header.roles}}...{{end}}', desc: 'Check if string contains substring', example: 'Role check' },
+        { key: '{{if hasPrefix "Bearer" .Header.authorization}}...{{end}}', desc: 'Prefix check', example: 'Auth header present' },
+        { key: '{{range $i, $_ := times 3}}...{{end}}', desc: 'Repeat N times (index in $i)', example: 'Generate 3 items' },
+        { key: '{{range seq 1 5}}{{.}} {{end}}', desc: 'Iterate inclusive range 1..5', example: '1 2 3 4 5' },
+        { key: '{{range list "a" "b" "c"}}{{.}}{{end}}', desc: 'Iterate over inline list', example: 'abc' },
+        { key: '{{range $k, $v := .Query}}...{{end}}', desc: 'Loop over all query params', example: 'All query key/values' },
         { key: '{{with .Path}}...{{end}}', desc: 'Scoped block when path params exist', example: 'Use .Path inside block' },
     ],
+    string: [
+        { key: '{{upper .Query.name}}', desc: 'Uppercase', example: 'ALICE' },
+        { key: '{{lower .Header.authorization}}', desc: 'Lowercase', example: 'bearer ...' },
+        { key: '{{trim " value "}}', desc: 'Trim whitespace', example: 'value' },
+        { key: '{{trimPrefix "Bearer " .Header.authorization}}', desc: 'Remove prefix', example: 'abc123' },
+        { key: '{{trimSuffix ".json" .Path.file}}', desc: 'Remove suffix', example: 'data' },
+        { key: '{{replace "-" "_" .Path.id}}', desc: 'Replace all occurrences', example: 'hello_world' },
+        { key: '{{truncate 20 .Body.description}}', desc: 'Truncate to N characters', example: 'first 20 chars' },
+        { key: '{{default "guest" .Query.name}}', desc: 'Fallback for empty value', example: 'guest' },
+        { key: '{{coalesce .Query.q .Body.search "all"}}', desc: 'First non-empty value', example: 'found' },
+        { key: '{{split "," .Query.tags}}', desc: 'Split string → list (use with range)', example: '["a","b","c"]' },
+        { key: '{{join ", " (split "," .Query.tags)}}', desc: 'Join list back to string', example: 'a, b, c' },
+        { key: '{{b64enc .Path.id}}', desc: 'Base64 encode', example: 'NDI=' },
+        { key: '{{b64dec .Header.encoded}}', desc: 'Base64 decode', example: 'original' },
+        { key: '{{urlEnc .Query.redirect}}', desc: 'URL-encode a value', example: 'hello+world' },
+        { key: '{{md5 .Body.email}}', desc: 'MD5 hex hash (Gravatar etc.)', example: '5d41402abc4b2a76' },
+        { key: '{{sha256 .Path.id}}', desc: 'SHA-256 hex hash', example: '2cf24dba5...' },
+        { key: '{{printf "ID-%05d" (toInt .Path.n)}}', desc: 'Printf-style formatting', example: 'ID-00042' },
+    ],
+    math: [
+        { key: '{{add 1 (toInt .Query.page)}}', desc: 'Addition', example: 'page 3 → 4' },
+        { key: '{{sub 100 (toInt .Query.offset)}}', desc: 'Subtraction', example: '100 - 20 → 80' },
+        { key: '{{mul 10 (toInt .Query.page)}}', desc: 'Multiplication', example: 'page 3 → 30' },
+        { key: '{{div (toInt .Query.total) 10}}', desc: 'Division', example: '100 / 10 → 10' },
+        { key: '{{mod (toInt .Path.id) 2}}', desc: 'Modulo', example: '7 mod 2 → 1' },
+        { key: '{{max 0 (toInt .Query.page)}}', desc: 'Maximum of two values', example: 'clamp at 0' },
+        { key: '{{min 100 (toInt .Query.limit)}}', desc: 'Minimum of two values', example: 'cap at 100' },
+        { key: '{{toInt .Query.page}}', desc: 'String → integer', example: '"3" → 3' },
+        { key: '{{toFloat .Query.price}}', desc: 'String → float', example: '"9.99" → 9.99' },
+        { key: '{{toString 42}}', desc: 'Integer/float → string', example: '42 → "42"' },
+    ],
     random: [
-        { key: '{{random "uuid"}}', desc: 'Random UUID', example: '3d7b9c2e-...' },
+        { key: '{{random "uuid"}}', desc: 'Random UUID v4', example: '3d7b9c2e-...' },
+        { key: '{{random "uuid4"}}', desc: 'Random UUID v4 (alias)', example: '3d7b9c2e-...' },
         { key: '{{random "int"}}', desc: 'Random integer (0-999999)', example: '58231' },
-        { key: '{{random "int" 1 10}}', desc: 'Random integer in range', example: 'random 1..10 → 7' },
+        { key: '{{random "int(1,10)"}}', desc: 'Random integer in range', example: '7' },
         { key: '{{random "float"}}', desc: 'Random float', example: '491.23' },
-        { key: '{{random "float" 1 5}}', desc: 'Random float in range', example: 'random 1..5 → 3.14' },
-        { key: '{{random "string"}}', desc: 'Random string (len 10)', example: 'aZ93kLmP0q' },
-        { key: '{{random "string" 6}}', desc: 'Random string (len)', example: 'len 6 → Kd9pQ2' },
+        { key: '{{random "float(0,1)"}}', desc: 'Random float in range', example: '0.74' },
+        { key: '{{random "alpha"}}', desc: 'Random lowercase letters (len 10)', example: 'abcdefghij' },
+        { key: '{{random "alpha(6)"}}', desc: 'Random lowercase letters (custom len)', example: 'xkzwmq' },
+        { key: '{{random "ALPHA(8)"}}', desc: 'Random uppercase letters', example: 'XKZWMQAB' },
+        { key: '{{random "numeric(6)"}}', desc: 'Random digits', example: '482193' },
+        { key: '{{random "hex(8)"}}', desc: 'Random hex string', example: 'a3f2e19b' },
+        { key: '{{random "alphanumeric(12)"}}', desc: 'Random alphanumeric', example: 'aZ93kLmP0q12' },
         { key: '{{random "bool"}}', desc: 'Random boolean', example: 'true' },
         { key: '{{random "email"}}', desc: 'Random email', example: 'a1b2c3d4@example.com' },
-        { key: '{{random "name"}}', desc: 'Random name', example: 'Alice' },
-        { key: '{{random "phone"}}', desc: 'Random phone', example: '+1-415-555-0100' },
+        { key: '{{random "phone"}}', desc: 'Random phone number', example: '+1-415-555-0100' },
     ],
     faker: [
         { key: '{{faker "name.first"}}', desc: 'First name', example: 'Liam' },
@@ -110,29 +159,63 @@ const templateDocs = {
         { key: '{{faker "name"}}', desc: 'Full name', example: 'Olivia Johnson' },
         { key: '{{faker "email"}}', desc: 'Email address', example: 'r2d2@mail.test' },
         { key: '{{faker "phone"}}', desc: 'Phone number', example: '+1-212-555-0199' },
-        { key: '{{faker "company.name"}}', desc: 'Company name', example: 'Acme Corp' },
+        { key: '{{faker "company.name"}}', desc: 'Company name', example: 'Acme Inc' },
         { key: '{{faker "address.street"}}', desc: 'Street address', example: '123 Oak St' },
         { key: '{{faker "address.city"}}', desc: 'City', example: 'Springfield' },
-        { key: '{{faker "address.state"}}', desc: 'State', example: 'CA' },
+        { key: '{{faker "address.state"}}', desc: 'State code', example: 'CA' },
         { key: '{{faker "address.zip"}}', desc: 'Postal code', example: '94105' },
         { key: '{{faker "internet.username"}}', desc: 'Username', example: 'alpha9delta' },
         { key: '{{faker "internet.domain"}}', desc: 'Domain', example: 'mock.io' },
-        { key: '{{faker "internet.url"}}', desc: 'URL', example: 'https://mock.io/abc123' },
+        { key: '{{faker "internet.url"}}', desc: 'URL', example: 'https://mock.io/abc' },
+        { key: '{{faker "internet.ip"}}', desc: 'IPv4 address', example: '192.168.1.42' },
+        { key: '{{faker "internet.mac"}}', desc: 'MAC address', example: 'aa:bb:cc:dd:ee:ff' },
         { key: '{{faker "lorem.word"}}', desc: 'Lorem word', example: 'bravo' },
         { key: '{{faker "lorem.sentence"}}', desc: 'Lorem sentence', example: 'alpha bravo charlie.' },
-        { key: '{{faker "lorem.paragraph"}}', desc: 'Lorem paragraph', example: 'alpha bravo charlie. delta echo foxtrot.' },
+        { key: '{{faker "lorem.paragraph"}}', desc: 'Lorem paragraph', example: 'alpha bravo...' },
+        { key: '{{faker "date.past"}}', desc: 'Random past date (ISO)', example: '2025-03-14' },
+        { key: '{{faker "date.future"}}', desc: 'Random future date (ISO)', example: '2026-11-22' },
+        { key: '{{faker "date.recent"}}', desc: 'Random date in last 30 days (ISO)', example: '2026-05-12' },
+        { key: '{{faker "finance.amount"}}', desc: 'Random amount', example: '1234.56' },
+        { key: '{{faker "finance.currency"}}', desc: 'Currency code', example: 'USD' },
+        { key: '{{faker "finance.iban"}}', desc: 'Fake IBAN', example: 'GB12 MOCK ...' },
+        { key: '{{faker "finance.creditCard"}}', desc: 'Fake credit card number', example: '4123-4567-...' },
+        { key: '{{faker "product.name"}}', desc: 'Product name', example: 'Ergonomic Steel Chair' },
+        { key: '{{faker "product.category"}}', desc: 'Product category', example: 'Electronics' },
+        { key: '{{faker "product.price"}}', desc: 'Product price', example: '49.99' },
+        { key: '{{faker "product.sku"}}', desc: 'Product SKU', example: 'SKU-ABC-1234' },
+        { key: '{{faker "location.country"}}', desc: 'Country name', example: 'Germany' },
+        { key: '{{faker "location.countryCode"}}', desc: 'Country code', example: 'DE' },
+        { key: '{{faker "location.timezone"}}', desc: 'Timezone', example: 'America/New_York' },
+        { key: '{{faker "location.latitude"}}', desc: 'Latitude', example: '37.7749' },
+        { key: '{{faker "location.longitude"}}', desc: 'Longitude', example: '-122.4194' },
+        { key: '{{faker "id.objectId"}}', desc: '24-char hex ID (MongoDB-style)', example: 'a1b2c3...' },
+        { key: '{{faker "id.nanoid"}}', desc: '21-char URL-safe ID', example: 'V1StGXR8_Z5jdHi6B-myT' },
+        { key: '{{faker "id.shortId"}}', desc: '8-char alphanumeric ID', example: 'aB3kPq9z' },
+        { key: '{{faker "color.hex"}}', desc: 'Hex color', example: '#a3f2e1' },
+        { key: '{{faker "color.name"}}', desc: 'Named color', example: 'coral' },
     ],
     timestamp: [
         { key: '{{timestamp}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
         { key: '{{timestamp "unix"}}', desc: 'Unix timestamp (seconds)', example: '1707480000' },
-        { key: '{{timestamp "unixMilli"}}', desc: 'Unix timestamp (ms)', example: '1707480000123' },
-        { key: '{{timestamp "unixNano"}}', desc: 'Unix timestamp (ns)', example: '1707480000123456789' },
-        { key: '{{timestamp "iso"}}', desc: 'ISO-8601 timestamp', example: '2026-02-09T12:00:00Z' },
-        { key: '{{timestamp "date"}}', desc: 'Date (YYYY-MM-DD)', example: '2026-02-09' },
+        { key: '{{timestamp "unix_ms"}}', desc: 'Unix timestamp (milliseconds)', example: '1707480000123' },
+        { key: '{{timestamp "unix_ns"}}', desc: 'Unix timestamp (nanoseconds)', example: '1707480000123456789' },
+        { key: '{{timestamp "iso"}}', desc: 'ISO-8601 / RFC3339 UTC', example: '2026-02-09T12:00:00Z' },
+        { key: '{{timestamp "date"}}', desc: 'Date only (YYYY-MM-DD)', example: '2026-02-09' },
+        { key: '{{timestamp "year"}}', desc: 'Current year', example: '2026' },
+        { key: '{{timestamp "month"}}', desc: 'Current month (MM)', example: '02' },
+        { key: '{{timestamp "day"}}', desc: 'Current day (DD)', example: '09' },
         { key: '{{timestamp "time"}}', desc: 'Time (HH:MM:SS)', example: '12:00:00' },
         { key: '{{timestamp "datetime"}}', desc: 'Datetime (YYYY-MM-DD HH:MM:SS)', example: '2026-02-09 12:00:00' },
-        { key: '{{timestamp "format" "2006/01/02"}}', desc: 'Format using Go layout', example: 'format 2006/01/02 → 2026/02/09' },
-        { key: '{{timestamp "add" "1h"}}', desc: 'Add duration (e.g., 1h, 30m)', example: 'add 1h → 2026-02-09T13:00:00Z' },
+        { key: '{{timestamp "format(Jan 2006)"}}', desc: 'Custom Go layout', example: 'Feb 2026' },
+        { key: '{{timestamp "add(1h)"}}', desc: 'Add duration (1h, 30m, 24h)', example: 'now + 1h → RFC3339' },
+        { key: '{{timestamp "sub(7d)"}}', desc: 'Subtract duration (7d = 168h)', example: 'now - 7d → RFC3339' },
+        { key: '{{now | dateFormat "Jan 2006"}}', desc: 'now + dateFormat pipe', example: 'May 2026' },
+    ],
+    json: [
+        { key: '{{toJSON .Script.result}}', desc: 'Marshal any value to JSON string', example: '{"status":"ok"}' },
+        { key: '{{jsonGet "user.name" .RawBody}}', desc: 'gjson path from a JSON string field', example: 'carol' },
+        { key: '{{numberFormat 1234567.89}}', desc: 'Thousands-separated number', example: '1,234,567.89' },
+        { key: '{{currency 19.99 "$"}}', desc: 'Currency formatting', example: '$19.99' },
     ],
 }
 
@@ -980,6 +1063,48 @@ export default function ResponseConfigEditor({
                                             <span className="font-mono text-sky-900 dark:text-sky-200">{item.key}</span>
                                             <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
                                             <span className="text-sky-500/90 dark:text-sky-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-rose-100 dark:border-rose-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-rose-600 dark:text-rose-300 uppercase tracking-wide mb-3">
+                                    String helpers
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.string.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-rose-900 dark:text-rose-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-rose-500/90 dark:text-rose-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-orange-100 dark:border-orange-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-orange-600 dark:text-orange-300 uppercase tracking-wide mb-3">
+                                    Math helpers
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.math.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-orange-900 dark:text-orange-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-orange-500/90 dark:text-orange-300">Example: {item.example}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                            <div className="bg-white/70 dark:bg-slate-900/70 border border-teal-100 dark:border-teal-900/40 rounded-lg p-4">
+                                <h4 className="text-xs font-semibold text-teal-600 dark:text-teal-300 uppercase tracking-wide mb-3">
+                                    JSON &amp; formatting
+                                </h4>
+                                <ul className="space-y-3 text-xs text-gray-700 dark:text-slate-300">
+                                    {templateDocs.json.map((item) => (
+                                        <li key={item.key} className="flex flex-col gap-1">
+                                            <span className="font-mono text-teal-900 dark:text-teal-200">{item.key}</span>
+                                            <span className="text-gray-600 dark:text-slate-300">{item.desc}</span>
+                                            <span className="text-teal-500/90 dark:text-teal-300">Example: {item.example}</span>
                                         </li>
                                     ))}
                                 </ul>

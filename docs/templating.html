@@ -68,9 +68,13 @@
       <ul>
         <li><a href="#template-syntax">Template Syntax</a></li>
         <li><a href="#request-vars">Request Variables</a></li>
+        <li><a href="#string-helpers">String Helpers</a></li>
+        <li><a href="#math-helpers">Math Helpers</a></li>
+        <li><a href="#iteration">Iteration (times / seq / list)</a></li>
         <li><a href="#random">Random &amp; Generated</a></li>
         <li><a href="#faker">Faker Data</a></li>
         <li><a href="#timestamps">Timestamps</a></li>
+        <li><a href="#json-format">JSON &amp; Formatting</a></li>
         <li><a href="#script-output">Script Output Variables</a></li>
         <li><a href="#conditions">Conditions</a></li>
         <li><a href="#condition-operators">Condition Operators</a></li>
@@ -99,98 +103,199 @@
     <!-- Request variables -->
     <div class="section" id="request-vars">
       <h2>Request Variables</h2>
-      <p>Echo values from the incoming request directly into your response:</p>
+      <p>Echo values from the incoming request directly into your response. Two styles work — the preferred dot-notation and the legacy function style:</p>
 
-      <h3>Path parameters</h3>
-      <pre><code><span class="cm">// Template</span>
-{ <span class="str">"id"</span>: <span class="str">"{{path.id}}"</span> }
-
-<span class="cm">// Request: GET /pets/42</span>
-{ <span class="str">"id"</span>: <span class="str">"42"</span> }
-</code></pre>
-
-      <h3>Query parameters</h3>
-      <pre><code><span class="cm">// Template</span>
-{ <span class="str">"page"</span>: <span class="str">"{{query.page}}"</span>, <span class="str">"status"</span>: <span class="str">"{{query.status}}"</span> }
-
-<span class="cm">// Request: GET /items?page=2&amp;status=active</span>
-{ <span class="str">"page"</span>: <span class="str">"2"</span>, <span class="str">"status"</span>: <span class="str">"active"</span> }
-</code></pre>
-
-      <h3>Headers</h3>
-      <pre><code><span class="cm">// Template</span>
-{ <span class="str">"token"</span>: <span class="str">"{{header.Authorization}}"</span> }
-
-<span class="cm">// Request: GET /me  Authorization: Bearer abc123</span>
-{ <span class="str">"token"</span>: <span class="str">"Bearer abc123"</span> }
-</code></pre>
-
-      <h3>Request body (JSONPath)</h3>
-      <p>Access fields from a JSON request body using dot-notation JSONPath:</p>
-      <pre><code><span class="cm">// Template</span>
-{ <span class="str">"echo_email"</span>: <span class="str">"{{body.user.email}}"</span> }
-
-<span class="cm">// Request body: {"user": {"email": "alice@example.com"}}</span>
-{ <span class="str">"echo_email"</span>: <span class="str">"alice@example.com"</span> }
-</code></pre>
-
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Variable</th><th>Description</th></tr></thead>
-          <tbody>
-            <tr><td>{{path.&lt;name&gt;}}</td><td>URL path parameter value</td></tr>
-            <tr><td>{{query.&lt;name&gt;}}</td><td>Query string parameter value</td></tr>
-            <tr><td>{{header.&lt;name&gt;}}</td><td>HTTP request header value (case-insensitive)</td></tr>
-            <tr><td>{{body.&lt;field&gt;}}</td><td>JSONPath into request body (dot notation)</td></tr>
-            <tr><td>{{body.items[0].name}}</td><td>Array access in request body</td></tr>
-          </tbody>
-        </table>
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Two styles — both work</strong>
+          <code>{{.Path.id}}</code> (preferred) and <code>{{path "id"}}</code> (legacy) are equivalent. New templates should use the dot-notation style.
+        </div>
       </div>
-    </div>
-
-    <!-- Random -->
-    <div class="section" id="random">
-      <h2>Random &amp; Generated Values</h2>
-      <p>Use the <code>random</code> namespace for generated values. These are randomized on every request.</p>
 
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Output</th></tr></thead>
+          <thead><tr><th>Preferred</th><th>Legacy</th><th>Description</th></tr></thead>
           <tbody>
-            <tr><td>{{random.uuid}}</td><td>A UUID v4 string (e.g., <code>f47ac10b-58cc-4372-a567-0e02b2c3d479</code>)</td></tr>
-            <tr><td>{{random.int(min,max)}}</td><td>Random integer between min and max (inclusive)</td></tr>
-            <tr><td>{{random.string(n)}}</td><td>Random alphanumeric string of length n</td></tr>
-            <tr><td>{{random.bool}}</td><td><code>true</code> or <code>false</code></td></tr>
-            <tr><td>{{random.float(min,max)}}</td><td>Random floating-point number</td></tr>
+            <tr><td>{{.Path.id}}</td><td>{{path "id"}}</td><td>URL path parameter</td></tr>
+            <tr><td>{{.Query.page}}</td><td>{{query "page"}}</td><td>Query string parameter</td></tr>
+            <tr><td>{{.Header.authorization}}</td><td>{{header "authorization"}}</td><td>HTTP header (key lowercased)</td></tr>
+            <tr><td>{{.Body.user.name}}</td><td>{{body "user.name"}}</td><td>JSON body field (dot path)</td></tr>
+            <tr><td>{{.RawBody}}</td><td>{{rawBody}}</td><td>Raw body string</td></tr>
+            <tr><td>{{.Method}}</td><td><em>n/a</em></td><td>HTTP method (GET, POST…)</td></tr>
+            <tr><td>{{.URL}}</td><td><em>n/a</em></td><td>Full request URL</td></tr>
+            <tr><td>{{.RequestID}}</td><td><em>n/a</em></td><td>Stable UUID for this request</td></tr>
+            <tr><td>{{store "key"}}</td><td><em>n/a</em></td><td>Session store read</td></tr>
+            <tr><td>{{counter "hits"}}</td><td><em>n/a</em></td><td>Increment and return session counter</td></tr>
           </tbody>
         </table>
       </div>
 
       <pre><code>{
-  <span class="key">"id"</span>: <span class="str">"{{random.uuid}}"</span>,
-  <span class="key">"score"</span>: <span class="str">"{{random.int(0, 100)}}"</span>,
-  <span class="key">"token"</span>: <span class="str">"{{random.string(32)}}"</span>
+  <span class="key">"id"</span>: <span class="str">"{{.Path.id}}"</span>,
+  <span class="key">"page"</span>: <span class="str">"{{.Query.page}}"</span>,
+  <span class="key">"user"</span>: <span class="str">"{{.Body.user.name}}"</span>,
+  <span class="key">"method"</span>: <span class="str">"{{.Method}}"</span>,
+  <span class="key">"requestId"</span>: <span class="str">"{{.RequestID}}"</span>
 }
 </code></pre>
+
+      <h3>Body dot-traversal</h3>
+      <p><code>{{.Body.user.address.city}}</code> traverses the parsed JSON body natively. For array access or complex paths use <code>{{body "items.0.id"}}</code> (gjson-style path).</p>
+
+      <h3>Session store access</h3>
+      <pre><code>{
+  <span class="key">"loginCount"</span>: <span class="str">"{{store "login_count"}}"</span>,
+  <span class="key">"requestNumber"</span>: <span class="num">{{counter "req"}}</span>
+}
+</code></pre>
+    </div>
+
+    <!-- String helpers -->
+    <div class="section" id="string-helpers">
+      <h2>String Helpers</h2>
+      <p>Transform string values with pipe-style or argument-style functions:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Description</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>upper s</td><td>Uppercase</td><td><code>{{upper .Query.name}}</code> → <code>ALICE</code></td></tr>
+            <tr><td>lower s</td><td>Lowercase</td><td><code>{{lower .Header.authorization}}</code></td></tr>
+            <tr><td>trim s</td><td>Trim whitespace</td><td><code>{{trim " value "}}</code> → <code>value</code></td></tr>
+            <tr><td>trimPrefix prefix s</td><td>Remove prefix</td><td><code>{{trimPrefix "Bearer " .Header.authorization}}</code></td></tr>
+            <tr><td>trimSuffix suffix s</td><td>Remove suffix</td><td><code>{{trimSuffix ".jpg" .Path.filename}}</code></td></tr>
+            <tr><td>replace old new s</td><td>Replace substring</td><td><code>{{replace "-" "_" .Path.id}}</code></td></tr>
+            <tr><td>truncate n s</td><td>Truncate to n chars</td><td><code>{{truncate 20 .Body.description}}</code></td></tr>
+            <tr><td>default fallback val</td><td>Use fallback if empty</td><td><code>{{default "guest" .Query.name}}</code></td></tr>
+            <tr><td>coalesce v1 v2 …</td><td>First non-empty wins</td><td><code>{{coalesce .Query.q .Body.search "all"}}</code></td></tr>
+            <tr><td>contains substr s</td><td>Boolean: contains?</td><td><code>{{if contains "admin" .Header.roles}}…{{end}}</code></td></tr>
+            <tr><td>hasPrefix prefix s</td><td>Boolean: starts with?</td><td><code>{{hasPrefix "Bearer" .Header.authorization}}</code></td></tr>
+            <tr><td>hasSuffix suffix s</td><td>Boolean: ends with?</td><td><code>{{hasSuffix ".jpg" .Path.file}}</code></td></tr>
+            <tr><td>split sep s</td><td>Split to list</td><td><code>{{range split "," .Query.tags}}…{{end}}</code></td></tr>
+            <tr><td>join sep list</td><td>Join list</td><td><code>{{join ", " .someList}}</code></td></tr>
+            <tr><td>b64enc s</td><td>Base64 encode</td><td><code>{{b64enc .Path.id}}</code></td></tr>
+            <tr><td>b64dec s</td><td>Base64 decode</td><td><code>{{b64dec .Header.encoded}}</code></td></tr>
+            <tr><td>urlEnc s</td><td>URL-encode</td><td><code>{{urlEnc .Query.redirect}}</code></td></tr>
+            <tr><td>urlDec s</td><td>URL-decode</td><td><code>{{urlDec .Query.redirect}}</code></td></tr>
+            <tr><td>md5 s</td><td>Hex MD5 hash</td><td><code>{{md5 .Body.email}}</code></td></tr>
+            <tr><td>sha256 s</td><td>Hex SHA-256 hash</td><td><code>{{sha256 .Path.id}}</code></td></tr>
+            <tr><td>repeat n s</td><td>Repeat string n times</td><td><code>{{repeat 3 "ab"}}</code> → <code>ababab</code></td></tr>
+            <tr><td>printf fmt args…</td><td>Go printf formatting</td><td><code>{{printf "ID-%05d" (toInt .Path.id)}}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Math helpers -->
+    <div class="section" id="math-helpers">
+      <h2>Math Helpers</h2>
+      <p>Useful for pagination, offsets, and computed fields:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Description</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>add a b</td><td>a + b</td><td><code>{{add 1 (toInt .Query.page)}}</code></td></tr>
+            <tr><td>sub a b</td><td>a − b</td><td><code>{{sub 100 (toInt .Query.offset)}}</code></td></tr>
+            <tr><td>mul a b</td><td>a × b</td><td><code>{{mul 10 (toInt .Query.page)}}</code></td></tr>
+            <tr><td>div a b</td><td>a ÷ b</td><td><code>{{div (toInt .Query.total) 10}}</code></td></tr>
+            <tr><td>mod a b</td><td>a mod b</td><td><code>{{mod (toInt .Path.id) 2}}</code></td></tr>
+            <tr><td>abs n</td><td>Absolute value</td><td><code>{{abs -5}}</code></td></tr>
+            <tr><td>max a b</td><td>Larger of a, b</td><td><code>{{max 0 (toInt .Query.page)}}</code></td></tr>
+            <tr><td>min a b</td><td>Smaller of a, b</td><td><code>{{min 100 (toInt .Query.limit)}}</code></td></tr>
+            <tr><td>toInt s</td><td>String → int</td><td><code>{{toInt .Query.page}}</code></td></tr>
+            <tr><td>toFloat s</td><td>String → float64</td><td><code>{{toFloat .Query.price}}</code></td></tr>
+            <tr><td>toString n</td><td>Number → string</td><td><code>{{toString 42}}</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code>{
+  <span class="key">"nextPage"</span>: <span class="num">{{add 1 (toInt .Query.page)}}</span>,
+  <span class="key">"offset"</span>: <span class="num">{{mul 10 (toInt .Query.page)}}</span>,
+  <span class="key">"hasMore"</span>: <span class="num">{{gt (toInt .Query.total) (mul 10 (toInt .Query.page))}}</span>
+}
+</code></pre>
+    </div>
+
+    <!-- Iteration -->
+    <div class="section" id="iteration">
+      <h2>Iteration (times / seq / list)</h2>
+      <p>Generate arrays of repeated elements inline — no script required:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Returns</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>times n</td><td>[]int{0…n-1}</td><td>Use with range to repeat n times</td></tr>
+            <tr><td>seq start end</td><td>[]int (inclusive)</td><td>Integer range from start to end</td></tr>
+            <tr><td>list vals…</td><td>[]any</td><td>Inline list literal for range</td></tr>
+            <tr><td>first list</td><td>first element</td><td>First item of a list</td></tr>
+            <tr><td>last list</td><td>last element</td><td>Last item of a list</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="cm">// Generate an array of 5 fake users:</span>
+{
+  <span class="key">"users"</span>: [
+    {{range $i, $_ := times 5}}
+    {{if $i}},{{end}}
+    {
+      <span class="key">"id"</span>: <span class="num">{{add 1 $i}}</span>,
+      <span class="key">"name"</span>: <span class="str">"{{faker "name.full"}}"</span>,
+      <span class="key">"email"</span>: <span class="str">"{{faker "email"}}"</span>
+    }
+    {{end}}
+  ]
+}
+</code></pre>
+    </div>
+
+    <!-- Random -->
+    <div class="section" id="random">
+      <h2>Random &amp; Generated Values</h2>
+      <p>Use the <code>random</code> function for generated values. These are randomized on every request.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Output</th></tr></thead>
+          <tbody>
+            <tr><td>{{random "uuid"}} / {{random "uuid4"}}</td><td>UUID v4 string</td></tr>
+            <tr><td>{{random "bool"}}</td><td><code>true</code> or <code>false</code></td></tr>
+            <tr><td>{{random "int"}}</td><td>Random integer 0–999999</td></tr>
+            <tr><td>{{random "int(1,100)"}}</td><td>Random integer between 1 and 100</td></tr>
+            <tr><td>{{random "float"}}</td><td>Random float 0.00–999.99</td></tr>
+            <tr><td>{{random "float(0,1)"}}</td><td>Random float between 0 and 1</td></tr>
+            <tr><td>{{random "alpha"}} / {{random "alpha(16)"}}</td><td>Lowercase a–z chars (default 10)</td></tr>
+            <tr><td>{{random "ALPHA(8)"}}</td><td>Uppercase A–Z chars</td></tr>
+            <tr><td>{{random "numeric(6)"}}</td><td>Digit-only string</td></tr>
+            <tr><td>{{random "hex(8)"}}</td><td>Hex chars a–f 0–9</td></tr>
+            <tr><td>{{random "alphanumeric(12)"}}</td><td>Mixed alphanumeric string</td></tr>
+            <tr><td>{{random "email"}}</td><td>Random email address</td></tr>
+            <tr><td>{{random "phone"}}</td><td>Random phone number</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Faker -->
     <div class="section" id="faker">
       <h2>Faker Data</h2>
-      <p>The <code>faker</code> namespace provides realistic generated data. Values are <strong>deterministically seeded</strong> per request (from path + query params), so the same URL always returns the same fake data.</p>
+      <p>The <code>faker</code> function provides realistic generated data. Values are <strong>deterministically seeded</strong> per request (from path + query params), so the same URL always returns the same fake data.</p>
 
       <h3>People &amp; Identity</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
           <tbody>
-            <tr><td>{{faker.name.first}}</td><td>James</td></tr>
-            <tr><td>{{faker.name.last}}</td><td>Anderson</td></tr>
-            <tr><td>{{faker.name.full}}</td><td>James Anderson</td></tr>
-            <tr><td>{{faker.name.prefix}}</td><td>Dr.</td></tr>
-            <tr><td>{{faker.internet.email}}</td><td>james.anderson@example.com</td></tr>
-            <tr><td>{{faker.internet.username}}</td><td>janderson42</td></tr>
-            <tr><td>{{faker.phone.number}}</td><td>+1-555-867-5309</td></tr>
+            <tr><td>{{faker "name.full"}}</td><td>James Anderson</td></tr>
+            <tr><td>{{faker "name.first"}}</td><td>James</td></tr>
+            <tr><td>{{faker "name.last"}}</td><td>Anderson</td></tr>
+            <tr><td>{{faker "email"}}</td><td>james.anderson@example.com</td></tr>
+            <tr><td>{{faker "username"}}</td><td>janderson42</td></tr>
+            <tr><td>{{faker "phone"}}</td><td>+1-555-867-5309</td></tr>
           </tbody>
         </table>
       </div>
@@ -198,55 +303,108 @@
       <h3>Company &amp; Address</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
           <tbody>
-            <tr><td>{{faker.company.name}}</td><td>Acme Corp</td></tr>
-            <tr><td>{{faker.company.suffix}}</td><td>LLC</td></tr>
-            <tr><td>{{faker.address.street}}</td><td>123 Main Street</td></tr>
-            <tr><td>{{faker.address.city}}</td><td>Springfield</td></tr>
-            <tr><td>{{faker.address.state}}</td><td>California</td></tr>
-            <tr><td>{{faker.address.zip}}</td><td>90210</td></tr>
-            <tr><td>{{faker.address.country}}</td><td>United States</td></tr>
+            <tr><td>{{faker "company.name"}}</td><td>Acme Corp</td></tr>
+            <tr><td>{{faker "company.suffix"}}</td><td>LLC</td></tr>
+            <tr><td>{{faker "address.street"}}</td><td>123 Main Street</td></tr>
+            <tr><td>{{faker "address.city"}}</td><td>Springfield</td></tr>
+            <tr><td>{{faker "address.state"}}</td><td>California</td></tr>
+            <tr><td>{{faker "address.zip"}}</td><td>90210</td></tr>
+            <tr><td>{{faker "address.full"}}</td><td>123 Main Street, Springfield, CA 90210</td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3>Content &amp; Text</h3>
+      <h3>Location &amp; Geo</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
           <tbody>
-            <tr><td>{{faker.lorem.word}}</td><td>lorem</td></tr>
-            <tr><td>{{faker.lorem.sentence}}</td><td>Lorem ipsum dolor sit amet consectetur.</td></tr>
-            <tr><td>{{faker.lorem.paragraph}}</td><td>Multiple sentences of lorem ipsum text.</td></tr>
-            <tr><td>{{faker.color.name}}</td><td>Cerulean</td></tr>
-            <tr><td>{{faker.color.hex}}</td><td>#2A7FBC</td></tr>
+            <tr><td>{{faker "location.country"}}</td><td>United States</td></tr>
+            <tr><td>{{faker "location.countryCode"}}</td><td>US</td></tr>
+            <tr><td>{{faker "location.latitude"}}</td><td>37.7749</td></tr>
+            <tr><td>{{faker "location.longitude"}}</td><td>-122.4194</td></tr>
+            <tr><td>{{faker "location.timezone"}}</td><td>America/New_York</td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3>Finance &amp; Numbers</h3>
+      <h3>Internet &amp; Network</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
           <tbody>
-            <tr><td>{{faker.finance.amount}}</td><td>1234.56</td></tr>
-            <tr><td>{{faker.finance.currency}}</td><td>USD</td></tr>
-            <tr><td>{{faker.finance.iban}}</td><td>GB29NWBK60161331926819</td></tr>
+            <tr><td>{{faker "internet.ip"}}</td><td>192.168.1.42</td></tr>
+            <tr><td>{{faker "internet.ipv6"}}</td><td>2001:db8::1</td></tr>
+            <tr><td>{{faker "internet.mac"}}</td><td>aa:bb:cc:dd:ee:ff</td></tr>
+            <tr><td>{{faker "internet.port"}}</td><td>8443</td></tr>
+            <tr><td>{{faker "internet.url"}}</td><td>https://example.com/path</td></tr>
+            <tr><td>{{faker "internet.domain"}}</td><td>example.com</td></tr>
           </tbody>
         </table>
       </div>
 
-      <h3>Internet &amp; Tech</h3>
+      <h3>Finance</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Example output</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
           <tbody>
-            <tr><td>{{faker.internet.url}}</td><td>https://example.com/path</td></tr>
-            <tr><td>{{faker.internet.ip}}</td><td>192.168.1.42</td></tr>
-            <tr><td>{{faker.internet.ipv6}}</td><td>2001:db8::1</td></tr>
-            <tr><td>{{faker.internet.domain}}</td><td>example.com</td></tr>
-            <tr><td>{{faker.animal.name}}</td><td>Golden Retriever</td></tr>
+            <tr><td>{{faker "finance.amount"}}</td><td>1234.56</td></tr>
+            <tr><td>{{faker "finance.currency"}}</td><td>USD</td></tr>
+            <tr><td>{{faker "finance.iban"}}</td><td>GB29NWBK60161331926819</td></tr>
+            <tr><td>{{faker "finance.creditCard"}}</td><td>4532015112830366</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Product / Commerce</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker "product.name"}}</td><td>Ergonomic Steel Chair</td></tr>
+            <tr><td>{{faker "product.category"}}</td><td>Electronics</td></tr>
+            <tr><td>{{faker "product.price"}}</td><td>49.99</td></tr>
+            <tr><td>{{faker "product.sku"}}</td><td>SKU-ABC-1234</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>IDs</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker "id.objectId"}}</td><td>507f1f77bcf86cd799439011 (24-char hex)</td></tr>
+            <tr><td>{{faker "id.nanoid"}}</td><td>V1StGXR8_Z5jdHi6B-myT (21-char URL-safe)</td></tr>
+            <tr><td>{{faker "id.shortId"}}</td><td>xDgN8tZQ (8-char alphanumeric)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Dates</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker "date.past"}}</td><td>2023-11-15 (ISO, within past year)</td></tr>
+            <tr><td>{{faker "date.future"}}</td><td>2025-08-20 (ISO, within next year)</td></tr>
+            <tr><td>{{faker "date.recent"}}</td><td>2024-12-10 (ISO, within past 30 days)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Content &amp; Colors</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Example output</th></tr></thead>
+          <tbody>
+            <tr><td>{{faker "lorem.word"}}</td><td>lorem</td></tr>
+            <tr><td>{{faker "lorem.sentence"}}</td><td>Lorem ipsum dolor sit amet consectetur.</td></tr>
+            <tr><td>{{faker "lorem.paragraph"}}</td><td>Multiple sentences of lorem ipsum text.</td></tr>
+            <tr><td>{{faker "color.hex"}}</td><td>#2A7FBC</td></tr>
+            <tr><td>{{faker "color.name"}}</td><td>coral</td></tr>
           </tbody>
         </table>
       </div>
@@ -257,19 +415,48 @@
       <h2>Timestamps</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Variable</th><th>Format</th><th>Example</th></tr></thead>
+          <thead><tr><th>Expression</th><th>Format</th><th>Example</th></tr></thead>
           <tbody>
-            <tr><td>{{timestamp}}</td><td>Unix epoch (seconds)</td><td>1705320000</td></tr>
-            <tr><td>{{timestamp.iso}}</td><td>ISO 8601</td><td>2024-01-15T10:00:00Z</td></tr>
-            <tr><td>{{timestamp.ms}}</td><td>Unix milliseconds</td><td>1705320000000</td></tr>
-            <tr><td>{{timestamp.date}}</td><td>Date only</td><td>2024-01-15</td></tr>
+            <tr><td>{{timestamp "unix"}}</td><td>Unix seconds</td><td>1705320000</td></tr>
+            <tr><td>{{timestamp "unix_ms"}}</td><td>Unix milliseconds</td><td>1705320000000</td></tr>
+            <tr><td>{{timestamp "unix_ns"}}</td><td>Unix nanoseconds</td><td>1705320000000000000</td></tr>
+            <tr><td>{{timestamp "iso"}}</td><td>RFC3339 UTC</td><td>2024-01-15T10:00:00Z</td></tr>
+            <tr><td>{{timestamp "date"}}</td><td>Date only</td><td>2024-01-15</td></tr>
+            <tr><td>{{timestamp "year"}}</td><td>Year</td><td>2024</td></tr>
+            <tr><td>{{timestamp "month"}}</td><td>Month (zero-padded)</td><td>01</td></tr>
+            <tr><td>{{timestamp "day"}}</td><td>Day (zero-padded)</td><td>15</td></tr>
+            <tr><td>{{timestamp "add(24h)"}}</td><td>RFC3339, now + 24 hours</td><td>2024-01-16T10:00:00Z</td></tr>
+            <tr><td>{{timestamp "sub(7d)"}}</td><td>RFC3339, now − 7 days</td><td>2024-01-08T10:00:00Z</td></tr>
+            <tr><td>{{timestamp "format(Jan 2006)"}}</td><td>Custom Go layout</td><td>Jan 2024</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Use the pipeable <code>now</code> function with <code>dateFormat</code> for flexible formatting:</p>
+      <pre><code><span class="cm">// Pipeable style:</span>
+{{now | dateFormat <span class="str">"Jan 2006"</span>}}   → <span class="str">"Jan 2024"</span>
+{{now | dateFormat <span class="str">"Monday"</span>}}    → <span class="str">"Tuesday"</span>
+</code></pre>
+    </div>
+
+    <!-- JSON and formatting -->
+    <div class="section" id="json-format">
+      <h2>JSON &amp; Formatting</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Function</th><th>Description</th><th>Example</th></tr></thead>
+          <tbody>
+            <tr><td>toJSON val</td><td>Marshal any value to compact JSON</td><td><code>{{toJSON .Script.result}}</code></td></tr>
+            <tr><td>jsonGet path json</td><td>gjson-style path extraction from a JSON string</td><td><code>{{jsonGet "user.name" .RawBody}}</code></td></tr>
+            <tr><td>numberFormat n</td><td>Format with thousand separators</td><td><code>{{numberFormat 1234567.89}}</code> → <code>1,234,567.89</code></td></tr>
+            <tr><td>currency amount symbol</td><td>Currency formatting</td><td><code>{{currency 19.99 "$"}}</code> → <code>$19.99</code></td></tr>
+            <tr><td>dateFmt layout time</td><td>Format a time.Time value (pipeable)</td><td><code>{{now | dateFmt "Jan 2006"}}</code></td></tr>
           </tbody>
         </table>
       </div>
       <pre><code>{
-  <span class="key">"createdAt"</span>: <span class="str">"{{timestamp.iso}}"</span>,
-  <span class="key">"expiresAt"</span>: <span class="str">"{{timestamp.iso}}"</span>,
-  <span class="key">"unixTs"</span>: <span class="num">{{timestamp}}</span>
+  <span class="key">"scriptOutput"</span>: {{toJSON .Script.pricing}},
+  <span class="key">"price"</span>: <span class="str">"{{currency (toFloat .Body.price) "$"}}"</span>,
+  <span class="key">"total"</span>: <span class="str">"{{numberFormat (toFloat .Body.total)}}"</span>
 }
 </code></pre>
     </div>
@@ -277,20 +464,22 @@
     <!-- Script output -->
     <div class="section" id="script-output">
       <h2>Script Output Variables</h2>
-      <p>When a <a href="scripting.html">Starlark script</a> is bound to an operation, its return value is available under <code>{{.script.&lt;outputKey&gt;.&lt;field&gt;}}</code>:</p>
+      <p>When a <a href="scripting.html">Starlark script</a> is bound to an operation, its return value is available under <code>{{.Script.&lt;outputKey&gt;.&lt;field&gt;}}</code>:</p>
       <pre><code><span class="cm">// Script bound with outputKey = "pricing" returns:</span>
 { <span class="str">"total"</span>: <span class="num">99.99</span>, <span class="str">"tax"</span>: <span class="num">8.99</span> }
 
 <span class="cm">// Template:</span>
 {
-  <span class="key">"total"</span>: <span class="num">{{.script.pricing.total}}</span>,
-  <span class="key">"tax"</span>: <span class="num">{{.script.pricing.tax}}</span>
+  <span class="key">"total"</span>: <span class="num">{{.Script.pricing.total}}</span>,
+  <span class="key">"tax"</span>: <span class="num">{{.Script.pricing.tax}}</span>,
+  <span class="key">"formatted"</span>: <span class="str">"{{currency .Script.pricing.total "$"}}"</span>,
+  <span class="key">"json"</span>: {{toJSON .Script.pricing}}
 }
 </code></pre>
       <p>See <a href="scripting.html">Starlark Scripting</a> for full details on creating and binding scripts.</p>
     </div>
 
-    <!-- Conditions -->
+        <!-- Conditions -->
     <div class="section" id="conditions">
       <h2>Conditions</h2>
       <p>Conditions are rules attached to response configurations. A response is selected only when <strong>all</strong> its conditions evaluate to <code>true</code>. An empty conditions array means "always match".</p>
