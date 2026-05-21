@@ -12,6 +12,7 @@ import clsx from 'clsx'
 import { scriptsApi, aiApi } from '../../services/api'
 import type { AIStatus, Script } from '../../types'
 import AIScriptModal from './AIScriptModal'
+import { useIsDark } from '../../hooks/useIsDark'
 
 // ─── Starlark completion provider (registered once per page lifetime) ─────────
 
@@ -226,6 +227,7 @@ export default function ScriptEditor() {
     const isNew = !scriptId
     const navigate = useNavigate()
     const queryClient = useQueryClient()
+    const isDarkTheme = useIsDark()
 
     // Form state
     const [name, setName] = useState('')
@@ -554,7 +556,7 @@ export default function ScriptEditor() {
                                 sourceRef.current = v
                                 setValidateResult(null)
                             }}
-                            theme="vs-dark"
+                            theme={isDarkTheme ? 'vs-dark' : 'light'}
                             onMount={handleEditorMount}
                             options={{
                                 minimap: { enabled: true },
@@ -952,7 +954,7 @@ export default function ScriptEditor() {
                         sourceRef.current = v
                         setValidateResult(null)
                     }}
-                    theme="vs-dark"
+                    theme={isDarkTheme ? 'vs-dark' : 'light'}
                     onMount={handleEditorMount}
                     options={{
                         minimap: { enabled: false },
