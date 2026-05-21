@@ -8,12 +8,14 @@ import clsx from 'clsx'
 import { scriptsApi } from '../../services/api'
 import type { Script } from '../../types'
 import { useState } from 'react'
+import { useIsDark } from '../../hooks/useIsDark'
 
 export default function ScriptViewer() {
     const { scriptId } = useParams<{ scriptId: string }>()
     const navigate = useNavigate()
     const queryClient = useQueryClient()
     const [pendingDelete, setPendingDelete] = useState(false)
+    const isDarkTheme = useIsDark()
 
     const { data: script, isLoading, error } = useQuery<Script>({
         queryKey: ['script', scriptId],
@@ -206,7 +208,7 @@ export default function ScriptViewer() {
                                 cursorStyle: 'line',
                                 domReadOnly: true,
                             }}
-                            theme="vs-dark"
+                            theme={isDarkTheme ? 'vs-dark' : 'light'}
                         />
                     </div>
                     <div className="px-6 py-3 border-t border-gray-100 dark:border-slate-800 flex justify-end">

@@ -11,18 +11,7 @@ import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
-
-function useIsDark() {
-    const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
-    useEffect(() => {
-        const observer = new MutationObserver(() => {
-            setIsDark(document.documentElement.classList.contains('dark'))
-        })
-        observer.observe(document.documentElement, { attributeFilter: ['class'] })
-        return () => observer.disconnect()
-    }, [])
-    return isDark
-}
+import { useIsDark } from '../../hooks/useIsDark'
 
 interface ResponseConfigIDEProps {
     operationId: string

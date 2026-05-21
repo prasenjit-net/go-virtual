@@ -304,7 +304,7 @@ export default function ResponseConfigList({
                             {config.body && (
                                 <div>
                                     <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Body</h4>
-                                    <pre className="bg-gray-900 text-gray-100 rounded p-4 text-sm overflow-x-auto">
+                                    <pre className="bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded p-4 text-sm overflow-x-auto">
                                         {config.body}
                                     </pre>
                                 </div>
