@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"hash"
 	"hash/fnv"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/condition"
 	"github.com/prasenjit/go-virtual/internal/logging"
@@ -832,6 +834,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Build template context
 	seed := buildTemplateSeed(r, pathParams)
+	requestID := uuid.New().String()
 	templateCtx := &template.Context{
 		PathParams:   pathParams,
 		QueryParams:  r.URL.Query(),
@@ -839,6 +842,34 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Body:         requestBody,
 		RNG:          rand.New(rand.NewSource(seed)),
 		ScriptOutput: scriptOutput,
+		Method:       r.Method,
+		RequestURL:   r.URL.String(),
+		RequestID:    requestID,
+	}
+	if sess != nil {
+		templateCtx.StoreReader = func(key string) string {
+			v, _ := sess.Get(key)
+			if v == nil {
+				return ""
+			}
+			return fmt.Sprintf("%v", v)
+		}
+		templateCtx.StoreWriter = func(name string) string {
+			counterKey := "__counter__" + name
+			v, _ := sess.Get(counterKey)
+			var n int64
+			if v != nil {
+				switch cv := v.(type) {
+				case int64:
+					n = cv
+				case float64:
+					n = int64(cv)
+				}
+			}
+			n++
+			_ = sess.Set(counterKey, n)
+			return fmt.Sprintf("%d", n)
+		}
 	}
 
 	// Process headers – skip any that Go's ResponseWriter manages automatically
