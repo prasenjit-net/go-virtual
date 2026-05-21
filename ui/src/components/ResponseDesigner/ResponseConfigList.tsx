@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -77,6 +77,12 @@ export default function ResponseConfigList({
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
     const queryClient = useQueryClient()
 
+    useEffect(() => {
+        if (!feedback) return
+        const timeoutId = window.setTimeout(() => setFeedback(null), 3000)
+        return () => window.clearTimeout(timeoutId)
+    }, [feedback])
+
     const deleteMutation = useMutation({
         mutationFn: responsesApi.delete,
         onSuccess: () => {
@@ -108,17 +114,16 @@ export default function ResponseConfigList({
         cloneMutation.mutate({ id: config.id, name: `${config.name} clone` })
     }
 
-    const handleCopy = async (e: React.MouseEvent, config: ResponseConfig) => {
+    const handleCopy = (e: React.MouseEvent, config: ResponseConfig) => {
         e.stopPropagation()
-        try {
-            if (!navigator?.clipboard?.writeText) {
-                throw new Error('Clipboard API is not available in this browser context')
-            }
-            await navigator.clipboard.writeText(serializeResponseForClipboard(config))
-            setFeedback({ type: 'success', message: 'Response payload copied to clipboard.' })
-        } catch (err) {
-            setFeedback({ type: 'error', message: (err as Error).message || 'Failed to copy payload.' })
+        if (!navigator?.clipboard?.writeText) {
+            setFeedback({ type: 'error', message: 'Clipboard API is not available in this browser context' })
+            return
         }
+        navigator.clipboard
+            .writeText(serializeResponseForClipboard(config))
+            .then(() => setFeedback({ type: 'success', message: 'Response payload copied to clipboard.' }))
+            .catch((err) => setFeedback({ type: 'error', message: (err as Error).message || 'Failed to copy payload.' }))
     }
 
     const isRecorded = (config: ResponseConfig) => config.recorded === true
@@ -269,7 +274,7 @@ export default function ResponseConfigList({
                                     </Link>
                                     {enableManualActions && (
                                         <button
-                                            onClick={(e) => void handleCopy(e, config)}
+                                            onClick={(e) => handleCopy(e, config)}
                                             className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
                                             title="Copy response payload"
                                         >

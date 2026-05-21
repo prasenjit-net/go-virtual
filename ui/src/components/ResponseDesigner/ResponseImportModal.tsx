@@ -3,6 +3,8 @@ import { AlertCircle, Upload, X } from 'lucide-react'
 import type { ResponseConfigInput } from '../../types'
 import { parseResponseImportPayload } from './responseTransfer'
 
+const IMPORT_TEXTAREA_ROWS = 14
+
 interface ResponseImportModalProps {
     onClose: () => void
     onImport: (input: ResponseConfigInput) => void
@@ -51,7 +53,7 @@ export default function ResponseImportModal({
                     <textarea
                         value={rawPayload}
                         onChange={(e) => setRawPayload(e.target.value)}
-                        rows={14}
+                        rows={IMPORT_TEXTAREA_ROWS}
                         placeholder="Paste copied response payload JSON here..."
                         className="w-full px-3 py-2 text-sm font-mono rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500 resize-y"
                         disabled={isSubmitting}

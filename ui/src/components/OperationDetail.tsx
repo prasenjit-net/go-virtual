@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
     ArrowLeft,
+    Check,
     Plus,
     Edit2,
     Sparkles,
@@ -72,6 +73,12 @@ export default function OperationDetail() {
     const [showImportModal, setShowImportModal] = useState(false)
     const [importFeedback, setImportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
     const queryClient = useQueryClient()
+
+    useEffect(() => {
+        if (!importFeedback) return
+        const timeoutId = window.setTimeout(() => setImportFeedback(null), 3000)
+        return () => window.clearTimeout(timeoutId)
+    }, [importFeedback])
 
     const { data: operation, isLoading: opLoading } = useQuery<Operation>({
         queryKey: ['operation', operationId],
@@ -265,7 +272,11 @@ export default function OperationDetail() {
                                 : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900/40'
                         )}
                     >
-                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        {importFeedback.type === 'success' ? (
+                            <Check className="w-4 h-4 mt-0.5 shrink-0" />
+                        ) : (
+                            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        )}
                         <span>{importFeedback.message}</span>
                     </div>
                 )}

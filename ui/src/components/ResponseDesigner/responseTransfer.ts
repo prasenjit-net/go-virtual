@@ -6,8 +6,12 @@ export interface ResponseTransferEnvelope {
     payload: ResponseConfigInput
 }
 
-function normalizeCondition(input: any): Condition | null {
-    if (!input || typeof input !== 'object') return null
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object'
+}
+
+function normalizeCondition(input: unknown): Condition | null {
+    if (!isRecord(input)) return null
     if (typeof input.source !== 'string' || typeof input.operator !== 'string') return null
 
     return {
@@ -20,14 +24,16 @@ function normalizeCondition(input: any): Condition | null {
     } as Condition
 }
 
-function sanitizeInput(input: any): ResponseConfigInput {
-    const conditions = Array.isArray(input?.conditions)
-        ? input.conditions.map(normalizeCondition).filter((item): item is Condition => item !== null)
+function sanitizeInput(input: unknown): ResponseConfigInput {
+    const source = isRecord(input) ? input : {}
+
+    const conditions = Array.isArray(source.conditions)
+        ? source.conditions.map(normalizeCondition).filter((item): item is Condition => item !== null)
         : []
 
     const headers: Record<string, string> = {}
-    if (input?.headers && typeof input.headers === 'object') {
-        for (const [key, value] of Object.entries(input.headers)) {
+    if (isRecord(source.headers)) {
+        for (const [key, value] of Object.entries(source.headers)) {
             if (typeof value === 'string') {
                 headers[key] = value
             }
@@ -35,16 +41,16 @@ function sanitizeInput(input: any): ResponseConfigInput {
     }
 
     return {
-        name: typeof input?.name === 'string' ? input.name.trim() : '',
-        description: typeof input?.description === 'string' ? input.description : '',
-        tag: typeof input?.tag === 'string' ? input.tag : 'default',
-        priority: Number.isFinite(input?.priority) ? Number(input.priority) : 0,
+        name: typeof source.name === 'string' ? source.name.trim() : '',
+        description: typeof source.description === 'string' ? source.description : '',
+        tag: typeof source.tag === 'string' ? source.tag : 'default',
+        priority: Number.isFinite(source.priority) ? Number(source.priority) : 0,
         conditions,
-        statusCode: Number.isFinite(input?.statusCode) ? Number(input.statusCode) : 200,
+        statusCode: Number.isFinite(source.statusCode) ? Number(source.statusCode) : 200,
         headers,
-        body: typeof input?.body === 'string' ? input.body : '',
-        delay: Number.isFinite(input?.delay) ? Number(input.delay) : 0,
-        enabled: typeof input?.enabled === 'boolean' ? input.enabled : true,
+        body: typeof source.body === 'string' ? source.body : '',
+        delay: Number.isFinite(source.delay) ? Number(source.delay) : 0,
+        enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
     }
 }
 
@@ -61,15 +67,15 @@ export function serializeResponseForClipboard(config: ResponseConfig): string {
 }
 
 export function parseResponseImportPayload(raw: string): ResponseConfigInput {
-    let parsed: any
+    let parsed: unknown
     try {
         parsed = JSON.parse(raw)
     } catch {
         throw new Error('Invalid JSON payload')
     }
 
-    const input = parsed?.type === 'go-virtual-response-config'
-        ? parsed?.payload
+    const input = isRecord(parsed) && parsed.type === 'go-virtual-response-config'
+        ? parsed.payload
         : parsed
 
     const normalized = sanitizeInput(input)
