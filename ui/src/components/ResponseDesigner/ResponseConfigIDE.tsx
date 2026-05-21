@@ -4,12 +4,25 @@ import Editor, { type Monaco } from '@monaco-editor/react'
 import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
-    Plus, Trash2, AlertCircle, Wand2, X, Settings, Code2
+    Plus, Trash2, AlertCircle, Wand2, X, Settings, Code2,
+    GitBranch, Zap, List
 } from 'lucide-react'
 import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+
+function useIsDark() {
+    const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'))
+    useEffect(() => {
+        const observer = new MutationObserver(() => {
+            setIsDark(document.documentElement.classList.contains('dark'))
+        })
+        observer.observe(document.documentElement, { attributeFilter: ['class'] })
+        return () => observer.disconnect()
+    }, [])
+    return isDark
+}
 
 interface ResponseConfigIDEProps {
     operationId: string
@@ -465,6 +478,7 @@ export default function ResponseConfigIDE({
     const [isDirty, setIsDirty] = useState(false)
     const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
     const [refDrawerOpen, setRefDrawerOpen] = useState(false)
+    const isDark = useIsDark()
     const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -820,61 +834,26 @@ export default function ResponseConfigIDE({
             <div className="flex flex-1 min-h-0 overflow-hidden">
                 <div className="flex flex-1 flex-col min-w-0 min-h-0 overflow-hidden">
                     <div className="flex-shrink-0 flex items-center border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-1">
-                        <button
-                            onClick={() => setIdeActiveTab('metadata')}
-                            className={clsx(
-                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                ideActiveTab === 'metadata'
-                                    ? 'border-primary-600 text-primary-600'
-                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                            )}
-                        >
-                            <Settings className="w-3 h-3" /> Metadata
-                        </button>
-                        <button
-                            onClick={() => setIdeActiveTab('body')}
-                            className={clsx(
-                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                ideActiveTab === 'body'
-                                    ? 'border-primary-600 text-primary-600'
-                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                            )}
-                        >
-                            <Code2 className="w-3 h-3" /> Body
-                        </button>
-                        <button
-                            onClick={() => setIdeActiveTab('conditions')}
-                            className={clsx(
-                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                ideActiveTab === 'conditions'
-                                    ? 'border-primary-600 text-primary-600'
-                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                            )}
-                        >
-                            Conditions
-                        </button>
-                        <button
-                            onClick={() => setIdeActiveTab('headers')}
-                            className={clsx(
-                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                ideActiveTab === 'headers'
-                                    ? 'border-primary-600 text-primary-600'
-                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                            )}
-                        >
-                            Headers
-                        </button>
-                        <button
-                            onClick={() => setIdeActiveTab('scriptbindings')}
-                            className={clsx(
-                                'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
-                                ideActiveTab === 'scriptbindings'
-                                    ? 'border-primary-600 text-primary-600'
-                                    : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
-                            )}
-                        >
-                            Script Bindings
-                        </button>
+                        {([
+                            { id: 'metadata', label: 'Metadata', icon: Settings },
+                            { id: 'conditions', label: 'Conditions', icon: GitBranch },
+                            { id: 'scriptbindings', label: 'Scripts', icon: Zap },
+                            { id: 'headers', label: 'Headers', icon: List },
+                            { id: 'body', label: 'Body', icon: Code2 },
+                        ] as const).map(({ id, label, icon: Icon }) => (
+                            <button
+                                key={id}
+                                onClick={() => setIdeActiveTab(id)}
+                                className={clsx(
+                                    'flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors',
+                                    ideActiveTab === id
+                                        ? 'border-primary-600 text-primary-600'
+                                        : 'border-transparent text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-300',
+                                )}
+                            >
+                                <Icon className="w-3 h-3" /> {label}
+                            </button>
+                        ))}
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-hidden">
@@ -883,7 +862,7 @@ export default function ResponseConfigIDE({
                                 key={config?.id ?? 'new-response'}
                                 height="100%"
                                 language="go-template"
-                                theme="vs-dark"
+                                theme={isDark ? 'vs-dark' : 'light'}
                                 value={body}
                                 onMount={handleEditorMount}
                                 onChange={(value) => {
