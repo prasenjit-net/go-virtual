@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+    AlertCircle,
     Bot,
     ChevronDown,
     ChevronRight,
     Code2,
+    Check,
     Copy,
     Edit2,
     Eye,
@@ -19,6 +21,7 @@ import {
 import clsx from 'clsx'
 import { responsesApi, responseScriptBindingsApi } from '../../services/api'
 import type { ResponseConfig, ScriptBinding } from '../../types'
+import { serializeResponseForClipboard } from './responseTransfer'
 
 interface ResponseConfigListProps {
     operationId: string
@@ -30,6 +33,7 @@ interface ResponseConfigListProps {
         label: string
     }
     editSource?: 'operation' | 'recorded'
+    enableManualActions?: boolean
 }
 
 function ResponseScriptsSection({ operationId, configId }: { operationId: string; configId: string }) {
@@ -67,8 +71,10 @@ export default function ResponseConfigList({
     emptyDescription,
     emptyAction,
     editSource = 'operation',
+    enableManualActions = false,
 }: ResponseConfigListProps) {
     const [expandedConfig, setExpandedConfig] = useState<string | null>(null)
+    const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
     const queryClient = useQueryClient()
 
     const deleteMutation = useMutation({
@@ -90,14 +96,29 @@ export default function ResponseConfigList({
         mutationFn: ({ id, name }: { id: string; name: string }) => responsesApi.clone(id, name),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
+            setFeedback({ type: 'success', message: 'Response cloned successfully.' })
+        },
+        onError: (err: Error) => {
+            setFeedback({ type: 'error', message: err.message || 'Failed to clone response.' })
         },
     })
 
     const handleClone = (e: React.MouseEvent, config: ResponseConfig) => {
         e.stopPropagation()
-        const name = window.prompt('Enter a name for the cloned response:', `${config.name} (copy)`)
-        if (!name) return
-        cloneMutation.mutate({ id: config.id, name })
+        cloneMutation.mutate({ id: config.id, name: `${config.name} clone` })
+    }
+
+    const handleCopy = async (e: React.MouseEvent, config: ResponseConfig) => {
+        e.stopPropagation()
+        try {
+            if (!navigator?.clipboard?.writeText) {
+                throw new Error('Clipboard API is not available in this browser context')
+            }
+            await navigator.clipboard.writeText(serializeResponseForClipboard(config))
+            setFeedback({ type: 'success', message: 'Response payload copied to clipboard.' })
+        } catch (err) {
+            setFeedback({ type: 'error', message: (err as Error).message || 'Failed to copy payload.' })
+        }
     }
 
     const isRecorded = (config: ResponseConfig) => config.recorded === true
@@ -144,8 +165,26 @@ export default function ResponseConfigList({
     }
 
     return (
-        <div className="divide-y divide-gray-100 dark:divide-slate-800">
-            {configs.map((config, index) => (
+        <div>
+            {feedback && (
+                <div
+                    className={clsx(
+                        'mx-4 mt-4 mb-2 p-3 rounded-lg text-sm flex items-start gap-2',
+                        feedback.type === 'success'
+                            ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-900/40'
+                            : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900/40'
+                    )}
+                >
+                    {feedback.type === 'success' ? (
+                        <Check className="w-4 h-4 mt-0.5 shrink-0" />
+                    ) : (
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    )}
+                    <span>{feedback.message}</span>
+                </div>
+            )}
+            <div className="divide-y divide-gray-100 dark:divide-slate-800">
+                {configs.map((config, index) => (
                 <div key={config.id} className="p-4">
                     <div
                         className="flex items-center justify-between cursor-pointer"
@@ -217,24 +256,37 @@ export default function ResponseConfigList({
                                     >
                                         <Eye className="w-5 h-5" />
                                     </Link>
-                                    <button
-                                        onClick={(e) => handleClone(e, config)}
-                                        disabled={cloneMutation.isPending}
-                                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
-                                        title="Clone as manual"
-                                    >
-                                        <Copy className="w-5 h-5" />
-                                    </button>
                                 </>
                             ) : (
-                                <Link
-                                    to={`/responses/${config.id}/edit${editSuffix}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
-                                    title="Edit"
-                                >
-                                    <Edit2 className="w-5 h-5" />
-                                </Link>
+                                <>
+                                    <Link
+                                        to={`/responses/${config.id}/edit${editSuffix}`}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="p-2 text-gray-400 dark:text-slate-500 hover:text-primary-600 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/30 transition-colors"
+                                        title="Edit"
+                                    >
+                                        <Edit2 className="w-5 h-5" />
+                                    </Link>
+                                    {enableManualActions && (
+                                        <button
+                                            onClick={(e) => void handleCopy(e, config)}
+                                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-blue-600 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                                            title="Copy response payload"
+                                        >
+                                            <Copy className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                    {enableManualActions && (
+                                        <button
+                                            onClick={(e) => handleClone(e, config)}
+                                            disabled={cloneMutation.isPending}
+                                            className="p-2 text-gray-400 dark:text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
+                                            title="Clone response"
+                                        >
+                                            <Plus className="w-5 h-5" />
+                                        </button>
+                                    )}
+                                </>
                             )}
                             <button
                                 onClick={(e) => {
@@ -318,7 +370,8 @@ export default function ResponseConfigList({
                         </div>
                     )}
                 </div>
-            ))}
+                ))}
+            </div>
         </div>
     )
 }

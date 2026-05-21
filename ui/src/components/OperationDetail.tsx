@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
+    AlertCircle,
     ArrowLeft,
     Plus,
     Edit2,
@@ -13,10 +14,11 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
-import type { AIStatus, Operation, ResponseConfig, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
+import type { AIStatus, Operation, ResponseConfig, ResponseConfigInput, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 import ResponseConfigList from './ResponseDesigner/ResponseConfigList'
+import ResponseImportModal from './ResponseDesigner/ResponseImportModal'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -67,6 +69,8 @@ function normalizeSignatureDraftForSave(draft: SignatureConfig | null): Signatur
 export default function OperationDetail() {
     const { operationId } = useParams<{ operationId: string }>()
     const [showAIModal, setShowAIModal] = useState(false)
+    const [showImportModal, setShowImportModal] = useState(false)
+    const [importFeedback, setImportFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
     const queryClient = useQueryClient()
 
     const { data: operation, isLoading: opLoading } = useQuery<Operation>({
@@ -115,6 +119,18 @@ export default function OperationDetail() {
             queryClient.invalidateQueries({ queryKey: ['signature', operationId] })
             queryClient.invalidateQueries({ queryKey: ['operation', operationId] })
             setSigEditMode(false)
+        },
+    })
+
+    const importResponseMutation = useMutation({
+        mutationFn: (input: ResponseConfigInput) => responsesApi.create(operationId!, input),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
+            setImportFeedback({ type: 'success', message: 'Response imported successfully.' })
+            setShowImportModal(false)
+        },
+        onError: (err: Error) => {
+            setImportFeedback({ type: 'error', message: err.message || 'Failed to import response.' })
         },
     })
 
@@ -228,8 +244,31 @@ export default function OperationDetail() {
                             <Plus className="w-5 h-5 mr-2" />
                             Add Response
                         </Link>
+                        <button
+                            onClick={() => {
+                                setImportFeedback(null)
+                                setShowImportModal(true)
+                            }}
+                            className="px-4 py-2 border border-primary-200 text-primary-700 dark:border-primary-800 dark:text-primary-300 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors"
+                        >
+                            Import Response
+                        </button>
                     </div>
                 </div>
+
+                {importFeedback && (
+                    <div
+                        className={clsx(
+                            'mx-6 mt-4 p-3 rounded-lg text-sm flex items-start gap-2',
+                            importFeedback.type === 'success'
+                                ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-900/40'
+                                : 'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900/40'
+                        )}
+                    >
+                        <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                        <span>{importFeedback.message}</span>
+                    </div>
+                )}
 
                 <ResponseConfigList
                     operationId={operationId!}
@@ -240,6 +279,7 @@ export default function OperationDetail() {
                         to: `/operations/${operationId}/responses/new`,
                         label: 'Add First Response',
                     }}
+                    enableManualActions
                 />
             </div>
 
@@ -779,6 +819,13 @@ export default function OperationDetail() {
                     operationMethod={operation.method}
                     operationPath={operation.path}
                     onClose={() => setShowAIModal(false)}
+                />
+            )}
+            {showImportModal && (
+                <ResponseImportModal
+                    onClose={() => setShowImportModal(false)}
+                    onImport={(input) => importResponseMutation.mutate(input)}
+                    isSubmitting={importResponseMutation.isPending}
                 />
             )}
         </div>
