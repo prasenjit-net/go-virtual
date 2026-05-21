@@ -11,6 +11,7 @@ import {
     Copy,
     Edit2,
     Eye,
+    GitBranch,
     GripVertical,
     Plus,
     Radio,
@@ -288,7 +289,7 @@ export default function ResponseConfigList({
                                             className="p-2 text-gray-400 dark:text-slate-500 hover:text-emerald-600 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
                                             title="Clone response"
                                         >
-                                            <Plus className="w-5 h-5" />
+                                            <GitBranch className="w-5 h-5" />
                                         </button>
                                     )}
                                 </>
