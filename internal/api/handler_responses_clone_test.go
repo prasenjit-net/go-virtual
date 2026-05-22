@@ -37,7 +37,7 @@ func TestCloneResponseConfig_Success(t *testing.T) {
 		t.Fatalf("CreateResponseConfig: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/responses/resp-1/clone", bytes.NewBufferString(`{"name":"Manual clone"}`))
+	req := httptest.NewRequest(http.MethodPost, "/responses/resp-1/clone", bytes.NewBufferString(`{"name":"Recorded response clone"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -53,8 +53,11 @@ func TestCloneResponseConfig_Success(t *testing.T) {
 	if clone.ID == "" || clone.ID == source.ID {
 		t.Fatalf("expected a new clone ID, got %q", clone.ID)
 	}
-	if clone.Name != "Manual clone" {
+	if clone.Name != "Recorded response clone" {
 		t.Fatalf("expected clone name to be updated, got %q", clone.Name)
+	}
+	if clone.OperationID != source.OperationID {
+		t.Fatalf("expected clone operation id %q, got %q", source.OperationID, clone.OperationID)
 	}
 	if clone.Origin != models.ResponseOriginManual || clone.Recorded {
 		t.Fatalf("expected manual non-recorded clone, got origin=%q recorded=%v", clone.Origin, clone.Recorded)
