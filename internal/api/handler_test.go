@@ -1,6 +1,7 @@
 package api
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -42,4 +43,18 @@ func TestNewHandler(t *testing.T) {
 	}
 }
 
+func TestGenerateID(t *testing.T) {
+	pattern := regexp.MustCompile(`^\d{14}-[0-9a-f]{8}$`)
+	seen := make(map[string]struct{}, 128)
 
+	for i := 0; i < 128; i++ {
+		id := generateID()
+		if !pattern.MatchString(id) {
+			t.Fatalf("unexpected ID format: %q", id)
+		}
+		if _, exists := seen[id]; exists {
+			t.Fatalf("duplicate ID generated: %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+}

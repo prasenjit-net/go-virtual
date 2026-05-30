@@ -4,6 +4,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
 	"github.com/prasenjit/go-virtual/internal/config"
@@ -23,9 +24,9 @@ type HandlerConfig struct {
 	StatsCollector *stats.Collector
 	TracingService *tracing.Service
 	ProxyEngine    *proxy.Engine
-	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
-	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
-	ArchiveManager archive.ArchiveService  // optional; nil disables archive endpoints
+	GlobalStore    store.GlobalStoreBackend // optional; nil = Phase 1 mode
+	SessionManager store.SessionRegistry    // optional; nil = Phase 1 mode
+	ArchiveManager archive.ArchiveService   // optional; nil disables archive endpoints
 	Branding       config.BrandingConfig
 	ScriptTimeout  int           // ms; 0 = use default (100)
 	AIGenerator    *ai.Generator // optional; nil = AI generation disabled
@@ -84,18 +85,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 
 // generateID generates a unique ID
 func generateID() string {
-	return time.Now().Format("20060102150405") + "-" + randomString(8)
-}
-
-// randomString generates a random string of n chars
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, n)
-	for i := range b {
-		b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-		time.Sleep(time.Nanosecond)
-	}
-	return string(b)
+	return time.Now().UTC().Format("20060102150405") + "-" + uuid.NewString()[:8]
 }
 
 // normalizeTag returns a lower-cased, trimmed tag name.

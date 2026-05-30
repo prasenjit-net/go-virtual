@@ -57,6 +57,114 @@ type route struct {
 	paramKeys []string
 }
 
+type requestTelemetry struct {
+	route                *route
+	request              *http.Request
+	requestBody          string
+	startTime            time.Time
+	statusCode           int
+	responseHeaders      http.Header
+	responseBody         string
+	mode                 string
+	responseSource       string
+	responseTier         string
+	matchedConfigID      string
+	matchedConfig        string
+	matchedConfigOrigin  string
+	signature            string
+	backendURI           string
+	proxyMode            bool
+	modeSelection        modeSelection
+	aiScenarioRequested  string
+	aiScenarioApplied    string
+	scripts              []models.ScriptTrace
+	session              *models.SessionTrace
+	responseConfigMetric string
+	recordProxyMetric    bool
+}
+
+func (e *Engine) recordRequestTelemetry(telemetry requestTelemetry) time.Duration {
+	duration := time.Since(telemetry.startTime)
+	isError := telemetry.statusCode >= 400
+
+	e.statsCollector.RecordRequest(
+		telemetry.route.spec.ID,
+		telemetry.route.operation.ID,
+		telemetry.route.operation.Method,
+		telemetry.route.operation.Path,
+		duration,
+		isError,
+	)
+	metrics.RequestsTotal.WithLabelValues(
+		telemetry.route.spec.ID,
+		telemetry.route.operation.Method,
+		telemetry.route.operation.Path,
+		metrics.StatusLabel(telemetry.statusCode),
+	).Inc()
+	metrics.RequestDurationSeconds.WithLabelValues(
+		telemetry.route.spec.ID,
+		telemetry.route.operation.Method,
+		telemetry.route.operation.Path,
+	).Observe(duration.Seconds())
+
+	if telemetry.recordProxyMetric {
+		metrics.ProxyRequestsTotal.WithLabelValues(
+			telemetry.route.spec.ID,
+			telemetry.backendURI,
+		).Inc()
+	}
+
+	if telemetry.responseConfigMetric != "" {
+		metrics.ResponseConfigMatchesTotal.WithLabelValues(
+			telemetry.route.operation.ID,
+			telemetry.responseConfigMetric,
+		).Inc()
+	}
+
+	if !telemetry.route.spec.Tracing {
+		return duration
+	}
+
+	e.tracingService.RecordTrace(&models.Trace{
+		SpecID:              telemetry.route.spec.ID,
+		SpecName:            telemetry.route.spec.Name,
+		OperationID:         telemetry.route.operation.ID,
+		OperationPath:       telemetry.route.operation.Path,
+		Timestamp:           telemetry.startTime,
+		Duration:            duration.Nanoseconds(),
+		MatchedConfigID:     telemetry.matchedConfigID,
+		MatchedConfig:       telemetry.matchedConfig,
+		MatchedConfigOrigin: telemetry.matchedConfigOrigin,
+		Mode:                telemetry.mode,
+		ResponseSource:      telemetry.responseSource,
+		ResponseTier:        telemetry.responseTier,
+		AISkippedReason:     telemetry.modeSelection.AISkippedReason,
+		ProxySkippedReason:  telemetry.modeSelection.ProxySkippedReason,
+		AIScenarioRequested: telemetry.aiScenarioRequested,
+		AIScenarioApplied:   telemetry.aiScenarioApplied,
+		ProxyMode:           telemetry.proxyMode,
+		Signature:           telemetry.signature,
+		BackendURI:          telemetry.backendURI,
+		Scripts:             telemetry.scripts,
+		Session:             telemetry.session,
+		Request: models.TraceRequest{
+			Method:  telemetry.request.Method,
+			URL:     telemetry.request.URL.String(),
+			Path:    telemetry.request.URL.Path,
+			Query:   telemetry.request.URL.Query(),
+			Headers: telemetry.request.Header,
+			Body:    telemetry.requestBody,
+		},
+		Response: models.TraceResponse{
+			StatusCode: telemetry.statusCode,
+			Headers:    headersToMap(telemetry.responseHeaders),
+			Body:       telemetry.responseBody,
+		},
+	})
+
+	return duration
+}
+
 // NewEngine creates a new proxy engine.
 // An optional scriptTimeoutMs parameter overrides the default script execution timeout (100ms).
 func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingService *tracing.Service, scriptTimeoutMs ...int) *Engine {
@@ -474,57 +582,22 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				statusCode := http.StatusBadGateway
 				respBody := `{"error":"AI response generation failed: ` + aiErr.Error() + `"}`
 				http.Error(w, respBody, statusCode)
-				duration := time.Since(startTime)
-				e.statsCollector.RecordRequest(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					duration,
-					true,
-				)
-				metrics.RequestsTotal.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-					metrics.StatusLabel(statusCode),
-				).Inc()
-				metrics.RequestDurationSeconds.WithLabelValues(
-					matchedRoute.spec.ID,
-					matchedRoute.operation.Method,
-					matchedRoute.operation.Path,
-				).Observe(duration.Seconds())
-				if matchedRoute.spec.Tracing {
-					e.tracingService.RecordTrace(&models.Trace{
-						SpecID:              matchedRoute.spec.ID,
-						SpecName:            matchedRoute.spec.Name,
-						OperationID:         matchedRoute.operation.ID,
-						OperationPath:       matchedRoute.operation.Path,
-						Timestamp:           startTime,
-						Duration:            duration.Nanoseconds(),
-						Mode:                specMode,
-						ResponseSource:      models.TraceResponseSourceAI,
-						ResponseTier:        models.TraceResponseTierFallback,
-						Signature:           signature,
-						AISkippedReason:     modeSelection.AISkippedReason,
-						ProxySkippedReason:  modeSelection.ProxySkippedReason,
-						AIScenarioRequested: requestedScenarioName,
-						AIScenarioApplied:   aiScenarioName(appliedScenario),
-						Request: models.TraceRequest{
-							Method:  r.Method,
-							URL:     r.URL.String(),
-							Path:    r.URL.Path,
-							Query:   r.URL.Query(),
-							Headers: r.Header,
-							Body:    requestBody,
-						},
-						Response: models.TraceResponse{
-							StatusCode: statusCode,
-							Headers:    headersToMap(w.Header()),
-							Body:       respBody,
-						},
-					})
-				}
+				e.recordRequestTelemetry(requestTelemetry{
+					route:               matchedRoute,
+					request:             r,
+					requestBody:         requestBody,
+					startTime:           startTime,
+					statusCode:          statusCode,
+					responseHeaders:     w.Header(),
+					responseBody:        respBody,
+					mode:                specMode,
+					responseSource:      models.TraceResponseSourceAI,
+					responseTier:        models.TraceResponseTierFallback,
+					signature:           signature,
+					modeSelection:       modeSelection,
+					aiScenarioRequested: requestedScenarioName,
+					aiScenarioApplied:   aiScenarioName(appliedScenario),
+				})
 				return
 			}
 			reqLogger.Info("AI runtime response generated",
@@ -547,60 +620,23 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				_, _ = w.Write([]byte(aiResp.Body))
 			}
 			go e.recorder.SaveResponse(matchedRoute.operation, signature, aiResp.StatusCode, aiResp.Headers, aiResp.Body, models.ResponseOriginAI)
-
-			duration := time.Since(startTime)
-			isError := aiResp.StatusCode >= 400
-			e.statsCollector.RecordRequest(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-				duration,
-				isError,
-			)
-			metrics.RequestsTotal.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-				metrics.StatusLabel(aiResp.StatusCode),
-			).Inc()
-			metrics.RequestDurationSeconds.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-			).Observe(duration.Seconds())
-			if matchedRoute.spec.Tracing {
-				e.tracingService.RecordTrace(&models.Trace{
-					SpecID:              matchedRoute.spec.ID,
-					SpecName:            matchedRoute.spec.Name,
-					OperationID:         matchedRoute.operation.ID,
-					OperationPath:       matchedRoute.operation.Path,
-					Timestamp:           startTime,
-					Duration:            duration.Nanoseconds(),
-					MatchedConfig:       "[ai-generated]",
-					Mode:                specMode,
-					ResponseSource:      models.TraceResponseSourceAI,
-					ResponseTier:        models.TraceResponseTierFallback,
-					Signature:           signature,
-					AISkippedReason:     modeSelection.AISkippedReason,
-					ProxySkippedReason:  modeSelection.ProxySkippedReason,
-					AIScenarioRequested: requestedScenarioName,
-					AIScenarioApplied:   aiScenarioName(appliedScenario),
-					Request: models.TraceRequest{
-						Method:  r.Method,
-						URL:     r.URL.String(),
-						Path:    r.URL.Path,
-						Query:   r.URL.Query(),
-						Headers: r.Header,
-						Body:    requestBody,
-					},
-					Response: models.TraceResponse{
-						StatusCode: aiResp.StatusCode,
-						Headers:    headersToMap(w.Header()),
-						Body:       aiResp.Body,
-					},
-				})
-			}
+			e.recordRequestTelemetry(requestTelemetry{
+				route:               matchedRoute,
+				request:             r,
+				requestBody:         requestBody,
+				startTime:           startTime,
+				statusCode:          aiResp.StatusCode,
+				responseHeaders:     w.Header(),
+				responseBody:        aiResp.Body,
+				mode:                specMode,
+				responseSource:      models.TraceResponseSourceAI,
+				responseTier:        models.TraceResponseTierFallback,
+				matchedConfig:       "[ai-generated]",
+				signature:           signature,
+				modeSelection:       modeSelection,
+				aiScenarioRequested: requestedScenarioName,
+				aiScenarioApplied:   aiScenarioName(appliedScenario),
+			})
 			return
 		case models.SpecModeProxy:
 			reqLogger.Info("Using proxy fallback for unmatched request",
@@ -638,65 +674,24 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(statusCode)
 				_, _ = w.Write([]byte(respBody))
 			}
-
-			duration := time.Since(startTime)
-			isError := statusCode >= 400
-			e.statsCollector.RecordRequest(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-				duration,
-				isError,
-			)
-			metrics.RequestsTotal.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-				metrics.StatusLabel(statusCode),
-			).Inc()
-			metrics.RequestDurationSeconds.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.operation.Method,
-				matchedRoute.operation.Path,
-			).Observe(duration.Seconds())
-			metrics.ProxyRequestsTotal.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.spec.BackendURI,
-			).Inc()
-			if matchedRoute.spec.Tracing {
-				trace := &models.Trace{
-					SpecID:             matchedRoute.spec.ID,
-					SpecName:           matchedRoute.spec.Name,
-					OperationID:        matchedRoute.operation.ID,
-					OperationPath:      matchedRoute.operation.Path,
-					Timestamp:          startTime,
-					Duration:           duration.Nanoseconds(),
-					MatchedConfig:      "[proxy-recorded]",
-					Mode:               specMode,
-					ResponseSource:     models.TraceResponseSourceProxy,
-					ResponseTier:       models.TraceResponseTierFallback,
-					ProxyMode:          proxyErr == nil,
-					Signature:          signature,
-					BackendURI:         matchedRoute.spec.BackendURI,
-					AISkippedReason:    modeSelection.AISkippedReason,
-					ProxySkippedReason: modeSelection.ProxySkippedReason,
-					Request: models.TraceRequest{
-						Method:  r.Method,
-						URL:     r.URL.String(),
-						Path:    r.URL.Path,
-						Query:   r.URL.Query(),
-						Headers: r.Header,
-						Body:    requestBody,
-					},
-					Response: models.TraceResponse{
-						StatusCode: statusCode,
-						Headers:    headersToMap(w.Header()),
-						Body:       respBody,
-					},
-				}
-				e.tracingService.RecordTrace(trace)
-			}
+			e.recordRequestTelemetry(requestTelemetry{
+				route:             matchedRoute,
+				request:           r,
+				requestBody:       requestBody,
+				startTime:         startTime,
+				statusCode:        statusCode,
+				responseHeaders:   w.Header(),
+				responseBody:      respBody,
+				mode:              specMode,
+				responseSource:    models.TraceResponseSourceProxy,
+				responseTier:      models.TraceResponseTierFallback,
+				matchedConfig:     "[proxy-recorded]",
+				signature:         signature,
+				backendURI:        matchedRoute.spec.BackendURI,
+				proxyMode:         proxyErr == nil,
+				modeSelection:     modeSelection,
+				recordProxyMetric: true,
+			})
 			return
 		}
 	}
@@ -723,63 +718,22 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Write response
 		w.WriteHeader(example.StatusCode)
 		if example.Body != "" {
-			w.Write([]byte(example.Body))
+			_, _ = w.Write([]byte(example.Body))
 		}
-
-		// Calculate duration and record stats
-		duration := time.Since(startTime)
-		isError := example.StatusCode >= 400
-		e.statsCollector.RecordRequest(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-			duration,
-			isError,
-		)
-		metrics.RequestsTotal.WithLabelValues(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-			metrics.StatusLabel(example.StatusCode),
-		).Inc()
-		metrics.RequestDurationSeconds.WithLabelValues(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-		).Observe(duration.Seconds())
-
-		// Record trace if enabled
-		if matchedRoute.spec.Tracing {
-			trace := &models.Trace{
-				SpecID:             matchedRoute.spec.ID,
-				SpecName:           matchedRoute.spec.Name,
-				OperationID:        matchedRoute.operation.ID,
-				OperationPath:      matchedRoute.operation.Path,
-				Timestamp:          startTime,
-				Duration:           duration.Nanoseconds(),
-				MatchedConfig:      "spec-example",
-				Mode:               specMode,
-				ResponseSource:     models.TraceResponseSourceExample,
-				ResponseTier:       models.TraceResponseTierFallback,
-				AISkippedReason:    modeSelection.AISkippedReason,
-				ProxySkippedReason: modeSelection.ProxySkippedReason,
-				Request: models.TraceRequest{
-					Method:  r.Method,
-					URL:     r.URL.String(),
-					Path:    r.URL.Path,
-					Query:   r.URL.Query(),
-					Headers: r.Header,
-					Body:    requestBody,
-				},
-				Response: models.TraceResponse{
-					StatusCode: example.StatusCode,
-					Headers:    headersToMap(w.Header()),
-					Body:       example.Body,
-				},
-			}
-			e.tracingService.RecordTrace(trace)
-		}
+		e.recordRequestTelemetry(requestTelemetry{
+			route:           matchedRoute,
+			request:         r,
+			requestBody:     requestBody,
+			startTime:       startTime,
+			statusCode:      example.StatusCode,
+			responseHeaders: w.Header(),
+			responseBody:    example.Body,
+			mode:            specMode,
+			responseSource:  models.TraceResponseSourceExample,
+			responseTier:    models.TraceResponseTierFallback,
+			matchedConfig:   "spec-example",
+			modeSelection:   modeSelection,
+		})
 		return
 	}
 
@@ -901,36 +855,28 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Write response
 	w.WriteHeader(matchedConfig.StatusCode)
-	w.Write([]byte(responseBody))
+	_, _ = w.Write([]byte(responseBody))
 
-	// Calculate duration
-	duration := time.Since(startTime)
-
-	// Record statistics
-	isError := matchedConfig.StatusCode >= 400
-	e.statsCollector.RecordRequest(
-		matchedRoute.spec.ID,
-		matchedRoute.operation.ID,
-		matchedRoute.operation.Method,
-		matchedRoute.operation.Path,
-		duration,
-		isError,
-	)
-	metrics.RequestsTotal.WithLabelValues(
-		matchedRoute.spec.ID,
-		matchedRoute.operation.Method,
-		matchedRoute.operation.Path,
-		metrics.StatusLabel(matchedConfig.StatusCode),
-	).Inc()
-	metrics.RequestDurationSeconds.WithLabelValues(
-		matchedRoute.spec.ID,
-		matchedRoute.operation.Method,
-		matchedRoute.operation.Path,
-	).Observe(duration.Seconds())
-	metrics.ResponseConfigMatchesTotal.WithLabelValues(
-		matchedRoute.operation.ID,
-		matchedConfig.Name,
-	).Inc()
+	duration := e.recordRequestTelemetry(requestTelemetry{
+		route:                matchedRoute,
+		request:              r,
+		requestBody:          requestBody,
+		startTime:            startTime,
+		statusCode:           matchedConfig.StatusCode,
+		responseHeaders:      w.Header(),
+		responseBody:         responseBody,
+		mode:                 specMode,
+		responseSource:       models.TraceResponseSourceConfig,
+		responseTier:         responseTier,
+		matchedConfigID:      matchedConfig.ID,
+		matchedConfig:        matchedConfig.Name,
+		matchedConfigOrigin:  matchedConfig.EffectiveOrigin(),
+		signature:            signature,
+		modeSelection:        modeSelection,
+		scripts:              scriptTraces,
+		session:              buildSessionTrace(sess, sessionIsNew),
+		responseConfigMetric: matchedConfig.Name,
+	})
 	reqLogger.Info("Served configured response",
 		"event", "configured_response_served",
 		"response_config_id", matchedConfig.ID,
@@ -939,51 +885,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"status_code", matchedConfig.StatusCode,
 		"duration_ms", duration.Milliseconds(),
 	)
-
-	// Record trace if tracing is enabled
-	if matchedRoute.spec.Tracing {
-		var sessionTrace *models.SessionTrace
-		if sess != nil {
-			sessionInfo := sess.Info(false)
-			sessionTrace = &models.SessionTrace{
-				ID:    sessionInfo.ID,
-				IsNew: sessionIsNew,
-			}
-		}
-		trace := &models.Trace{
-			SpecID:              matchedRoute.spec.ID,
-			SpecName:            matchedRoute.spec.Name,
-			OperationID:         matchedRoute.operation.ID,
-			OperationPath:       matchedRoute.operation.Path,
-			Timestamp:           startTime,
-			Duration:            duration.Nanoseconds(),
-			MatchedConfigID:     matchedConfig.ID,
-			MatchedConfig:       matchedConfig.Name,
-			MatchedConfigOrigin: matchedConfig.EffectiveOrigin(),
-			Mode:                specMode,
-			ResponseSource:      models.TraceResponseSourceConfig,
-			ResponseTier:        responseTier,
-			Signature:           signature,
-			AISkippedReason:     modeSelection.AISkippedReason,
-			ProxySkippedReason:  modeSelection.ProxySkippedReason,
-			Scripts:             scriptTraces,
-			Session:             sessionTrace,
-			Request: models.TraceRequest{
-				Method:  r.Method,
-				URL:     r.URL.String(),
-				Path:    r.URL.Path,
-				Query:   r.URL.Query(),
-				Headers: r.Header,
-				Body:    requestBody,
-			},
-			Response: models.TraceResponse{
-				StatusCode: matchedConfig.StatusCode,
-				Headers:    headersToMap(w.Header()),
-				Body:       responseBody,
-			},
-		}
-		e.tracingService.RecordTrace(trace)
-	}
 }
 
 type modeSelection struct {
@@ -1204,6 +1105,18 @@ func headersToMap(h http.Header) map[string][]string {
 		result[key] = values
 	}
 	return result
+}
+
+func buildSessionTrace(sess store.SessionState, isNew bool) *models.SessionTrace {
+	if sess == nil {
+		return nil
+	}
+
+	sessionInfo := sess.Info(false)
+	return &models.SessionTrace{
+		ID:    sessionInfo.ID,
+		IsNew: isNew,
+	}
 }
 
 func buildTemplateSeed(r *http.Request, pathParams map[string]string) int64 {
