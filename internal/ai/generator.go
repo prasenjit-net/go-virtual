@@ -28,7 +28,7 @@ type Generator struct {
 // NewGenerator creates a new Generator with the given config.
 func NewGenerator(cfg Config) *Generator {
 	cfg = cfg.Normalize()
-	client := newHTTPClient()
+	client := newHTTPClient(cfg.HTTPProxy)
 	return &Generator{
 		cfg:      cfg,
 		provider: newCompletionProvider(cfg, client),

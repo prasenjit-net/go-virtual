@@ -12,9 +12,11 @@ import (
 const (
 	AIProviderOpenAI        = "openai"
 	AIProviderClaude        = "claude"
+	AIProviderCopilot       = "copilot"
 	DefaultOpenAIModel      = "gpt-4o-mini"
 	DefaultClaudeModel      = "claude-sonnet-4-6"
 	DefaultClaudeAPIVersion = "2023-06-01"
+	DefaultCopilotModel     = "gpt-4o"
 	SessionStoreMemory      = "memory"
 	SessionStoreRedis       = "redis"
 	DefaultRedisAddr        = "127.0.0.1:6379"
@@ -50,12 +52,18 @@ type Config struct {
 // AIConfig holds configuration for AI-powered response generation.
 type AIConfig struct {
 	// Provider selects which provider powers AI features. Supported values:
-	// "openai" and "claude". Defaults to "openai".
+	// "openai", "claude", and "copilot". Defaults to "openai".
 	Provider string `yaml:"provider"`
+	// HTTPProxy is an optional HTTP/HTTPS/SOCKS5 proxy URL applied to all AI
+	// provider requests. Credentials can be embedded in the URL, e.g.
+	// "http://user:pass@proxy.corp:8080". Applies to OpenAI, Claude, and Copilot.
+	HTTPProxy string `yaml:"httpProxy"`
 	// OpenAI holds OpenAI-compatible provider configuration.
 	OpenAI OpenAIConfig `yaml:"openai"`
 	// Claude holds Anthropic Claude provider configuration.
 	Claude ClaudeConfig `yaml:"claude"`
+	// Copilot holds GitHub Copilot provider configuration.
+	Copilot CopilotConfig `yaml:"copilot"`
 	// Legacy OpenAI aliases kept for backwards compatibility with existing
 	// config files and environment variable names.
 	OpenAIAPIKey  string `yaml:"openaiApiKey"`
@@ -68,6 +76,17 @@ type OpenAIConfig struct {
 	APIKey  string `yaml:"apiKey"`
 	Model   string `yaml:"model"`
 	BaseURL string `yaml:"baseUrl"`
+}
+
+// CopilotConfig holds settings for GitHub Copilot.
+type CopilotConfig struct {
+	// OAuthToken is the GitHub OAuth token (gho_...) used to obtain a
+	// short-lived Copilot API token. Copy the value of "oauth_token" from
+	// ~/.config/github-copilot/apps.json (created by the VS Code Copilot plugin).
+	OAuthToken string `yaml:"oauthToken"`
+	// Model is the model used for AI response/script generation.
+	// Defaults to "gpt-4o".
+	Model string `yaml:"model"`
 }
 
 // ClaudeConfig holds settings for Anthropic Claude.
@@ -106,6 +125,10 @@ func (c *AIConfig) Normalize() {
 	}
 	if strings.TrimSpace(c.Claude.APIVersion) == "" {
 		c.Claude.APIVersion = DefaultClaudeAPIVersion
+	}
+
+	if strings.TrimSpace(c.Copilot.Model) == "" {
+		c.Copilot.Model = DefaultCopilotModel
 	}
 }
 
@@ -422,6 +445,9 @@ func Default() *Config {
 			Claude: ClaudeConfig{
 				Model:      DefaultClaudeModel,
 				APIVersion: DefaultClaudeAPIVersion,
+			},
+			Copilot: CopilotConfig{
+				Model: DefaultCopilotModel,
 			},
 		},
 	}
