@@ -4,8 +4,9 @@ import { X, Plus, Trash2, AlertCircle, Wand2 } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
+import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import { useIsDark } from '../../hooks/useIsDark'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -248,6 +249,7 @@ export default function ResponseConfigEditor({
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const queryClient = useQueryClient()
+    const isDark = useIsDark()
 
     const { data: tags } = useQuery({
         queryKey: ['tags'],
@@ -269,7 +271,7 @@ export default function ResponseConfigEditor({
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
 
     const createMutation = useMutation({
-        mutationFn: (data: any) => responsesApi.create(operationId, data),
+        mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             onClose()
@@ -278,7 +280,7 @@ export default function ResponseConfigEditor({
     })
 
     const updateMutation = useMutation({
-        mutationFn: (data: any) => responsesApi.update(config!.id, data),
+        mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             onClose()
@@ -941,9 +943,7 @@ export default function ResponseConfigEditor({
                                     folding: false,
                                     scrollBeyondLastLine: false,
                                     readOnly: readOnly,
-                                    theme: document.documentElement.classList.contains('dark')
-                                        ? 'vs-dark'
-                                        : 'light',
+                                    theme: isDark ? 'vs-dark' : 'light',
                                 }}
                             />
                         </div>

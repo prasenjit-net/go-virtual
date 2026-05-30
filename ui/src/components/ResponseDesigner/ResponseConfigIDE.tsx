@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, ResponseConfig, ScriptBinding } from '../../types'
+import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 
@@ -503,7 +503,7 @@ export default function ResponseConfigIDE({
     }
 
     const createMutation = useMutation({
-        mutationFn: (data: any) => responsesApi.create(operationId, data),
+        mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
@@ -513,7 +513,7 @@ export default function ResponseConfigIDE({
     })
 
     const updateMutation = useMutation({
-        mutationFn: (data: any) => responsesApi.update(config!.id, data),
+        mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
@@ -711,7 +711,7 @@ export default function ResponseConfigIDE({
         setIsDirty(true)
     }
 
-    const handleEditorMount = (editor: any, monaco: Monaco) => {
+    const handleEditorMount = (editor: monacoEditor.editor.IStandaloneCodeEditor, monaco: Monaco) => {
         editorRef.current = editor
         monacoRef.current = monaco
         editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => handleSaveRef.current())

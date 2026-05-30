@@ -354,7 +354,7 @@ export interface ScriptTrace {
     scriptName: string;
     outputKey: string;
     durationMs: number;
-    output?: any;
+    output?: unknown;
     error?: string;
     logs?: string[];
 }
@@ -363,13 +363,13 @@ export interface ScriptTrace {
 
 export interface StoreEntry {
     key: string;
-    value: any;
+    value: unknown;
     createdAt: string;
     updatedAt: string;
 }
 
 export interface StoreEntryInput {
-    value: any;
+    value: unknown;
 }
 
 export interface CollectionInfo {
@@ -377,14 +377,14 @@ export interface CollectionInfo {
     count: number;
 }
 
-export type CollectionDocument = Record<string, any>;
+export type CollectionDocument = Record<string, unknown>;
 
 export interface SessionInfo {
     id: string;
     createdAt: string;
     lastActive: string;
     entryCount: number;
-    storeSnapshot?: Record<string, any>;
+    storeSnapshot?: Record<string, unknown>;
 }
 
 export interface SessionListResponse {
@@ -395,7 +395,7 @@ export interface SessionListResponse {
 export interface StoreAccessEvent {
     op: string;
     key?: string;
-    value?: any;
+    value?: unknown;
 }
 
 export interface SessionTrace {

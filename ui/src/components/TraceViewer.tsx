@@ -108,7 +108,7 @@ export default function TraceViewer() {
         }
 
         ws.onerror = () => {
-            console.error('WebSocket error')
+            // WebSocket error — reconnect will be attempted via onclose
         }
 
         ws.onclose = () => {

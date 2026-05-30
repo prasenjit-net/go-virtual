@@ -29,7 +29,7 @@ export default function StoreManager() {
     });
 
     const upsertMutation = useMutation({
-        mutationFn: ({ key, value }: { key: string; value: any }) =>
+        mutationFn: ({ key, value }: { key: string; value: unknown }) =>
             storeApi.upsert(key, value),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['store'] });
@@ -80,7 +80,7 @@ export default function StoreManager() {
             setEditorError('Key must not be empty');
             return;
         }
-        let parsed: any;
+        let parsed: unknown;
         try {
             parsed = JSON.parse(editorValue);
         } catch {
@@ -94,7 +94,7 @@ export default function StoreManager() {
         e.key.toLowerCase().includes(search.toLowerCase())
     );
 
-    const truncateValue = (v: any): string => {
+    const truncateValue = (v: unknown): string => {
         const str = JSON.stringify(v);
         return str.length > 80 ? str.slice(0, 77) + '...' : str;
     };
@@ -212,6 +212,7 @@ export default function StoreManager() {
                                                 onClick={() => openEdit(entry)}
                                                 className="p-1.5 hover:bg-gray-100 dark:hover:bg-slate-600 rounded text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                                                 title="Edit"
+                                                aria-label={`Edit ${entry.key}`}
                                             >
                                                 <Edit2 className="w-3.5 h-3.5" />
                                             </button>
@@ -219,6 +220,7 @@ export default function StoreManager() {
                                                 onClick={() => deleteMutation.mutate(entry.key)}
                                                 className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/30 rounded text-gray-500 dark:text-slate-400 hover:text-red-400 transition-colors"
                                                 title="Delete"
+                                                aria-label={`Delete ${entry.key}`}
                                             >
                                                 <Trash2 className="w-3.5 h-3.5" />
                                             </button>

@@ -61,11 +61,11 @@ export default function AIScriptModal({
             const assistantMsg: AiChatMessage = { role: 'assistant', content: result.source }
             onHistoryChange([...updatedHistory, assistantMsg])
             onGenerated(result.source)
-        } catch (err: any) {
+        } catch (err: unknown) {
             // Roll back the optimistic user message on failure.
             onHistoryChange(history)
             setPrompt(trimmed)
-            setError(err?.message ?? 'Failed to generate script')
+            setError(err instanceof Error ? err.message : 'Failed to generate script')
         } finally {
             setIsGenerating(false)
         }
