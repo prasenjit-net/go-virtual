@@ -12,8 +12,9 @@ import (
 
 // mockCopilotTokenServer starts a test server simulating the Copilot token
 // exchange endpoint. It records how many times it was called and validates
-// the required Copilot identity headers.
-func mockCopilotTokenServer(t *testing.T, statusCode int, token, expiresAt string) (*httptest.Server, *atomic.Int32) {
+// the required Copilot identity headers. expiresAt is a Unix timestamp (int64),
+// matching the real GitHub Copilot API response format.
+func mockCopilotTokenServer(t *testing.T, statusCode int, token string, expiresAt int64) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +34,8 @@ func mockCopilotTokenServer(t *testing.T, statusCode int, token, expiresAt strin
 			json.NewEncoder(w).Encode(map[string]string{"message": "unauthorized"})
 			return
 		}
-		json.NewEncoder(w).Encode(map[string]string{
+		// The real API returns expires_at as a Unix timestamp integer.
+		json.NewEncoder(w).Encode(map[string]any{
 			"token":      token,
 			"expires_at": expiresAt,
 		})
@@ -101,7 +103,7 @@ func TestCopilotProvider_IsConfigured(t *testing.T) {
 }
 
 func TestCopilotProvider_Complete_Success(t *testing.T) {
-	expiry := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	expiry := time.Now().Add(30 * time.Minute).Unix()
 	tokSrv, calls := mockCopilotTokenServer(t, http.StatusOK, "test-copilot-tok", expiry)
 	compSrv := mockCopilotCompletionsServer(t, `{"status":200}`)
 
@@ -123,7 +125,7 @@ func TestCopilotProvider_Complete_Success(t *testing.T) {
 }
 
 func TestCopilotProvider_TokenCaching(t *testing.T) {
-	expiry := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	expiry := time.Now().Add(30 * time.Minute).Unix()
 	tokSrv, calls := mockCopilotTokenServer(t, http.StatusOK, "test-copilot-tok", expiry)
 	compSrv := mockCopilotCompletionsServer(t, `{"status":200}`)
 
@@ -145,7 +147,7 @@ func TestCopilotProvider_TokenCaching(t *testing.T) {
 }
 
 func TestCopilotProvider_TokenRefreshOnExpiry(t *testing.T) {
-	expiry := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
+	expiry := time.Now().Add(30 * time.Minute).Unix()
 	tokSrv, calls := mockCopilotTokenServer(t, http.StatusOK, "test-copilot-tok", expiry)
 	compSrv := mockCopilotCompletionsServer(t, `{"status":200}`)
 
@@ -170,7 +172,7 @@ func TestCopilotProvider_TokenRefreshOnExpiry(t *testing.T) {
 }
 
 func TestCopilotProvider_FailedTokenExchange(t *testing.T) {
-	tokSrv, _ := mockCopilotTokenServer(t, http.StatusUnauthorized, "", "")
+	tokSrv, _ := mockCopilotTokenServer(t, http.StatusUnauthorized, "", 0)
 	compSrv := mockCopilotCompletionsServer(t, `{}`)
 
 	p := newCopilotProviderForTest(t, "gho_bad", tokSrv.URL, compSrv.URL)

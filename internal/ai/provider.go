@@ -586,10 +586,10 @@ func exchangeCopilotToken(ctx context.Context, client *http.Client, tokenURL, oa
 	defer resp.Body.Close()
 
 	var body struct {
-		Token     string `json:"token"`
-		ExpiresAt string `json:"expires_at"`
-		ErrorType string `json:"error_type"`
-		Message   string `json:"message"`
+		Token     string      `json:"token"`
+		ExpiresAt json.Number `json:"expires_at"` // API returns Unix timestamp (int) not RFC3339 string
+		ErrorType string      `json:"error_type"`
+		Message   string      `json:"message"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to decode Copilot token response: %w", err)
@@ -603,8 +603,12 @@ func exchangeCopilotToken(ctx context.Context, client *http.Client, tokenURL, oa
 	}
 
 	expiresAt := time.Now().Add(30 * time.Minute) // safe default
-	if body.ExpiresAt != "" {
-		if t, err := time.Parse(time.RFC3339, body.ExpiresAt); err == nil {
+	if s := body.ExpiresAt.String(); s != "" {
+		// Try Unix timestamp (int) first — what the real API returns.
+		if unix, err := body.ExpiresAt.Int64(); err == nil {
+			expiresAt = time.Unix(unix, 0)
+		} else if t, err := time.Parse(time.RFC3339, s); err == nil {
+			// Fallback: accept RFC3339 string for compatibility with mocks.
 			expiresAt = t
 		}
 	}
