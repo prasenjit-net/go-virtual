@@ -444,7 +444,7 @@ function ScriptsSection({ scripts }: { scripts: ScriptTrace[] }) {
                         {st.output !== null && st.output !== undefined && (
                             <div className="px-4 py-3">
                                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-1">Output</div>
-                                <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto">
+                                <pre className="bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto">
                                     {JSON.stringify(st.output, null, 2)}
                                 </pre>
                             </div>
@@ -506,7 +506,7 @@ function BodyBlock({ body }: { body: string }) {
     return (
         <div className="p-4">
             <h4 className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase mb-2">Body</h4>
-            <pre className="bg-gray-900 text-gray-100 rounded p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all">
+            <pre className="bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto whitespace-pre-wrap break-all">
                 {tryFormatJson(body)}
             </pre>
         </div>
