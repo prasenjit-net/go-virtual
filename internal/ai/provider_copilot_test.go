@@ -11,12 +11,22 @@ import (
 )
 
 // mockCopilotTokenServer starts a test server simulating the Copilot token
-// exchange endpoint. It records how many times it was called.
+// exchange endpoint. It records how many times it was called and validates
+// the required Copilot identity headers.
 func mockCopilotTokenServer(t *testing.T, statusCode int, token, expiresAt string) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
+		// Verify identity headers are present on the token exchange call.
+		if r.Header.Get("editor-version") == "" {
+			http.Error(w, "missing editor-version", http.StatusBadRequest)
+			return
+		}
+		if r.Header.Get("copilot-integration-id") == "" {
+			http.Error(w, "missing copilot-integration-id", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		if statusCode != http.StatusOK {
 			w.WriteHeader(statusCode)
@@ -62,11 +72,16 @@ func mockCopilotCompletionsServer(t *testing.T, content string) *httptest.Server
 
 func newCopilotProviderForTest(t *testing.T, oauthToken, tokenURL, completionsURL string) *copilotProvider {
 	t.Helper()
-	return &copilotProvider{
-		cfg: CopilotProviderConfig{
+	cfg := Config{
+		Provider: copilotProviderName,
+		Copilot: CopilotProviderConfig{
 			OAuthToken: oauthToken,
 			Model:      "gpt-4o",
 		},
+	}
+	cfg = cfg.Normalize()
+	return &copilotProvider{
+		cfg:      cfg.Copilot,
 		client:   &http.Client{Timeout: 5 * time.Second},
 		endpoint: completionsURL + "/chat/completions",
 		tokenURL: tokenURL,

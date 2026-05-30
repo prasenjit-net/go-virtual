@@ -16,7 +16,11 @@ const (
 	DefaultOpenAIModel      = "gpt-4o-mini"
 	DefaultClaudeModel      = "claude-sonnet-4-6"
 	DefaultClaudeAPIVersion = "2023-06-01"
-	DefaultCopilotModel     = "gpt-4o"
+	DefaultCopilotModel          = "gpt-4o"
+	DefaultCopilotEditorVersion  = "vscode/1.96.0"
+	DefaultCopilotPluginVersion  = "copilot/1.155.0"
+	DefaultCopilotIntegrationID  = "vscode-chat"
+	DefaultCopilotOpenAIIntent   = "conversation-panel"
 	SessionStoreMemory      = "memory"
 	SessionStoreRedis       = "redis"
 	DefaultRedisAddr        = "127.0.0.1:6379"
@@ -87,6 +91,18 @@ type CopilotConfig struct {
 	// Model is the model used for AI response/script generation.
 	// Defaults to "gpt-4o".
 	Model string `yaml:"model"`
+	// EditorVersion overrides the editor-version header sent on all Copilot requests.
+	// Defaults to "vscode/1.96.0".
+	EditorVersion string `yaml:"editorVersion"`
+	// EditorPluginVersion overrides the editor-plugin-version header sent on all Copilot requests.
+	// Defaults to "copilot/1.155.0".
+	EditorPluginVersion string `yaml:"editorPluginVersion"`
+	// IntegrationID overrides the copilot-integration-id header sent on all Copilot requests.
+	// Defaults to "vscode-chat".
+	IntegrationID string `yaml:"integrationId"`
+	// OpenAIIntent overrides the openai-intent header sent on token-exchange and
+	// completion requests. Defaults to "conversation-panel".
+	OpenAIIntent string `yaml:"openaiIntent"`
 }
 
 // ClaudeConfig holds settings for Anthropic Claude.
@@ -129,6 +145,18 @@ func (c *AIConfig) Normalize() {
 
 	if strings.TrimSpace(c.Copilot.Model) == "" {
 		c.Copilot.Model = DefaultCopilotModel
+	}
+	if strings.TrimSpace(c.Copilot.EditorVersion) == "" {
+		c.Copilot.EditorVersion = DefaultCopilotEditorVersion
+	}
+	if strings.TrimSpace(c.Copilot.EditorPluginVersion) == "" {
+		c.Copilot.EditorPluginVersion = DefaultCopilotPluginVersion
+	}
+	if strings.TrimSpace(c.Copilot.IntegrationID) == "" {
+		c.Copilot.IntegrationID = DefaultCopilotIntegrationID
+	}
+	if strings.TrimSpace(c.Copilot.OpenAIIntent) == "" {
+		c.Copilot.OpenAIIntent = DefaultCopilotOpenAIIntent
 	}
 }
 

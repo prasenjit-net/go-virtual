@@ -25,9 +25,13 @@ func loadAIConfig() ai.Config {
 			APIVersion: strings.TrimSpace(viper.GetString("ai.claude.apiVersion")),
 		},
 		Copilot: ai.CopilotProviderConfig{
-			OAuthToken: strings.TrimSpace(viper.GetString("ai.copilot.oauthToken")),
-			Model:      strings.TrimSpace(viper.GetString("ai.copilot.model")),
-			BaseURL:    strings.TrimSpace(viper.GetString("ai.copilot.baseUrl")),
+			OAuthToken:          strings.TrimSpace(viper.GetString("ai.copilot.oauthToken")),
+			Model:               strings.TrimSpace(viper.GetString("ai.copilot.model")),
+			BaseURL:             strings.TrimSpace(viper.GetString("ai.copilot.baseUrl")),
+			EditorVersion:       strings.TrimSpace(viper.GetString("ai.copilot.editorVersion")),
+			EditorPluginVersion: strings.TrimSpace(viper.GetString("ai.copilot.editorPluginVersion")),
+			IntegrationID:       strings.TrimSpace(viper.GetString("ai.copilot.integrationId")),
+			OpenAIIntent:        strings.TrimSpace(viper.GetString("ai.copilot.openaiIntent")),
 		},
 	}
 }

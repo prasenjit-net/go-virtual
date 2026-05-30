@@ -24,10 +24,14 @@ const (
 	defaultClaudeEndpoint   = "https://api.anthropic.com/v1/messages"
 	defaultClaudeAPIVersion = "2023-06-01"
 	defaultClaudeMaxTokens  = 4096
-	defaultCopilotModel        = "gpt-4o"
-	defaultCopilotBaseURL      = "https://api.githubcopilot.com"
-	defaultCopilotTokenURL     = "https://api.github.com/copilot_internal/v2/token"
-	copilotTokenRefreshBuffer  = 60 * time.Second
+	defaultCopilotModel           = "gpt-4o"
+	defaultCopilotBaseURL         = "https://api.githubcopilot.com"
+	defaultCopilotTokenURL        = "https://api.github.com/copilot_internal/v2/token"
+	defaultCopilotEditorVersion   = "vscode/1.96.0"
+	defaultCopilotPluginVersion   = "copilot/1.155.0"
+	defaultCopilotIntegrationID   = "vscode-chat"
+	defaultCopilotOpenAIIntent    = "conversation-panel"
+	copilotTokenRefreshBuffer     = 60 * time.Second
 	defaultModel            = defaultOpenAIModel
 )
 
@@ -100,6 +104,18 @@ type CopilotProviderConfig struct {
 	BaseURL string
 	// TokenURL overrides the Copilot token exchange endpoint.
 	TokenURL string
+	// EditorVersion is sent as the editor-version header on all Copilot requests.
+	// Defaults to "vscode/1.96.0".
+	EditorVersion string
+	// EditorPluginVersion is sent as the editor-plugin-version header on all Copilot requests.
+	// Defaults to "copilot/1.155.0".
+	EditorPluginVersion string
+	// IntegrationID is sent as the copilot-integration-id header on all Copilot requests.
+	// Defaults to "vscode-chat".
+	IntegrationID string
+	// OpenAIIntent is sent as the openai-intent header on token-exchange and
+	// completion requests. Defaults to "conversation-panel".
+	OpenAIIntent string
 }
 
 type openAIProvider struct {
@@ -166,6 +182,18 @@ func (cfg Config) Normalize() Config {
 
 	if strings.TrimSpace(cfg.Copilot.Model) == "" {
 		cfg.Copilot.Model = defaultCopilotModel
+	}
+	if strings.TrimSpace(cfg.Copilot.EditorVersion) == "" {
+		cfg.Copilot.EditorVersion = defaultCopilotEditorVersion
+	}
+	if strings.TrimSpace(cfg.Copilot.EditorPluginVersion) == "" {
+		cfg.Copilot.EditorPluginVersion = defaultCopilotPluginVersion
+	}
+	if strings.TrimSpace(cfg.Copilot.IntegrationID) == "" {
+		cfg.Copilot.IntegrationID = defaultCopilotIntegrationID
+	}
+	if strings.TrimSpace(cfg.Copilot.OpenAIIntent) == "" {
+		cfg.Copilot.OpenAIIntent = defaultCopilotOpenAIIntent
 	}
 
 	return cfg
@@ -521,7 +549,7 @@ func (p *copilotProvider) getToken(ctx context.Context) (string, error) {
 		return p.cachedTok, nil
 	}
 
-	tok, expiresAt, err := exchangeCopilotToken(ctx, p.client, p.tokenURL, p.cfg.OAuthToken)
+	tok, expiresAt, err := exchangeCopilotToken(ctx, p.client, p.tokenURL, p.cfg.OAuthToken, p.copilotHeaders())
 	if err != nil {
 		return "", err
 	}
@@ -530,13 +558,26 @@ func (p *copilotProvider) getToken(ctx context.Context) (string, error) {
 	return tok, nil
 }
 
-func exchangeCopilotToken(ctx context.Context, client *http.Client, tokenURL, oauthToken string) (string, time.Time, error) {
+// copilotHeaders returns the identity headers sent on every Copilot request.
+func (p *copilotProvider) copilotHeaders() map[string]string {
+	return map[string]string{
+		"editor-version":        p.cfg.EditorVersion,
+		"editor-plugin-version": p.cfg.EditorPluginVersion,
+		"copilot-integration-id": p.cfg.IntegrationID,
+		"openai-intent":         p.cfg.OpenAIIntent,
+	}
+}
+
+func exchangeCopilotToken(ctx context.Context, client *http.Client, tokenURL, oauthToken string, headers map[string]string) (string, time.Time, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to create Copilot token request: %w", err)
 	}
 	req.Header.Set("Authorization", "token "+oauthToken)
 	req.Header.Set("Accept", "application/json")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -607,9 +648,9 @@ func (p *copilotProvider) Complete(ctx context.Context, req providerRequest) (st
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+tok)
-	httpReq.Header.Set("editor-version", "vscode/1.90.0")
-	httpReq.Header.Set("editor-plugin-version", "copilot-chat/0.17.0")
-	httpReq.Header.Set("openai-intent", "conversation-panel")
+	for k, v := range p.copilotHeaders() {
+		httpReq.Header.Set(k, v)
+	}
 
 	start := time.Now()
 	resp, err := p.client.Do(httpReq)
