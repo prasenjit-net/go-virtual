@@ -11,7 +11,8 @@ import (
 
 func loadAIConfig() ai.Config {
 	return ai.Config{
-		Provider: strings.TrimSpace(viper.GetString("ai.provider")),
+		Provider:  strings.TrimSpace(viper.GetString("ai.provider")),
+		HTTPProxy: strings.TrimSpace(viper.GetString("ai.httpProxy")),
 		OpenAI: ai.ProviderConfig{
 			APIKey:  firstNonEmpty(viper.GetString("ai.openai.apiKey"), viper.GetString("ai.openaiApiKey")),
 			Model:   firstNonEmpty(viper.GetString("ai.openai.model"), viper.GetString("ai.openaiModel")),
@@ -22,6 +23,15 @@ func loadAIConfig() ai.Config {
 			Model:      strings.TrimSpace(viper.GetString("ai.claude.model")),
 			BaseURL:    strings.TrimSpace(viper.GetString("ai.claude.baseUrl")),
 			APIVersion: strings.TrimSpace(viper.GetString("ai.claude.apiVersion")),
+		},
+		Copilot: ai.CopilotProviderConfig{
+			OAuthToken:          strings.TrimSpace(viper.GetString("ai.copilot.oauthToken")),
+			Model:               strings.TrimSpace(viper.GetString("ai.copilot.model")),
+			BaseURL:             strings.TrimSpace(viper.GetString("ai.copilot.baseUrl")),
+			EditorVersion:       strings.TrimSpace(viper.GetString("ai.copilot.editorVersion")),
+			EditorPluginVersion: strings.TrimSpace(viper.GetString("ai.copilot.editorPluginVersion")),
+			IntegrationID:       strings.TrimSpace(viper.GetString("ai.copilot.integrationId")),
+			OpenAIIntent:        strings.TrimSpace(viper.GetString("ai.copilot.openaiIntent")),
 		},
 	}
 }
