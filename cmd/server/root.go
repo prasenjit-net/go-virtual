@@ -121,6 +121,7 @@ func setDefaults() {
 
 	// AI defaults
 	viper.SetDefault("ai.provider", config.AIProviderOpenAI)
+	viper.SetDefault("ai.httpProxy", "")
 	viper.SetDefault("ai.openai.apiKey", "")
 	viper.SetDefault("ai.openai.model", config.DefaultOpenAIModel)
 	viper.SetDefault("ai.openai.baseUrl", "")
@@ -128,6 +129,13 @@ func setDefaults() {
 	viper.SetDefault("ai.claude.model", config.DefaultClaudeModel)
 	viper.SetDefault("ai.claude.baseUrl", "")
 	viper.SetDefault("ai.claude.apiVersion", config.DefaultClaudeAPIVersion)
+	viper.SetDefault("ai.copilot.oauthToken", "")
+	viper.SetDefault("ai.copilot.model", config.DefaultCopilotModel)
+	viper.SetDefault("ai.copilot.baseUrl", "")
+	viper.SetDefault("ai.copilot.editorVersion", config.DefaultCopilotEditorVersion)
+	viper.SetDefault("ai.copilot.editorPluginVersion", config.DefaultCopilotPluginVersion)
+	viper.SetDefault("ai.copilot.integrationId", config.DefaultCopilotIntegrationID)
+	viper.SetDefault("ai.copilot.openaiIntent", config.DefaultCopilotOpenAIIntent)
 	viper.SetDefault("ai.openaiApiKey", "")
 	viper.SetDefault("ai.openaiModel", config.DefaultOpenAIModel)
 	viper.SetDefault("ai.openaiBaseUrl", "")
