@@ -121,6 +121,14 @@ export interface ExampleResponse {
     body: string;
 }
 
+export interface SpecExample {
+    statusCode: number;
+    description: string;
+    contentType: string;
+    bodyExample: string;
+    schemaHint: string;
+}
+
 export interface OperationSummary {
     id: string;
     specId: string;
