@@ -784,11 +784,11 @@ export default function ResponseConfigIDE({
                     <button
                         onClick={() => { setShowExamplePicker(true); setIdeActiveTab('body') }}
                         disabled={readOnly}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs border border-indigo-200 dark:border-indigo-700 rounded-md text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50"
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs border border-gray-300 dark:border-slate-600 rounded-md text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 disabled:opacity-50"
                         title="Load from spec example"
                     >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        From Spec
+                        <Zap className="w-3.5 h-3.5" />
+                        Examples
                     </button>
                     <button
                         onClick={() => { prettifyBody(); setIdeActiveTab('body') }}

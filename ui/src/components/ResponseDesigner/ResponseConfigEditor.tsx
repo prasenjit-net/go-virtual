@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Plus, Trash2, AlertCircle, Wand2, BookOpen } from 'lucide-react'
+import { X, Plus, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
@@ -912,10 +912,10 @@ export default function ResponseConfigEditor({
                                     type="button"
                                     onClick={() => setShowExamplePicker(true)}
                                     title="Load from spec example"
-                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-700 rounded-md transition-colors"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-md transition-colors"
                                 >
-                                    <BookOpen className="w-3.5 h-3.5" />
-                                    From Spec
+                                    <Zap className="w-3.5 h-3.5" />
+                                    Examples
                                 </button>
                                 <button
                                     type="button"
