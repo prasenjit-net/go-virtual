@@ -1,5 +1,7 @@
 const API_BASE = '/_api';
 
+import type { Operation, ResponseConfig, Spec, Tag } from '../types';
+
 async function handleResponse<T>(response: Response): Promise<T> {
     if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -12,12 +14,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
 export const specsApi = {
     list: async () => {
         const response = await fetch(`${API_BASE}/specs`);
-        return handleResponse<any[]>(response);
+        return handleResponse<Spec[]>(response);
     },
 
     get: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}`);
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     create: async (data: { name?: string; content: string; basePath: string; description?: string }) => {
@@ -26,37 +28,37 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
-    update: async (id: string, data: Partial<any>) => {
+    update: async (id: string, data: Partial<Spec>) => {
         const response = await fetch(`${API_BASE}/specs/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     delete: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}`, {
             method: 'DELETE',
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ message: string }>(response);
     },
 
     enable: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}/enable`, {
             method: 'PUT',
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     disable: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}/disable`, {
             method: 'PUT',
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     toggleTracing: async (id: string, enabled: boolean) => {
@@ -65,7 +67,7 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     toggleExampleFallback: async (id: string, enabled: boolean) => {
@@ -74,7 +76,7 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     setBackendURI: async (id: string, backendUri: string) => {
@@ -83,7 +85,7 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ backendUri }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     setMode: async (id: string, mode: import('../types').SpecMode) => {
@@ -92,7 +94,7 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ mode }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     getModePolicy: async (id: string) => {
@@ -115,12 +117,12 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ enabled }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Spec>(response);
     },
 
     getTags: async (id: string) => {
         const response = await fetch(`${API_BASE}/specs/${id}/tags`);
-        return handleResponse<any>(response);
+        return handleResponse<{ tags: string[] }>(response);
     },
 
     updateTags: async (id: string, tags: string[]) => {
@@ -129,7 +131,7 @@ export const specsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tags }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ tags: string[] }>(response);
     },
 };
 
@@ -169,7 +171,7 @@ export const aiScenariosApi = {
 export const tagsApi = {
     list: async () => {
         const response = await fetch(`${API_BASE}/tags`);
-        return handleResponse<any[]>(response);
+        return handleResponse<Tag[]>(response);
     },
 
     create: async (data: { name: string; description?: string }) => {
@@ -178,7 +180,7 @@ export const tagsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Tag>(response);
     },
 
     update: async (name: string, data: { name: string; description?: string }) => {
@@ -187,14 +189,14 @@ export const tagsApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<Tag>(response);
     },
 
     delete: async (name: string) => {
         const response = await fetch(`${API_BASE}/tags/${encodeURIComponent(name)}`, {
             method: 'DELETE',
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ message: string }>(response);
     },
 };
 
@@ -202,12 +204,12 @@ export const tagsApi = {
 export const operationsApi = {
     listBySpec: async (specId: string) => {
         const response = await fetch(`${API_BASE}/specs/${specId}/operations`);
-        return handleResponse<any[]>(response);
+        return handleResponse<import('../types').OperationSummary[]>(response);
     },
 
     get: async (id: string) => {
         const response = await fetch(`${API_BASE}/operations/${id}`);
-        return handleResponse<any>(response);
+        return handleResponse<Operation>(response);
     },
 
     getSignatureConfig: async (id: string) => {
@@ -224,43 +226,48 @@ export const operationsApi = {
         return handleResponse<{ signatureConfig: import('../types').SignatureConfig | null; effectiveSignatureConfig: import('../types').SignatureConfig }>(response);
     },
 
+    getSpecExamples: async (id: string) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/spec-examples`);
+        return handleResponse<import('../types').SpecExample[]>(response);
+    },
+
 };
 
 // Response configs API
 export const responsesApi = {
     listByOperation: async (operationId: string) => {
         const response = await fetch(`${API_BASE}/operations/${operationId}/responses`);
-        return handleResponse<any[]>(response);
+        return handleResponse<ResponseConfig[]>(response);
     },
 
     get: async (id: string) => {
         const response = await fetch(`${API_BASE}/responses/${id}`);
-        return handleResponse<any>(response);
+        return handleResponse<ResponseConfig>(response);
     },
 
-    create: async (operationId: string, data: any) => {
+    create: async (operationId: string, data: import('../types').ResponseConfigInput) => {
         const response = await fetch(`${API_BASE}/operations/${operationId}/responses`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<ResponseConfig>(response);
     },
 
-    update: async (id: string, data: Partial<any>) => {
+    update: async (id: string, data: Partial<import('../types').ResponseConfigInput>) => {
         const response = await fetch(`${API_BASE}/responses/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
-        return handleResponse<any>(response);
+        return handleResponse<ResponseConfig>(response);
     },
 
     delete: async (id: string) => {
         const response = await fetch(`${API_BASE}/responses/${id}`, {
             method: 'DELETE',
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ message: string }>(response);
     },
 
     updatePriority: async (id: string, priority: number) => {
@@ -269,7 +276,7 @@ export const responsesApi = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ priority }),
         });
-        return handleResponse<any>(response);
+        return handleResponse<ResponseConfig>(response);
     },
 
     clone: async (id: string, name: string) => {
@@ -312,7 +319,7 @@ export const conditionsApi = {
 export const statsApi = {
     getGlobal: async () => {
         const response = await fetch(`${API_BASE}/stats`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').GlobalStats>(response);
     },
 
     createStream: () => {
@@ -321,19 +328,19 @@ export const statsApi = {
 
     getBySpec: async (specId: string) => {
         const response = await fetch(`${API_BASE}/stats/specs/${specId}`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').SpecStats>(response);
     },
 
     getByOperation: async (operationId: string) => {
         const response = await fetch(`${API_BASE}/stats/operations/${operationId}`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').SpecStats>(response);
     },
 
     reset: async () => {
         const response = await fetch(`${API_BASE}/stats/reset`, {
             method: 'POST',
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ message: string }>(response);
     },
 };
 
@@ -346,12 +353,12 @@ export const tracesApi = {
         if (params?.method) searchParams.set('method', params.method);
 
         const response = await fetch(`${API_BASE}/traces?${searchParams}`);
-        return handleResponse<any[]>(response);
+        return handleResponse<import('../types').Trace[]>(response);
     },
 
     get: async (id: string) => {
         const response = await fetch(`${API_BASE}/traces/${id}`);
-        return handleResponse<any>(response);
+        return handleResponse<import('../types').Trace>(response);
     },
 
     clear: async (specId?: string) => {
@@ -359,7 +366,7 @@ export const tracesApi = {
         const response = await fetch(url, {
             method: 'DELETE',
         });
-        return handleResponse<any>(response);
+        return handleResponse<{ message: string }>(response);
     },
 
     // WebSocket for live traces
@@ -373,7 +380,7 @@ export const tracesApi = {
 export const healthApi = {
     check: async () => {
         const response = await fetch(`${API_BASE}/health`);
-        return handleResponse<any>(response);
+        return handleResponse<{ status: string }>(response);
     },
 };
 
@@ -444,28 +451,28 @@ export const scriptsApi = {
         path?: Record<string, string>;
         query?: Record<string, string>;
         header?: Record<string, string>;
-        body?: any;
+        body?: unknown;
     }) => {
         const response = await fetch(`${API_BASE}/scripts/test-source`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source, timeout, input }),
         });
-        return handleResponse<{ output: any; durationMs: number; logs?: string[]; error: string | null }>(response);
+        return handleResponse<{ output: unknown; durationMs: number; logs?: string[]; error: string | null }>(response);
     },
 
     test: async (id: string, input: {
         path?: Record<string, string>;
         query?: Record<string, string>;
         header?: Record<string, string>;
-        body?: any;
+        body?: unknown;
     }) => {
         const response = await fetch(`${API_BASE}/scripts/${id}/test`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ input }),
         });
-        return handleResponse<{ output: any; durationMs: number; error: string | null }>(response);
+        return handleResponse<{ output: unknown; durationMs: number; error: string | null }>(response);
     },
 };
 
@@ -605,16 +612,16 @@ export const storeApi = {
 
     get: async (key: string) => {
         const response = await fetch(`${API_BASE}/store/${encodeURIComponent(key)}`);
-        return handleResponse<{ key: string; value: any }>(response);
+        return handleResponse<{ key: string; value: unknown }>(response);
     },
 
-    upsert: async (key: string, value: any) => {
+    upsert: async (key: string, value: unknown) => {
         const response = await fetch(`${API_BASE}/store/${encodeURIComponent(key)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value }),
         });
-        return handleResponse<{ key: string; value: any }>(response);
+        return handleResponse<{ key: string; value: unknown }>(response);
     },
 
     delete: async (key: string) => {

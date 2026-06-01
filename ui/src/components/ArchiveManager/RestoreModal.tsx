@@ -38,7 +38,7 @@ export default function RestoreModal({ archive, onClose, onRestored }: Props) {
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg mx-4">
+            <div className="bg-white dark:bg-slate-900 rounded-lg shadow-xl w-full max-w-lg mx-4">
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center gap-2 font-semibold text-gray-900 dark:text-gray-100">
@@ -128,7 +128,7 @@ export default function RestoreModal({ archive, onClose, onRestored }: Props) {
                                         onChange={(e) => setCreateBackup(e.target.checked)}
                                         className="sr-only peer"
                                     />
-                                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                                    <div className="w-9 h-5 bg-gray-200 dark:bg-slate-600 peer-focus:outline-none rounded-full peer peer-checked:bg-indigo-600 after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
                                 </label>
                             </div>
                             {createBackup && (
@@ -136,7 +136,7 @@ export default function RestoreModal({ archive, onClose, onRestored }: Props) {
                                     type="text"
                                     value={backupLabel}
                                     onChange={(e) => setBackupLabel(e.target.value)}
-                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    className="w-full px-3 py-1.5 text-sm border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                 />
                             )}
                         </div>

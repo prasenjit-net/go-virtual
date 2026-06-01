@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Plus, Trash2, Edit2, Database, Save, X, Aler
 import Editor from '@monaco-editor/react';
 import { collectionsApi } from '../../services/api';
 import type { CollectionDocument, CollectionInfo } from '../../types';
+import { useIsDark } from '../../hooks/useIsDark';
 
 interface Props {
     showNewCol: boolean;
@@ -15,6 +16,7 @@ interface Props {
 
 export default function CollectionsManager({ showNewCol, newColName, setNewColName, onNewColConfirm, onNewColCancel }: Props) {
     const queryClient = useQueryClient();
+    const isDark = useIsDark();
     const [expanded, setExpanded] = useState<string | null>(null);
     const [editState, setEditState] = useState<{ name: string; index: number; value: string } | null>(null);
     const [addState, setAddState] = useState<{ name: string; value: string } | null>(null);
@@ -131,8 +133,6 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
         return <div className="text-sm text-gray-500 dark:text-slate-400 p-4">Loading collections…</div>;
     }
 
-    const isDark = document.documentElement.classList.contains('dark');
-
     return (
         <div className="space-y-2">
             {/* New collection inline input — triggered from parent header button */}
@@ -216,6 +216,7 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                         <button
                             className="p-1 text-gray-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded"
                             title="Add document"
+                            aria-label={`Add document to ${col.name}`}
                             onClick={e => { e.stopPropagation(); if (expanded !== col.name) toggleExpand(col.name); startAdd(col.name); }}
                         >
                             <Plus className="h-4 w-4" />
@@ -223,6 +224,7 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                         <button
                             className="p-1 text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded"
                             title="Clear collection"
+                            aria-label={`Clear ${col.name} collection`}
                             onClick={e => { e.stopPropagation(); setClearConfirm(col.name); }}
                         >
                             <Trash2 className="h-4 w-4" />
@@ -288,6 +290,7 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                                                     onClick={() => startEdit(col.name, idx, doc)}
                                                     className="p-1 text-gray-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 rounded"
                                                     title="Edit"
+                                                    aria-label={`Edit document #${idx} in ${col.name}`}
                                                 >
                                                     <Edit2 className="h-3.5 w-3.5" />
                                                 </button>
@@ -295,6 +298,7 @@ export default function CollectionsManager({ showNewCol, newColName, setNewColNa
                                                     onClick={() => deleteMutation.mutate({ name: col.name, index: idx })}
                                                     className="p-1 text-gray-400 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 rounded"
                                                     title="Delete"
+                                                    aria-label={`Delete document #${idx} from ${col.name}`}
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                 </button>

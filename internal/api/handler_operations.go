@@ -3,9 +3,11 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"sort"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/models"
+	"github.com/prasenjit/go-virtual/internal/parser"
 	"github.com/prasenjit/go-virtual/internal/proxy"
 )
 
@@ -192,4 +194,35 @@ func (h *Handler) UpdateSignatureConfig(c *gin.Context) {
 		"signatureConfig":          op.SignatureConfig,
 		"effectiveSignatureConfig": proxy.ResolveSignatureConfig(spec, op),
 	})
+}
+
+// GetSpecExamples returns all spec-defined response examples for an operation,
+// sorted by status code. Used by the UI to prepopulate the response editor.
+func (h *Handler) GetSpecExamples(c *gin.Context) {
+	id := c.Param("id")
+
+	op, err := h.store.GetOperation(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Operation not found"})
+		return
+	}
+
+	spec, err := h.store.GetSpec(op.SpecID)
+	if err != nil || spec.Content == "" {
+		c.JSON(http.StatusOK, []parser.SpecResponseDef{})
+		return
+	}
+
+	p := parser.NewParser()
+	defs, err := p.ExtractAllResponses(spec.Content, op.Method, op.Path)
+	if err != nil {
+		c.JSON(http.StatusOK, []parser.SpecResponseDef{})
+		return
+	}
+
+	sort.Slice(defs, func(i, j int) bool {
+		return defs[i].StatusCode < defs[j].StatusCode
+	})
+
+	c.JSON(http.StatusOK, defs)
 }
