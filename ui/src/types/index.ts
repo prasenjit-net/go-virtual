@@ -60,6 +60,7 @@ export interface Operation {
 
 export interface ConditionalModeConfig {
     enabled: boolean;
+    disableRecording?: boolean;
     conditions: Condition[];
 }
 

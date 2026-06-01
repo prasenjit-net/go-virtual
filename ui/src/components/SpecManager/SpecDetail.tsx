@@ -65,6 +65,7 @@ const clonePolicy = (policy?: ModePolicy): ModePolicy => ({
     },
     proxy: {
         enabled: policy?.proxy.enabled ?? false,
+        disableRecording: policy?.proxy.disableRecording ?? false,
         conditions: [...(policy?.proxy.conditions ?? [])],
     },
 })
@@ -512,6 +513,30 @@ export default function SpecDetail() {
                                 <p className="text-xs text-violet-600 dark:text-violet-400">
                                     Save an upstream URL before enabling proxy fallback.
                                 </p>
+                            )}
+                            {currentPolicy.proxy.enabled && (
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={!currentPolicy.proxy.disableRecording}
+                                        onChange={() => updatePolicy((policy) => ({
+                                            ...policy,
+                                            proxy: {
+                                                ...policy.proxy,
+                                                disableRecording: !policy.proxy.disableRecording,
+                                            },
+                                        }))}
+                                        className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500"
+                                    />
+                                    <div>
+                                        <span className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                                            Record proxied responses
+                                        </span>
+                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                                            Automatically save backend responses for replay. Uncheck for pure pass-through.
+                                        </p>
+                                    </div>
+                                </label>
                             )}
                             <ConditionsEditor
                                 title="Proxy conditions"

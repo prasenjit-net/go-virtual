@@ -607,6 +607,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"event", "proxy_fallback_selected",
 				"backend_uri", matchedRoute.spec.BackendURI,
 			)
+			record := !matchedRoute.spec.ModePolicy.Proxy.DisableRecording
 			statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
 				r.Method,
 				r.URL.Path,
@@ -616,6 +617,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				matchedRoute.operation,
 				matchedRoute.spec,
 				signature,
+				record,
 			)
 			if proxyErr != nil {
 				reqLogger.Error("Proxy fallback request failed",

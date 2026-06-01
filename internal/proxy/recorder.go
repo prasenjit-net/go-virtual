@@ -102,6 +102,7 @@ func (r *Recorder) SetHTTPClient(client *http.Client) {
 //
 // The method is intentionally fire-and-forget for the recording part: if
 // persistence fails the response is still returned to the caller.
+// When record is false, the response is proxied but not saved.
 func (r *Recorder) ProxyAndRecord(
 	method string,
 	requestPath string,
@@ -111,6 +112,7 @@ func (r *Recorder) ProxyAndRecord(
 	operation *models.Operation,
 	spec *models.Spec,
 	signature string,
+	record bool,
 ) (statusCode int, respHeaders map[string]string, respBody string, err error) {
 	// Build the backend URL by stripping the spec basePath from the request path
 	backendPath := requestPath
@@ -175,7 +177,9 @@ func (r *Recorder) ProxyAndRecord(
 	statusCode = resp.StatusCode
 
 	// Record the response asynchronously so it doesn't block the response path.
-	go r.SaveResponse(operation, signature, statusCode, respHeaders, respBody, models.ResponseOriginProxy)
+	if record {
+		go r.SaveResponse(operation, signature, statusCode, respHeaders, respBody, models.ResponseOriginProxy)
+	}
 
 	return statusCode, respHeaders, respBody, nil
 }
