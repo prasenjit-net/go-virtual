@@ -321,7 +321,7 @@ func TestSetHTTPClient_UsedForRequests(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL}
 	op := &models.Operation{ID: "op-custom"}
 
-	status, _, body, err := rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "sig-custom")
+	status, _, body, err := rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "sig-custom", true)
 	if err != nil {
 		t.Fatalf("ProxyAndRecord: %v", err)
 	}

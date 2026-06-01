@@ -76,7 +76,7 @@ func TestProxyAndRecord_BasicForward(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL}
 	op := &models.Operation{ID: "op-1"}
 
-	status, headers, body, err := rec.ProxyAndRecord("GET", "/items", "", http.Header{}, "", op, spec, "sig1")
+	status, headers, body, err := rec.ProxyAndRecord("GET", "/items", "", http.Header{}, "", op, spec, "sig1", true)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -92,6 +92,31 @@ func TestProxyAndRecord_BasicForward(t *testing.T) {
 	}
 	if _, ok := headers["X-Backend"]; !ok {
 		t.Error("expected X-Backend header to be forwarded")
+	}
+}
+
+func TestProxyAndRecord_NoRecordWhenDisabled(t *testing.T) {
+	backend := startFakeBackend(200, `{"hello":"world"}`, map[string]string{
+		"Content-Type": "application/json",
+	})
+	defer backend.Close()
+
+	rec, store := makeTestRecorder(t)
+
+	spec := &models.Spec{BackendURI: backend.URL}
+	op := &models.Operation{ID: "op-norecord"}
+
+	_, _, _, err := rec.ProxyAndRecord("GET", "/items", "", http.Header{}, "", op, spec, "sig-norecord", false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Give any errant goroutine time to run
+	time.Sleep(50 * time.Millisecond)
+
+	configs, _ := store.GetResponseConfigsByOperation("op-norecord")
+	if len(configs) != 0 {
+		t.Errorf("expected no recorded configs when record=false, got %d", len(configs))
 	}
 }
 
@@ -112,7 +137,7 @@ func TestProxyAndRecord_StripHopByHopResponseHeaders(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL}
 	op := &models.Operation{ID: "op-1"}
 
-	_, headers, _, err := rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "sig1")
+	_, headers, _, err := rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "sig1", true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -133,7 +158,7 @@ func TestProxyAndRecord_BackendNotReachable(t *testing.T) {
 	spec := &models.Spec{BackendURI: "http://127.0.0.1:1"} // nothing listening there
 	op := &models.Operation{ID: "op-1"}
 
-	_, _, _, err := rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "sig1")
+	_, _, _, err := rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "sig1", true)
 	if err == nil {
 		t.Fatal("expected an error for unreachable backend")
 	}
@@ -151,7 +176,7 @@ func TestProxyAndRecord_WithQueryAndBasePath(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL, BasePath: "/v1"}
 	op := &models.Operation{ID: "op-1"}
 
-	rec.ProxyAndRecord("GET", "/v1/pets", "q=dog", http.Header{}, "", op, spec, "sig1")
+	rec.ProxyAndRecord("GET", "/v1/pets", "q=dog", http.Header{}, "", op, spec, "sig1", true)
 
 	if receivedPath != "/pets?q=dog" {
 		t.Errorf("expected backend to receive /pets?q=dog, got %q", receivedPath)
@@ -179,7 +204,7 @@ func TestProxyAndRecord_StripRequestHopByHopHeaders(t *testing.T) {
 		"Keep-Alive": {"timeout=5"},
 		"X-Custom":   {"kept"},
 	}
-	rec.ProxyAndRecord("GET", "/", "", reqHeaders, "", op, spec, "sig1")
+	rec.ProxyAndRecord("GET", "/", "", reqHeaders, "", op, spec, "sig1", true)
 
 	// Hop-by-hop headers must be stripped before forwarding to backend
 	if receivedConnection != "" {
@@ -217,7 +242,7 @@ func TestRecordResponse_CreatesNewEntry(t *testing.T) {
 	op := &models.Operation{ID: "op-record-1"}
 	spec := &models.Spec{BackendURI: backend.URL}
 
-	_, _, _, err := rec.ProxyAndRecord("POST", "/items", "", http.Header{}, `{"name":"x"}`, op, spec, "deadsig1")
+	_, _, _, err := rec.ProxyAndRecord("POST", "/items", "", http.Header{}, `{"name":"x"}`, op, spec, "deadsig1", true)
 	if err != nil {
 		t.Fatalf("ProxyAndRecord: %v", err)
 	}
@@ -259,7 +284,7 @@ func TestRecordResponse_UpdatesExistingEntry(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL}
 
 	// First call — creates entry
-	rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "stablesig")
+	rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "stablesig", true)
 	cfgs := waitForRecord(store, "op-update-1", 500*time.Millisecond)
 	if len(cfgs) == 0 {
 		t.Fatal("first call should have created a recorded config")
@@ -272,7 +297,7 @@ func TestRecordResponse_UpdatesExistingEntry(t *testing.T) {
 	spec.BackendURI = backend2.URL
 
 	// Second call with same signature — should update, not create
-	rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "stablesig")
+	rec.ProxyAndRecord("GET", "/x", "", http.Header{}, "", op, spec, "stablesig", true)
 	time.Sleep(100 * time.Millisecond)
 
 	cfgs2, _ := store.GetResponseConfigsByOperation("op-update-1")
@@ -328,7 +353,7 @@ func TestRecordResponse_NameContainsTimestamp(t *testing.T) {
 	op := &models.Operation{ID: "op-name-1"}
 	spec := &models.Spec{BackendURI: backend.URL}
 
-	rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "namesig")
+	rec.ProxyAndRecord("GET", "/", "", http.Header{}, "", op, spec, "namesig", true)
 	cfgs := waitForRecord(store, "op-name-1", 500*time.Millisecond)
 	if len(cfgs) == 0 {
 		t.Fatal("expected a recorded config")
@@ -407,7 +432,7 @@ func TestProxyAndRecord_ForwardsRequestBody(t *testing.T) {
 	spec := &models.Spec{BackendURI: backend.URL}
 	op := &models.Operation{ID: "op-fwd"}
 
-	rec.ProxyAndRecord("POST", "/", "", http.Header{}, `{"key":"value"}`, op, spec, "s1")
+	rec.ProxyAndRecord("POST", "/", "", http.Header{}, `{"key":"value"}`, op, spec, "s1", true)
 	time.Sleep(50 * time.Millisecond)
 
 	if receivedBody != `{"key":"value"}` {
