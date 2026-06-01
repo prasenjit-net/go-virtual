@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Plus, Trash2, AlertCircle, Wand2 } from 'lucide-react'
+import { X, Plus, Trash2, AlertCircle, Wand2, BookOpen } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding } from '../../types'
+import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
+import ExamplePickerModal from './ExamplePickerModal'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -244,6 +245,7 @@ export default function ResponseConfigEditor({
     const [isValidating, setIsValidating] = useState(false)
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
+    const [showExamplePicker, setShowExamplePicker] = useState(false)
     const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<typeof Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -387,6 +389,17 @@ export default function ResponseConfigEditor({
             // Not valid JSON (e.g. contains template tags) — leave as-is
         }
     }, [body, scheduleTemplateValidation])
+
+    const applySpecExample = useCallback((example: SpecExample) => {
+        setStatusCode(example.statusCode || 200)
+        setBody(example.bodyExample || '')
+        if (example.contentType) {
+            setHeaders(prev => ({ ...prev, 'Content-Type': example.contentType }))
+        }
+        if (example.bodyExample) {
+            scheduleTemplateValidation(example.bodyExample)
+        }
+    }, [scheduleTemplateValidation])
 
     useEffect(() => {
         if (body.trim()) {
@@ -894,15 +907,26 @@ export default function ResponseConfigEditor({
                                 Response Body
                             </label>
                             {!readOnly && (
-                            <button
-                                type="button"
-                                onClick={prettifyBody}
-                                title="Prettify JSON"
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-md transition-colors"
-                            >
-                                <Wand2 className="w-3.5 h-3.5" />
-                                Prettify
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowExamplePicker(true)}
+                                    title="Load from spec example"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 border border-indigo-200 dark:border-indigo-700 rounded-md transition-colors"
+                                >
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                    From Spec
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={prettifyBody}
+                                    title="Prettify JSON"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-300 dark:border-slate-600 rounded-md transition-colors"
+                                >
+                                    <Wand2 className="w-3.5 h-3.5" />
+                                    Prettify
+                                </button>
+                            </div>
                             )}
                         </div>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
@@ -1148,6 +1172,13 @@ export default function ResponseConfigEditor({
                 kind="response"
                 operationId={operationId}
                 responseConfigId={config.id}
+            />
+        )}
+        {showExamplePicker && (
+            <ExamplePickerModal
+                operationId={operationId}
+                onSelect={applySpecExample}
+                onClose={() => setShowExamplePicker(false)}
             />
         )}
         </>

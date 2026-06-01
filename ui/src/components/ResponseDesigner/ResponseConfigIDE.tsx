@@ -9,9 +9,10 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding } from '../../types'
+import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
+import ExamplePickerModal from './ExamplePickerModal'
 
 interface ResponseConfigIDEProps {
     operationId: string
@@ -467,6 +468,7 @@ export default function ResponseConfigIDE({
     const [isDirty, setIsDirty] = useState(false)
     const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
     const [refDrawerOpen, setRefDrawerOpen] = useState(false)
+    const [showExamplePicker, setShowExamplePicker] = useState(false)
     const isDark = useIsDark()
     const editorRef = useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<Monaco | null>(null)
@@ -615,6 +617,18 @@ export default function ResponseConfigIDE({
         }
     }, [body, scheduleTemplateValidation])
 
+    const applySpecExample = useCallback((example: SpecExample) => {
+        setStatusCode(example.statusCode || 200)
+        setBody(example.bodyExample || '')
+        if (example.contentType) {
+            setHeaders(prev => ({ ...prev, 'Content-Type': example.contentType }))
+        }
+        setIsDirty(true)
+        if (example.bodyExample) {
+            scheduleTemplateValidation(example.bodyExample)
+        }
+    }, [scheduleTemplateValidation])
+
     useEffect(() => {
         if (body.trim()) {
             scheduleTemplateValidation(body)
@@ -729,6 +743,7 @@ export default function ResponseConfigIDE({
     handleSaveRef.current = handleSave
 
     return (
+        <>
         <div className="hidden md:flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 px-3 h-12 flex-shrink-0">
                 <button
@@ -766,6 +781,15 @@ export default function ResponseConfigIDE({
                             {bodyError ? 'Invalid' : 'Valid'}
                         </span>
                     )}
+                    <button
+                        onClick={() => { setShowExamplePicker(true); setIdeActiveTab('body') }}
+                        disabled={readOnly}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs border border-indigo-200 dark:border-indigo-700 rounded-md text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50"
+                        title="Load from spec example"
+                    >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        From Spec
+                    </button>
                     <button
                         onClick={() => { prettifyBody(); setIdeActiveTab('body') }}
                         disabled={readOnly}
@@ -1306,5 +1330,13 @@ export default function ResponseConfigIDE({
                 )}
             </div>
         </div>
+        {showExamplePicker && (
+            <ExamplePickerModal
+                operationId={operationId}
+                onSelect={applySpecExample}
+                onClose={() => setShowExamplePicker(false)}
+            />
+        )}
+        </>
     )
 }

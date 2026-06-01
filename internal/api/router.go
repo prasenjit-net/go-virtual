@@ -126,6 +126,7 @@ func (r *Router) setupRoutes() {
 		api.GET("/operations/:id", r.handler.GetOperation)
 		api.GET("/operations/:id/signature", r.handler.GetSignatureConfig)
 		api.PUT("/operations/:id/signature", r.handler.UpdateSignatureConfig)
+		api.GET("/operations/:id/spec-examples", r.handler.GetSpecExamples)
 
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)

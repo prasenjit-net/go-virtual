@@ -347,6 +347,7 @@ func (p *Parser) ExtractExampleResponse(content string, method, pathPattern stri
 type SpecResponseDef struct {
 	StatusCode  int    `json:"statusCode"`
 	Description string `json:"description"`
+	ContentType string `json:"contentType,omitempty"` // e.g. "application/json"
 	BodyExample string `json:"bodyExample,omitempty"` // JSON string or schema-derived example
 	SchemaHint  string `json:"schemaHint,omitempty"`  // Human-readable schema summary
 }
@@ -582,6 +583,7 @@ func (p *Parser) ExtractAllResponses(content string, method, pathPattern string)
 			if mt == nil {
 				continue
 			}
+			def.ContentType = mediaType
 			if mt.Example != nil {
 				def.BodyExample = formatExample(mt.Example)
 			} else if len(mt.Examples) > 0 {

@@ -226,6 +226,11 @@ export const operationsApi = {
         return handleResponse<{ signatureConfig: import('../types').SignatureConfig | null; effectiveSignatureConfig: import('../types').SignatureConfig }>(response);
     },
 
+    getSpecExamples: async (id: string) => {
+        const response = await fetch(`${API_BASE}/operations/${id}/spec-examples`);
+        return handleResponse<import('../types').SpecExample[]>(response);
+    },
+
 };
 
 // Response configs API
