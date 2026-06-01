@@ -82,7 +82,7 @@ function DraftFields({
                     type="checkbox"
                     checked={draft.enabled}
                     onChange={(e) => setDraft((current) => ({ ...current, enabled: e.target.checked }))}
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="rounded border-gray-300 dark:border-slate-600 text-primary-600 focus:ring-primary-500 dark:bg-slate-800"
                 />
                 Enabled
             </label>

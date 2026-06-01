@@ -27,6 +27,7 @@ import {
 } from 'recharts'
 import { statsApi } from '../services/api'
 import type { GlobalStats, OperationStat } from '../types'
+import { useIsDark } from '../hooks/useIsDark'
 
 // ─── helper: colour a METHOD badge ────────────────────────────────────────────
 function MethodBadge({ method }: { method: string }) {
@@ -38,7 +39,7 @@ function MethodBadge({ method }: { method: string }) {
         DELETE: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
     }
     return (
-        <span className={`px-2 py-0.5 rounded text-xs font-mono font-semibold ${colours[method] ?? 'bg-gray-100 text-gray-600'}`}>
+        <span className={`px-2 py-0.5 rounded text-xs font-mono font-semibold ${colours[method] ?? 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300'}`}>
             {method}
         </span>
     )
@@ -66,6 +67,12 @@ function buildLatencyData(ops: OperationStat[]) {
 export default function Dashboard() {
     const [stats, setStats] = useState<GlobalStats | null>(null)
     const [error, setError] = useState<string | null>(null)
+    const isDark = useIsDark()
+
+    // Theme-aware chart color palettes
+    const chartColors = isDark
+        ? { reqStroke: '#60a5fa', reqFill: '#1e3a5f', errStroke: '#f87171', errFill: '#3b1212', barMin: '#4ade80', barAvg: '#60a5fa', barMax: '#f87171' }
+        : { reqStroke: '#3b82f6', reqFill: '#bfdbfe', errStroke: '#ef4444', errFill: '#fecaca', barMin: '#86efac', barAvg: '#3b82f6', barMax: '#f87171' }
 
     useEffect(() => {
         const stream = statsApi.createStream()
@@ -238,8 +245,8 @@ export default function Dashboard() {
                                 <YAxis tick={{ fontSize: 11 }} />
                                 <Tooltip />
                                 <Legend iconType="circle" iconSize={8} />
-                                <Area type="monotone" dataKey="requests" stroke="#3b82f6" fill="#bfdbfe" name="Requests" />
-                                <Area type="monotone" dataKey="errors" stroke="#ef4444" fill="#fecaca" name="Errors" />
+                                <Area type="monotone" dataKey="requests" stroke={chartColors.reqStroke} fill={chartColors.reqFill} name="Requests" />
+                                <Area type="monotone" dataKey="errors" stroke={chartColors.errStroke} fill={chartColors.errFill} name="Errors" />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
@@ -263,7 +270,7 @@ export default function Dashboard() {
                                 <Tooltip />
                                 <Bar dataKey="totalRequests" name="Requests" radius={[0, 4, 4, 0]}>
                                     {(stats?.topOperations ?? []).slice(0, 6).map((_, i) => (
-                                        <Cell key={i} fill={`hsl(${210 + i * 20},70%,55%)`} />
+                                        <Cell key={i} fill={`hsl(${isDark ? 210 + i * 20 : 210 + i * 20},${isDark ? '60%' : '70%'},${isDark ? '65%' : '55%'})`} />
                                     ))}
                                 </Bar>
                             </BarChart>
@@ -286,9 +293,9 @@ export default function Dashboard() {
                                 <YAxis tick={{ fontSize: 11 }} unit=" ms" />
                                 <Tooltip />
                                 <Legend iconType="square" iconSize={10} />
-                                <Bar dataKey="min" fill="#86efac" name="Min" />
-                                <Bar dataKey="avg" fill="#3b82f6" name="Avg" />
-                                <Bar dataKey="max" fill="#f87171" name="Max" />
+                                <Bar dataKey="min" fill={chartColors.barMin} name="Min" />
+                                <Bar dataKey="avg" fill={chartColors.barAvg} name="Avg" />
+                                <Bar dataKey="max" fill={chartColors.barMax} name="Max" />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
