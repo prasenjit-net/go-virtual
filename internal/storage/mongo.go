@@ -97,16 +97,10 @@ func NewMongoStorage(cfg config.MongoConfig) (*MongoStorage, error) {
 		time.Sleep(retryIn)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
-	defer cancel()
 	s := &MongoStorage{
 		client: client,
 		db:     client.Database(cfg.Database),
 		prefix: cfg.CollectionPrefix,
-	}
-	if err := s.ensureIndexes(ctx); err != nil {
-		_ = client.Disconnect(context.Background())
-		return nil, fmt.Errorf("mongo storage: ensure indexes: %w", err)
 	}
 	return s, nil
 }
@@ -115,7 +109,11 @@ func (m *MongoStorage) col(name string) *mongo.Collection {
 	return m.db.Collection(m.prefix + name)
 }
 
-func (m *MongoStorage) ensureIndexes(ctx context.Context) error {
+// EnsureIndexes creates the required indexes on all collections. It is
+// intended to be called explicitly (e.g. during `go-virtual init`) by an
+// operator with sufficient privileges. The server itself does not call this
+// at startup so a restricted runtime user is not blocked.
+func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 	type indexSpec struct {
 		col   string
 		field string

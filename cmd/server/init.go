@@ -91,6 +91,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Printf("Created config file: %s\n", configFile)
 
+	if cfg.Storage.Type == "mongo" {
+		initMongoIndexes(cfg.Storage.Mongo.URI, cfg.Storage.Mongo.Database)
+	}
+
 	fmt.Println()
 	fmt.Println("Initialization complete! You can now start the server with:")
 	fmt.Println()
