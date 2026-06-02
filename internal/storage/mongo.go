@@ -44,10 +44,11 @@ type genericDoc struct {
 	ID      string `bson:"_id"`
 	Data    string `bson:"data"`
 	// Relationship fields for indexed queries:
-	SpecID      string `bson:"spec_id,omitempty"`
-	OperationID string `bson:"operation_id,omitempty"`
-	ScriptID    string `bson:"script_id,omitempty"`
-	Enabled     *bool  `bson:"enabled,omitempty"`
+	SpecID           string `bson:"spec_id,omitempty"`
+	OperationID      string `bson:"operation_id,omitempty"`
+	ScriptID         string `bson:"script_id,omitempty"`
+	ResponseConfigID string `bson:"response_config_id,omitempty"`
+	Enabled          *bool  `bson:"enabled,omitempty"`
 	// Source holds Starlark script source separately because Script.Source
 	// is excluded from JSON serialisation (json:"-") to keep the file-storage
 	// companion-file pattern intact. MongoDB stores it as a top-level field.
@@ -127,6 +128,8 @@ func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 		{colResponses, "operation_id"},
 		{colBindings, "operation_id"},
 		{colBindings, "script_id"},
+		{colBindings, "spec_id"},
+		{colBindings, "response_config_id"},
 	}
 	for _, idx := range indexes {
 		model := mongo.IndexModel{
@@ -745,10 +748,11 @@ func (m *MongoStorage) GetResponseScriptBindings(responseConfigID string) ([]*mo
 }
 
 func (m *MongoStorage) CreateScriptBinding(binding *models.ScriptBinding) error {
-	doc, err := marshalDoc(binding.ID, "", binding.OperationID, binding.ScriptID, binding)
+	doc, err := marshalDoc(binding.ID, binding.SpecID, binding.OperationID, binding.ScriptID, binding)
 	if err != nil {
 		return err
 	}
+	doc.ResponseConfigID = binding.ResponseConfigID
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err = m.col(colBindings).InsertOne(ctx, doc)
@@ -756,10 +760,11 @@ func (m *MongoStorage) CreateScriptBinding(binding *models.ScriptBinding) error 
 }
 
 func (m *MongoStorage) UpdateScriptBinding(binding *models.ScriptBinding) error {
-	doc, err := marshalDoc(binding.ID, "", binding.OperationID, binding.ScriptID, binding)
+	doc, err := marshalDoc(binding.ID, binding.SpecID, binding.OperationID, binding.ScriptID, binding)
 	if err != nil {
 		return err
 	}
+	doc.ResponseConfigID = binding.ResponseConfigID
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	opts := options.Replace().SetUpsert(true)

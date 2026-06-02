@@ -1,21 +1,45 @@
-# go-virtual — local development / quick-start
+# go-virtual — full local stack (app + MongoDB)
 #
-# Builds the image from source using Dockerfile.local (native platform,
-# no buildx required) and runs a single instance using file-based storage
-# and in-memory sessions. Spec data is persisted to ./data on the host.
+# Builds go-virtual from source (Dockerfile.dev) and starts it alongside a
+# single-node MongoDB replica set. MongoDB port is exposed so you can also
+# connect from a locally-running go instance during development.
 #
 # Usage:
-#   docker-compose up --build        # build from source and start
-#   docker-compose up -d --build     # detached
-#   docker-compose down              # stop (./data is preserved)
+#   docker-compose up --build       # build from source and start both services
+#   docker-compose up -d --build    # same, detached
+#   docker-compose up -d            # start with cached images
+#   docker-compose down             # stop (data volume preserved)
+#   docker-compose down -v          # stop and wipe all data
+#   docker-compose logs -f          # follow logs from both services
 #
 # Or via Makefile:
-#   make compose-up-build            # build and start
-#   make compose-up                  # start with cached image
-#   make compose-down                # stop
-#   make compose-logs                # follow logs
+#   make compose-up-build           # build and start
+#   make compose-up                 # start with cached image
+#   make compose-down               # stop
+#   make compose-logs               # follow logs
+#
+# Connect to MongoDB directly from local source:
+#   URI: mongodb://localhost:27017/?replicaSet=rs0
 
 services:
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: go-virtual
+    volumes:
+      - mongo-data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }\""]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
 
   go-virtual:
     build:
@@ -24,24 +48,22 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # File storage — data is written to the mounted volume
-      GOVIRTUAL_STORAGE_TYPE: file
-      GOVIRTUAL_STORAGE_PATH: /home/nonroot/data
-
-      # In-memory sessions (no Redis needed for local dev)
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: "mongodb://mongo:27017/?replicaSet=rs0"
+      GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
       GOVIRTUAL_SESSION_STORETYPE: memory
-
-      # Human-readable logs for local dev
       GOVIRTUAL_LOGGING_LEVEL: info
       GOVIRTUAL_LOGGING_FORMAT: text
-    volumes:
-      # Persist spec/response data between restarts
-      - ./data:/home/nonroot/data
+    depends_on:
+      mongo:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/go-virtual", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 10s
+      start_period: 30s
     restart: unless-stopped
 
+volumes:
+  mongo-data:
