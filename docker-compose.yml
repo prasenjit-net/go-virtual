@@ -1,20 +1,25 @@
-# go-virtual — local MongoDB for development / testing
+# go-virtual — full local stack (app + MongoDB)
 #
-# Starts a single-node MongoDB replica set so change streams work.
-# The replica set is required for go-virtual's sync watcher in mongo mode.
+# Builds go-virtual from source (Dockerfile.dev) and starts it alongside a
+# single-node MongoDB replica set. MongoDB port is exposed so you can also
+# connect from a locally-running go instance during development.
 #
 # Usage:
-#   docker-compose up -d        # start MongoDB in background
-#   docker-compose down         # stop (data volume is preserved)
-#   docker-compose down -v      # stop and wipe data
+#   docker-compose up --build       # build from source and start both services
+#   docker-compose up -d --build    # same, detached
+#   docker-compose up -d            # start with cached images
+#   docker-compose down             # stop (data volume preserved)
+#   docker-compose down -v          # stop and wipe all data
+#   docker-compose logs -f          # follow logs from both services
 #
-# Connect from local source:
+# Or via Makefile:
+#   make compose-up-build           # build and start
+#   make compose-up                 # start with cached image
+#   make compose-down               # stop
+#   make compose-logs               # follow logs
+#
+# Connect to MongoDB directly from local source:
 #   URI: mongodb://localhost:27017/?replicaSet=rs0
-#
-# Run go-virtual against it:
-#   GOVIRTUAL_STORAGE_TYPE=mongo \
-#   GOVIRTUAL_STORAGE_MONGO_URI="mongodb://localhost:27017/?replicaSet=rs0" \
-#   go run ./cmd/server serve
 
 services:
 
@@ -37,6 +42,30 @@ services:
       timeout: 10s
       retries: 10
       start_period: 10s
+    restart: unless-stopped
+
+  go-virtual:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8080:8080"
+    environment:
+      GOVIRTUAL_STORAGE_TYPE: mongo
+      GOVIRTUAL_STORAGE_MONGO_URI: "mongodb://mongo:27017/?replicaSet=rs0"
+      GOVIRTUAL_STORAGE_MONGO_DATABASE: go-virtual
+      GOVIRTUAL_SESSION_STORETYPE: memory
+      GOVIRTUAL_LOGGING_LEVEL: info
+      GOVIRTUAL_LOGGING_FORMAT: text
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["/go-virtual", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
 
 volumes:
