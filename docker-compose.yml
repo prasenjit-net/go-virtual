@@ -47,6 +47,7 @@ services:
       dockerfile: Dockerfile.dev
     ports:
       - "8080:8080"
+    command: ["serve", "--setup"]
     environment:
       GOVIRTUAL_STORAGE_TYPE: mongo
       GOVIRTUAL_STORAGE_MONGO_URI: "mongodb://mongo:27017/?replicaSet=rs0"

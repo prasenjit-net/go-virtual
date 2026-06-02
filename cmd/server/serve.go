@@ -53,6 +53,7 @@ var (
 	portFlag     int
 	tlsFlag      bool
 	headlessFlag bool
+	setupFlag    bool
 )
 
 func init() {
@@ -60,6 +61,7 @@ func init() {
 	serveCmd.Flags().IntVarP(&portFlag, "port", "p", 0, "Override server port")
 	serveCmd.Flags().BoolVar(&tlsFlag, "tls", false, "Enable TLS (overrides config)")
 	serveCmd.Flags().BoolVar(&headlessFlag, "headless", false, "Headless mode: disable admin API and UI, serve proxy only")
+	serveCmd.Flags().BoolVar(&setupFlag, "setup", false, "Run one-time setup (e.g. create MongoDB indexes) before starting the server")
 
 	// Bind flags to viper
 	viper.BindPFlag("server.port", serveCmd.Flags().Lookup("port"))
@@ -159,6 +161,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 		store, err = newMongoStorageBackend(mongoCfg)
 		if err != nil {
 			return fmt.Errorf("failed to initialize mongo storage: %w", err)
+		}
+		if setupFlag {
+			runMongoSetup(store, serverLog)
 		}
 	case config.StorageTypeFile:
 		store, err = storage.NewFileStorage(storagePath)
