@@ -48,6 +48,10 @@ type genericDoc struct {
 	OperationID string `bson:"operation_id,omitempty"`
 	ScriptID    string `bson:"script_id,omitempty"`
 	Enabled     *bool  `bson:"enabled,omitempty"`
+	// Source holds Starlark script source separately because Script.Source
+	// is excluded from JSON serialisation (json:"-") to keep the file-storage
+	// companion-file pattern intact. MongoDB stores it as a top-level field.
+	Source string `bson:"source,omitempty"`
 }
 
 // NewMongoStorage connects to MongoDB using the supplied config and returns a
@@ -526,6 +530,7 @@ func (m *MongoStorage) CreateScript(script *models.Script) error {
 	if err != nil {
 		return err
 	}
+	doc.Source = script.Source
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err = m.col(colScripts).InsertOne(ctx, doc)
@@ -547,6 +552,7 @@ func (m *MongoStorage) GetScript(id string) (*models.Script, error) {
 	if err := unmarshalDoc(&doc, &script); err != nil {
 		return nil, err
 	}
+	script.Source = doc.Source
 	return &script, nil
 }
 
@@ -568,6 +574,7 @@ func (m *MongoStorage) GetAllScripts() ([]*models.Script, error) {
 		if err := unmarshalDoc(&doc, &script); err != nil {
 			return nil, err
 		}
+		script.Source = doc.Source
 		scripts = append(scripts, &script)
 	}
 	return scripts, cursor.Err()
@@ -578,6 +585,7 @@ func (m *MongoStorage) UpdateScript(script *models.Script) error {
 	if err != nil {
 		return err
 	}
+	doc.Source = script.Source
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	opts := options.Replace().SetUpsert(true)
