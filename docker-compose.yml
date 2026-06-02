@@ -34,10 +34,7 @@ services:
       - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
     command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
     healthcheck:
-      test: |
-        mongosh --quiet --eval "
-          try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }
-        "
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"try { rs.status().ok } catch(e) { rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]}).ok }\""]
       interval: 5s
       timeout: 10s
       retries: 10
@@ -61,7 +58,7 @@ services:
       mongo:
         condition: service_healthy
     healthcheck:
-      test: ["/go-virtual", "healthcheck"]
+      test: ["CMD", "/go-virtual", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 6
