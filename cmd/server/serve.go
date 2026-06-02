@@ -174,6 +174,10 @@ func runServe(cmd *cobra.Command, args []string) error {
 		store = storage.NewMemoryStorage()
 	}
 
+	if setupFlag {
+		seedDefaultAIScenarios(store, serverLog)
+	}
+
 	// Initialize statistics collector
 	statsCollector := stats.NewCollector()
 
