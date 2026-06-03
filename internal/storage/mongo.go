@@ -114,10 +114,11 @@ func (m *MongoStorage) col(name string) *mongo.Collection {
 	return m.db.Collection(m.prefix + name)
 }
 
-// EnsureIndexes creates the required indexes on all collections. It is
-// intended to be called explicitly (e.g. during `go-virtual init`) by an
-// operator with sufficient privileges. The server itself does not call this
-// at startup so a restricted runtime user is not blocked.
+// EnsureIndexes creates the required indexes on all collections and runs any
+// pending data migrations. It is intended to be called explicitly (e.g. during
+// `go-virtual init`) by an operator with sufficient privileges. The server
+// itself does not call this at startup so a restricted runtime user is not
+// blocked.
 func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 	type indexSpec struct {
 		col   string
@@ -139,7 +140,70 @@ func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 			return fmt.Errorf("create index %s.%s: %w", idx.col, idx.field, err)
 		}
 	}
+	if err := m.migrateBindingRelationshipFields(ctx); err != nil {
+		return fmt.Errorf("migrate binding fields: %w", err)
+	}
 	return nil
+}
+
+// migrateBindingRelationshipFields backfills spec_id, operation_id, and
+// response_config_id on binding documents that were created before those
+// fields were promoted to top-level BSON fields. It scans every document in
+// the bindings collection and updates any document whose relationship field is
+// missing by extracting the value from the JSON data blob.
+func (m *MongoStorage) migrateBindingRelationshipFields(ctx context.Context) error {
+	cursor, err := m.col(colBindings).Find(ctx, bson.M{})
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+
+	type bindingRelFields struct {
+		SpecID           string `json:"specId,omitempty"`
+		OperationID      string `json:"operationId,omitempty"`
+		ResponseConfigID string `json:"responseConfigId,omitempty"`
+	}
+
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return err
+		}
+
+		// Only update documents that are missing one of the relationship fields.
+		if doc.SpecID != "" || doc.OperationID != "" || doc.ResponseConfigID != "" {
+			continue
+		}
+
+		var rel bindingRelFields
+		if err := json.Unmarshal([]byte(doc.Data), &rel); err != nil {
+			continue // skip malformed documents
+		}
+
+		if rel.SpecID == "" && rel.OperationID == "" && rel.ResponseConfigID == "" {
+			continue // nothing to backfill
+		}
+
+		update := bson.M{}
+		if rel.SpecID != "" {
+			update["spec_id"] = rel.SpecID
+		}
+		if rel.OperationID != "" {
+			update["operation_id"] = rel.OperationID
+		}
+		if rel.ResponseConfigID != "" {
+			update["response_config_id"] = rel.ResponseConfigID
+		}
+
+		if _, err := m.col(colBindings).UpdateOne(
+			ctx,
+			bson.M{"_id": doc.ID},
+			bson.M{"$set": update},
+		); err != nil {
+			return fmt.Errorf("backfill binding %s: %w", doc.ID, err)
+		}
+	}
+	return cursor.Err()
 }
 
 // --- helpers ----------------------------------------------------------------

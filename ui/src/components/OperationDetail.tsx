@@ -155,7 +155,7 @@ export default function OperationDetail() {
         setSigEditMode(true)
     }
 
-    const manualResponses = (responses || []).filter((config) => !config.recorded)
+    const manualResponses = (responses || []).filter((config) => !config.recorded).sort((a, b) => a.priority - b.priority)
     const recordedResponses = (responses || []).filter((config) => config.recorded)
 
     if (opLoading || respLoading || specLoading) {

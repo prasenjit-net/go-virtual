@@ -461,7 +461,7 @@ func TestBuildScriptSystemPrompt_Basic(t *testing.T) {
 		"store.set",
 		"log(",
 		"OUTPUT FORMAT",
-		"STARLARK LANGUAGE CONSTRAINTS",
+		"STARLARK LANGUAGE — WHAT IS AVAILABLE",
 		"ENTRY POINT",
 	} {
 		if !strings.Contains(prompt, want) {
