@@ -86,7 +86,7 @@ function ResponseScriptsSection({ operationId, configId }: { operationId: string
 
 interface RowProps {
     config: ResponseConfig
-    index: number
+    index?: number
     expandedConfig: string | null
     onToggleExpand: (id: string) => void
     onToggle: (id: string, enabled: boolean) => void
@@ -108,7 +108,7 @@ interface RowProps {
 
 function ResponseRow({
     config,
-    index,
+    index: _index,
     expandedConfig,
     onToggleExpand,
     onToggle,
@@ -145,7 +145,7 @@ function ResponseRow({
                         <GripVertical className="w-5 h-5" />
                     </button>
                     <span className="w-8 h-8 flex items-center justify-center bg-gray-100 dark:bg-slate-800 rounded-full text-sm font-medium text-gray-600 dark:text-slate-300 mr-3">
-                        {index + 1}
+                        {config.priority}
                     </span>
                     <div>
                         <div className="flex items-center">
@@ -401,14 +401,14 @@ export default function ResponseConfigList({
             const oldIndex = prev.findIndex((c) => c.id === active.id)
             const newIndex = prev.findIndex((c) => c.id === over.id)
             const reordered = arrayMove(prev, oldIndex, newIndex)
-            // Persist new priorities (index * 10 leaves gaps for future insertions)
-            reordered.forEach((c, i) => {
+            // Assign new priorities and update local state immediately for snappy display
+            return reordered.map((c, i) => {
                 const newPriority = i * 10
                 if (c.priority !== newPriority) {
                     priorityMutation.mutate({ id: c.id, priority: newPriority })
                 }
+                return { ...c, priority: newPriority }
             })
-            return reordered
         })
     }
 
