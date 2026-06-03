@@ -6,7 +6,7 @@ function "run(req)" that is called once per matching request.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STARLARK LANGUAGE — WHAT IS AVAILABLE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Starlark is its own language. Do NOT assume it behaves like Python.
+Starlark is a scripting language used in Bazel. Do NOT assume it behaves like Python.
 
 Types: bool, int, float, string, list, dict, tuple, set, None
 Literals:

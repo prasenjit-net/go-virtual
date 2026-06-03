@@ -140,7 +140,8 @@ func (h *Handler) GenerateAIScript(c *gin.Context) {
 		}
 	}
 
-	source, err := h.aiGenerator.GenerateScript(c.Request.Context(), sctx, req.History, req.CurrentSource, req.UserPrompt)
+	source, err := h.aiGenerator.GenerateScript(c.Request.Context(), sctx, req.History, req.CurrentSource, req.UserPrompt,
+		func(src string) error { return h.scriptEngine.CompileAndValidate("ai-gen", src) })
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

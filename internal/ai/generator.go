@@ -260,35 +260,83 @@ type ScriptContext struct {
 // nil for the first call). currentSource is the script that is currently in the
 // editor (empty on the first call); the model uses it as a starting point for
 // modifications. userPrompt describes what the script should do.
-func (g *Generator) GenerateScript(ctx context.Context, sctx ScriptContext, priorMessages []ChatMessage, currentSource, userPrompt string) (string, error) {
+//
+// An optional validator func may be passed as the last argument. When provided,
+// each generated script is validated and, on failure, the error is fed back to
+// the model as a follow-up message so it can self-correct. Up to maxScriptRetries
+// attempts are made before returning the last result regardless.
+func (g *Generator) GenerateScript(ctx context.Context, sctx ScriptContext, priorMessages []ChatMessage, currentSource, userPrompt string, validator ...func(string) error) (string, error) {
 	if !g.IsConfigured() {
 		return "", fmt.Errorf("%s", g.MissingConfigMessage())
+	}
+
+	var validate func(string) error
+	if len(validator) > 0 {
+		validate = validator[0]
 	}
 
 	systemPrompt := buildScriptSystemPrompt(sctx)
 	userMsg := buildScriptUserMessage(sctx, currentSource, userPrompt)
 	messages := append([]ChatMessage{}, priorMessages...)
 	messages = append(messages, ChatMessage{Role: "user", Content: userMsg})
-	content, err := g.provider.Complete(ctx, providerRequest{
-		SystemPrompt: systemPrompt,
-		Messages:     messages,
-		Temperature:  0.5,
-	})
-	if err != nil {
-		return "", err
+
+	const maxScriptRetries = 3
+	for attempt := 1; attempt <= maxScriptRetries; attempt++ {
+		content, err := g.provider.Complete(ctx, providerRequest{
+			SystemPrompt: systemPrompt,
+			Messages:     messages,
+			Temperature:  0.5,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		// The model wraps the script in {"source": "..."} per the system prompt.
+		var wrapper struct {
+			Source string `json:"source"`
+		}
+		if err := json.Unmarshal([]byte(content), &wrapper); err != nil {
+			return "", fmt.Errorf("model returned invalid JSON: %w — raw: %s", err, content)
+		}
+		if strings.TrimSpace(wrapper.Source) == "" {
+			return "", fmt.Errorf("model returned an empty script")
+		}
+
+		source := wrapper.Source
+
+		// If no validator or this is the last attempt, return what we have.
+		if validate == nil || attempt == maxScriptRetries {
+			return source, nil
+		}
+
+		// Validate and retry on failure.
+		if validErr := validate(source); validErr == nil {
+			return source, nil
+		} else {
+			// Append the AI's response and the correction request to the conversation.
+			messages = append(messages,
+				ChatMessage{Role: "assistant", Content: content},
+				ChatMessage{Role: "user", Content: buildScriptCorrectionMessage(validErr.Error())},
+			)
+		}
 	}
 
-	// The model wraps the script in {"source": "..."} per the system prompt.
-	var wrapper struct {
-		Source string `json:"source"`
-	}
-	if err := json.Unmarshal([]byte(content), &wrapper); err != nil {
-		return "", fmt.Errorf("model returned invalid JSON: %w — raw: %s", err, content)
-	}
-	if strings.TrimSpace(wrapper.Source) == "" {
-		return "", fmt.Errorf("model returned an empty script")
-	}
-	return wrapper.Source, nil
+	// Unreachable, but satisfies the compiler.
+	return "", fmt.Errorf("script generation failed after %d attempts", maxScriptRetries)
+}
+
+// buildScriptCorrectionMessage constructs the follow-up user message sent when
+// a generated script fails validation, giving the model the concrete error and
+// a reminder of the most common Starlark pitfalls.
+func buildScriptCorrectionMessage(compileError string) string {
+	return "Your script has a Starlark compile error:\n\n" + compileError + "\n\n" +
+		"Fix the error and return corrected Starlark source. Reminders:\n" +
+		"- No try/except, no raise — guard inputs defensively instead\n" +
+		"- No import statements — use the documented builtins\n" +
+		"- Booleans are True/False (capital), null is None (capital)\n" +
+		"- No f-strings — use string concatenation or .format()\n" +
+		"- No type annotations in function signatures\n" +
+		"- req is not a dict — use req.path(), req.query(), req.body() as functions"
 }
 
 // buildScriptSystemPrompt builds the system prompt for script generation.
