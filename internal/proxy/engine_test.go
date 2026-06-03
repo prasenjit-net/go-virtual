@@ -1221,6 +1221,114 @@ func TestServeHTTP_PrefersConfiguredResponsesBeforeRecorded(t *testing.T) {
 	}
 }
 
+// TestServeHTTP_ManualResponsePriorityOrdering verifies that when multiple
+// manual (non-recorded) responses match a request, the one with the lowest
+// priority number (highest priority) is selected.
+func TestServeHTTP_ManualResponsePriorityOrdering(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:      "spec-manual-priority",
+		Name:    "Priority API",
+		Enabled: true,
+	}
+	store.CreateSpec(spec)
+	store.CreateOperation(&models.Operation{
+		ID:       "op-manual-priority",
+		SpecID:   spec.ID,
+		Method:   "GET",
+		Path:     "/items",
+		FullPath: "/items",
+	})
+
+	// Lower priority number = higher priority; both configs always match.
+	store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "manual-low-priority",
+		OperationID: "op-manual-priority",
+		Name:        "LowPriority",
+		StatusCode:  200,
+		Body:        `{"priority":"low"}`,
+		Priority:    10,
+		Enabled:     true,
+		Origin:      models.ResponseOriginManual,
+	})
+	store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "manual-high-priority",
+		OperationID: "op-manual-priority",
+		Name:        "HighPriority",
+		StatusCode:  200,
+		Body:        `{"priority":"high"}`,
+		Priority:    5,
+		Enabled:     true,
+		Origin:      models.ResponseOriginManual,
+	})
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/items", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if body := w.Body.String(); !strings.Contains(body, `"priority":"high"`) {
+		t.Fatalf("expected high-priority (lower number) manual response to win, got %q", body)
+	}
+}
+
+// TestServeHTTP_ManualResponsePriorityFallthrough verifies that when the
+// highest-priority manual response's conditions do not match, the engine
+// falls through to the next lower-priority manual response that does match.
+func TestServeHTTP_ManualResponsePriorityFallthrough(t *testing.T) {
+	engine, store := setupTestEngine(t)
+
+	spec := &models.Spec{
+		ID:      "spec-manual-fallthrough",
+		Name:    "Fallthrough API",
+		Enabled: true,
+	}
+	store.CreateSpec(spec)
+	store.CreateOperation(&models.Operation{
+		ID:       "op-manual-fallthrough",
+		SpecID:   spec.ID,
+		Method:   "GET",
+		Path:     "/items",
+		FullPath: "/items",
+	})
+
+	// Priority=1 config has a header condition that will NOT match the request.
+	store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "manual-priority-1",
+		OperationID: "op-manual-fallthrough",
+		Name:        "Priority1",
+		StatusCode:  200,
+		Body:        `{"priority":"first"}`,
+		Priority:    1,
+		Enabled:     true,
+		Origin:      models.ResponseOriginManual,
+		Conditions: []models.Condition{
+			{Source: models.SourceHeader, Key: "X-Match", Operator: models.OpEquals, Value: "yes"},
+		},
+	})
+	// Priority=2 config has no conditions and always matches.
+	store.CreateResponseConfig(&models.ResponseConfig{
+		ID:          "manual-priority-2",
+		OperationID: "op-manual-fallthrough",
+		Name:        "Priority2",
+		StatusCode:  200,
+		Body:        `{"priority":"second"}`,
+		Priority:    2,
+		Enabled:     true,
+		Origin:      models.ResponseOriginManual,
+	})
+	engine.ReloadRoutes()
+
+	req := httptest.NewRequest("GET", "/items", nil)
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, req)
+
+	if body := w.Body.String(); !strings.Contains(body, `"priority":"second"`) {
+		t.Fatalf("expected fallthrough to second priority response, got %q", body)
+	}
+}
+
 func TestServeHTTP_PrefersRecordedResponsesBeforeProxyFallback(t *testing.T) {
 	hitBackend := false
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
