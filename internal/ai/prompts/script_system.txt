@@ -4,22 +4,108 @@ go-virtual executes Starlark scripts during request handling. Each script must d
 function "run(req)" that is called once per matching request.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STARLARK LANGUAGE CONSTRAINTS
+STARLARK LANGUAGE — WHAT IS AVAILABLE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Starlark is a Python-like deterministic scripting language.
-- NO import statements — there is no standard library.
-- NO classes (no "class" keyword).
-- NO global mutable state (use "store" builtin for persistence).
-- Supported types: bool, int, float, string, list, dict, None.
-- Boolean literals are True and False (CAPITAL first letter) — never true/false.
-- None is None (capital N) — never null, nil, or none.
-- String methods: .upper(), .lower(), .strip(), .split(), .startswith(), .endswith(), .replace(), .format()
-- Math: standard +, -, *, /, //, %, ** operators; abs(), min(), max(), len()
-- Dict methods: .get(key, default), .keys(), .values(), .items(), .update(), .pop()
-- List methods: .append(), .extend(), .insert(), .remove(), .pop(), .index(), .count(), .sort(), .reverse()
-- Type conversion: str(), int(), float(), bool()
-- The "in" operator works for strings, lists, and dicts.
-- Conditionals and loops are standard Python syntax.
+Starlark is its own language. Do NOT assume it behaves like Python.
+
+Types: bool, int, float, string, list, dict, tuple, set, None
+Literals:
+  - Booleans:  True and False  (capital T/F) — NEVER true/false
+  - Null:      None            (capital N)   — NEVER null, nil, none, undefined
+  - Strings:   "hello"  or  'hello'  — NO f-strings (f"..." does not exist)
+  - String concatenation: "hello " + name  or  "hello {}".format(name)
+
+Control flow: if/elif/else, for, while, break, continue, pass — all work as expected
+Functions: def fn(a, b, default=0): ...  — keyword arguments and defaults are supported
+Comprehensions: [x for x in lst], {k: v for k, v in d.items()}, {x for x in lst}
+Multiple assignment: a, b = 1, 2  — works
+Lambda: lambda x: x + 1  — works for simple expressions only
+
+Available standard functions (no import needed):
+  len, str, int, float, bool, type, repr
+  range(n) / range(start, stop, step)
+  enumerate(lst)         → yields (index, value) pairs
+  zip(a, b)              → yields paired tuples
+  sorted(lst, key=fn, reverse=True)
+  reversed(lst)
+  min, max, abs
+  list(), dict(), tuple(), set()
+  chr(n), ord(c)         → character ↔ integer
+  int("ff", 16)          → base conversion
+  fail("message")        → raises a hard error from the script (use for truly unrecoverable input)
+
+String methods: .upper(), .lower(), .strip(), .split(sep), .join(lst), .startswith(),
+                .endswith(), .replace(), .format(), .find(), .count(), .index()
+Dict methods:   .get(key, default), .keys(), .values(), .items(), .update(d), .pop(key)
+List methods:   .append(), .extend(), .insert(), .remove(), .pop(), .index(), .count(),
+                .sort(), .reverse()
+Set methods:    .add(), .remove(), .discard(), .union(), .intersection(), .difference()
+                NOTE: sets are NOT JSON-serialisable — convert to list before returning:
+                return {"tags": list(my_set)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+STARLARK LANGUAGE — WHAT IS NOT AVAILABLE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+These are features that DO NOT exist in Starlark. Using them produces a compile or runtime error.
+
+  ✗  try / except / finally     → Starlark has no exception handling.
+                                   Guard inputs defensively instead, or use fail() for hard errors.
+                                   WRONG:  try:
+                                               val = int(raw)
+                                           except ValueError:
+                                               val = 0
+                                   RIGHT:  val = int(raw) if regex_match(r"^\d+$", raw) else 0
+
+  ✗  raise                      → Use fail("message") for hard errors, or return {"error": "..."}
+                                   for soft errors that the response template can handle.
+
+  ✗  import                     → No module system. Use the built-in functions documented below.
+                                   WRONG:  import json
+                                   RIGHT:  json_parse(str) / json_stringify(value)
+
+  ✗  class                      → No class definitions. Use dicts to represent objects.
+
+  ✗  f-strings                  → f"hello {name}" does not exist.
+                                   RIGHT:  "hello " + name
+                                   RIGHT:  "hello {}".format(name)
+
+  ✗  with statement             → No context managers.
+
+  ✗  yield / generators         → No generator functions or generator expressions.
+
+  ✗  @decorator                 → No decorator syntax.
+
+  ✗  global / nonlocal          → No mutable global state. Use "store" for persistence.
+                                   Nested functions can READ outer variables but cannot
+                                   ASSIGN to them:
+                                   WRONG:  total = 0
+                                           def add(x): total += x   # fails
+                                   RIGHT:  total = sum([process(x) for x in items])
+
+  ✗  print(...)                 → print() is available but writes to stdout, not the trace log.
+                                   ALWAYS use log(...) to emit trace-visible messages.
+
+  ✗  str.isdigit() / str.isalpha() / str.isnumeric()
+                                 → These string methods do not exist in Starlark.
+                                   RIGHT:  regex_match(r"^\d+$", value)   — check for digits
+                                   RIGHT:  validate.is_integer(value)     — or use validate module
+
+  ✗  dict.setdefault(k, v)      → Does not exist.
+                                   RIGHT:  d[k] = d.get(k, v)
+                                   RIGHT:  if k not in d: d[k] = v
+
+  ✗  x is y  (non-None)        → The "is" operator is unreliable for object identity.
+                                   ONLY use:  x == None  or  x != None
+                                   NEVER use: x is y  for comparing values or dicts
+
+  ✗  list slice assignment      → lst[0:2] = [...]  does not work.
+
+  ✗  type annotations           → def run(req: dict) -> dict:  is invalid syntax.
+                                   RIGHT:  def run(req):
+
+  ✗  walrus operator            → x := expr  does not exist.
+
+  ✗  semicolons                 → Statement separators are newlines only.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENTRY POINT
@@ -92,6 +178,7 @@ The following builtins are always available (NO import needed):
   base64_encode(str)              → string   Standard base64 encoding
   base64_decode(str)              → string   Standard base64 decoding
   hash("sha256", str)             → string   Hex digest. Algos: md5, sha1, sha256, sha512
+  NOTE: hash() here takes (algo, string) — it is NOT the built-in hash(obj) function.
 
 ── JSON ─────────────────────────────────
   json_parse(str)                 → value    Parse JSON string into Starlark dict/list
@@ -111,8 +198,8 @@ DATETIME MODULE — datetime
 datetime is a built-in module (no import). Use datetime.date, datetime.datetime, and
 datetime.timedelta for date arithmetic.
 
-IMPORTANT: Use Go time layout strings for strftime (e.g. "2006-01-02", "15:04:05").
-           This is different from Python's strftime — use Go layout tokens, not %d/%m/%Y.
+IMPORTANT: strftime uses Go time layout strings (e.g. "2006-01-02", "15:04:05").
+           Use Go layout tokens — NOT %d/%m/%Y style format codes.
 
 ── datetime.date ────────────────────────
   datetime.date(year, month, day)         → date      Construct a date
@@ -151,7 +238,7 @@ IMPORTANT: Use Go time layout strings for strftime (e.g. "2006-01-02", "15:04:05
   timedelta + timedelta / timedelta - timedelta → timedelta
   timedelta == timedelta / timedelta < timedelta → bool
 
-Example — date arithmetic (user's requested pattern):
+Example — date arithmetic:
   def run(req):
       today = datetime.date.today()
       three_days_ago = today - datetime.timedelta(days=3)
@@ -231,17 +318,19 @@ requests within the same session (identified by X-Virtual-Session-Id header).
   store.keys()                → list of all keys in this session
 
 Example — simple counter:
-  count = store.get("visit_count", 0)
-  store.set("visit_count", count + 1)
-  return {"visits": count + 1}
+  def run(req):
+      count = store.get("visit_count", 0)
+      store.set("visit_count", count + 1)
+      return {"visits": count + 1}
 
 Example — accumulate list:
-  items = store.get("cart", [])
-  body = req["body"]
-  if body != None:
-      items.append(body.get("item"))
-      store.set("cart", items)
-  return {"cart": items}
+  def run(req):
+      items = store.get("cart", [])
+      body = req.body()
+      if body != None:
+          items.append(body.get("item"))
+          store.set("cart", items)
+      return {"cart": items}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COLLECTIONS — store.collection("name")
@@ -362,6 +451,19 @@ Example 7 — CRUD with a named collection:
           return {"orders": col.findAll({"status": status_filter})}
       return {"orders": col.findAll()}
 
+Example 8 — enumerate and zip:
+  def run(req):
+      tags = req.body("tags", [])
+      indexed = {str(i): tag for i, tag in enumerate(tags)}
+      return {"count": len(tags), "indexed": indexed}
+
+Example 9 — defensive input handling (no try/except):
+  def run(req):
+      raw = req.query("count", "1")
+      count = int(raw) if regex_match(r"^\d+$", raw) else 1
+      items = [{"id": uuid(), "n": i} for i in range(count)]
+      return {"items": items}
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OUTPUT FORMAT
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -371,7 +473,12 @@ Do NOT include any explanation, markdown fences, or extra fields.
 CRITICAL STARLARK SYNTAX RULES — violating these produces an invalid script:
   - Boolean literals: True and False  (capital T/F)  — NEVER true/false
   - Null literal:     None            (capital N)     — NEVER null, nil, undefined
-  - No semicolons, no type annotations, no walrus operator (:=)
+  - No f-strings, no semicolons, no type annotations, no walrus operator (:=)
+  - No try/except, no raise, no import, no class, no with, no yield, no @decorator
+  - No str.isdigit()/isalpha() — use regex_match() or validate module instead
+  - No dict.setdefault() — use d[k] = d.get(k, v) instead
+  - No print() — use log() instead
+  - No req["body"] / req["path"] — use req.body() / req.path() function calls
 
 COMMENT BLOCK RULES (mandatory):
 Every script MUST start with a comment block that explains the CURRENT version's logic.
