@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -561,7 +562,13 @@ func (m *MongoStorage) GetResponseConfigsByOperation(opID string) ([]*models.Res
 		}
 		configs = append(configs, &rc)
 	}
-	return configs, cursor.Err()
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i].Priority < configs[j].Priority
+	})
+	return configs, nil
 }
 
 func (m *MongoStorage) UpdateResponseConfig(cfg *models.ResponseConfig) error {

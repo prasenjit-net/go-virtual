@@ -995,6 +995,9 @@ type modeSelection struct {
 }
 
 func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, reqData *condition.RequestData, enabledTags map[string]struct{}, recorded bool) *models.ResponseConfig {
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i].Priority < configs[j].Priority
+	})
 	for _, cfg := range configs {
 		if !cfg.Enabled || cfg.Recorded != recorded {
 			continue
