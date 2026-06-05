@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
+import PWAInstallBanner from './components/PWAInstallBanner'
 import Dashboard from './components/Dashboard'
 import SpecList from './components/SpecManager/SpecList'
 import SpecDetail from './components/SpecManager/SpecDetail'
@@ -17,6 +18,8 @@ import ArchiveManager from './components/ArchiveManager/ArchiveManager'
 
 function App() {
     return (
+        <>
+        <PWAInstallBanner />
         <Routes>
             <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
@@ -40,6 +43,7 @@ function App() {
                 <Route path="archives" element={<ArchiveManager />} />
             </Route>
         </Routes>
+        </>
     )
 }
 
