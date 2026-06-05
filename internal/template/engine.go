@@ -36,6 +36,8 @@ type Context struct {
 	RNG          *rand.Rand
 	// ScriptOutput holds results from script bindings, keyed by outputKey.
 	ScriptOutput map[string]any
+	// CollectionOutput holds results from collection mappings, keyed by outputKey.
+	CollectionOutput map[string]any
 
 	// New optional fields — all zero-value safe.
 	Method    string // HTTP method, e.g. "GET"
@@ -70,6 +72,9 @@ type TemplateData struct {
 	// Script holds script binding output, keyed by outputKey.
 	// Access as {{.Script.pricing.total}} in templates.
 	Script map[string]any
+	// Collection holds collection mapping output, keyed by outputKey.
+	// Access as {{.Collection.user.name}} in templates.
+	Collection map[string]any
 }
 
 // bodyTemplateData is a legacy alias kept for internal backward compat.
@@ -145,6 +150,7 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (TemplateData, texttmpl.
 	headers := normalizeFirstValues(ctx.Headers)
 
 	scriptOutput := ctx.ScriptOutput
+	collectionOutput := ctx.CollectionOutput
 
 	// Parse JSON body into a map for native dot-traversal.
 	var parsedBody map[string]any
@@ -153,15 +159,16 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (TemplateData, texttmpl.
 	}
 
 	data := TemplateData{
-		Path:      ctx.PathParams,
-		Query:     query,
-		Header:    headers,
-		Body:      parsedBody,
-		RawBody:   ctx.Body,
-		Script:    scriptOutput,
-		Method:    ctx.Method,
-		URL:       ctx.RequestURL,
-		RequestID: ctx.RequestID,
+		Path:       ctx.PathParams,
+		Query:      query,
+		Header:     headers,
+		Body:       parsedBody,
+		RawBody:    ctx.Body,
+		Script:     scriptOutput,
+		Collection: collectionOutput,
+		Method:     ctx.Method,
+		URL:        ctx.RequestURL,
+		RequestID:  ctx.RequestID,
 	}
 
 	funcMap := texttmpl.FuncMap{

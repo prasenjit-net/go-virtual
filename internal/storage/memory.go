@@ -12,26 +12,28 @@ import (
 
 // MemoryStorage implements Storage interface with in-memory storage
 type MemoryStorage struct {
-	mu              sync.RWMutex
-	specs           map[string]*models.Spec
-	operations      map[string]*models.Operation
-	responseConfigs map[string]*models.ResponseConfig
-	tags            map[string]*models.Tag
-	scripts         map[string]*models.Script
-	aiScenarios     map[string]*models.AIScenario
-	scriptBindings  map[string]*models.ScriptBinding
+	mu                  sync.RWMutex
+	specs               map[string]*models.Spec
+	operations          map[string]*models.Operation
+	responseConfigs     map[string]*models.ResponseConfig
+	tags                map[string]*models.Tag
+	scripts             map[string]*models.Script
+	aiScenarios         map[string]*models.AIScenario
+	scriptBindings      map[string]*models.ScriptBinding
+	collectionMappings  map[string]*models.CollectionMapping
 }
 
 // NewMemoryStorage creates a new in-memory storage
 func NewMemoryStorage() *MemoryStorage {
 	storage := &MemoryStorage{
-		specs:           make(map[string]*models.Spec),
-		operations:      make(map[string]*models.Operation),
-		responseConfigs: make(map[string]*models.ResponseConfig),
-		tags:            make(map[string]*models.Tag),
-		scripts:         make(map[string]*models.Script),
-		aiScenarios:     make(map[string]*models.AIScenario),
-		scriptBindings:  make(map[string]*models.ScriptBinding),
+		specs:              make(map[string]*models.Spec),
+		operations:         make(map[string]*models.Operation),
+		responseConfigs:    make(map[string]*models.ResponseConfig),
+		tags:               make(map[string]*models.Tag),
+		scripts:            make(map[string]*models.Script),
+		aiScenarios:        make(map[string]*models.AIScenario),
+		scriptBindings:     make(map[string]*models.ScriptBinding),
+		collectionMappings: make(map[string]*models.CollectionMapping),
 	}
 
 	// Ensure default tag exists
@@ -684,6 +686,78 @@ func (m *MemoryStorage) DeleteScriptBindingsByScript(scriptID string) error {
 		}
 	}
 
+	return nil
+}
+
+// ---- CollectionMapping operations ----
+
+func (m *MemoryStorage) GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	out := make([]*models.CollectionMapping, 0)
+	for _, cm := range m.collectionMappings {
+		if cm.ResponseConfigID == responseConfigID {
+			out = append(out, cm)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Order < out[j].Order })
+	return out, nil
+}
+
+func (m *MemoryStorage) GetCollectionMapping(id string) (*models.CollectionMapping, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	cm, ok := m.collectionMappings[id]
+	if !ok {
+		return nil, fmt.Errorf("collection mapping not found: %s", id)
+	}
+	return cm, nil
+}
+
+func (m *MemoryStorage) CreateCollectionMapping(cm *models.CollectionMapping) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.collectionMappings[cm.ID]; exists {
+		return fmt.Errorf("collection mapping with ID %s already exists", cm.ID)
+	}
+	m.collectionMappings[cm.ID] = cm
+	return nil
+}
+
+func (m *MemoryStorage) UpdateCollectionMapping(cm *models.CollectionMapping) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.collectionMappings[cm.ID]; !exists {
+		return fmt.Errorf("collection mapping not found: %s", cm.ID)
+	}
+	m.collectionMappings[cm.ID] = cm
+	return nil
+}
+
+func (m *MemoryStorage) DeleteCollectionMapping(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.collectionMappings[id]; !exists {
+		return fmt.Errorf("collection mapping not found: %s", id)
+	}
+	delete(m.collectionMappings, id)
+	return nil
+}
+
+func (m *MemoryStorage) DeleteCollectionMappingsByResponse(responseConfigID string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for id, cm := range m.collectionMappings {
+		if cm.ResponseConfigID == responseConfigID {
+			delete(m.collectionMappings, id)
+		}
+	}
 	return nil
 }
 

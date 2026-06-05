@@ -18,6 +18,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/prasenjit/go-virtual/internal/ai"
+	"github.com/prasenjit/go-virtual/internal/collection"
 	"github.com/prasenjit/go-virtual/internal/condition"
 	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/metrics"
@@ -33,20 +34,21 @@ import (
 
 // Engine handles proxying requests to virtual API endpoints
 type Engine struct {
-	store             storage.Storage
-	statsCollector    *stats.Collector
-	tracingService    *tracing.Service
-	condEvaluator     *condition.Evaluator
-	templateEngine    *template.Engine
-	scriptEngine      *scripting.ScriptEngine
-	sessionManager    store.SessionRegistry // nil when Phase 2 is not configured
-	sessionHeaderName string
-	recorder          *Recorder
-	aiGenerator       *ai.Generator
-	mu                sync.RWMutex
-	warningMu         sync.Mutex
-	runtimeWarnings   map[string]struct{}
-	routes            map[string][]*route // method -> routes
+	store               storage.Storage
+	statsCollector      *stats.Collector
+	tracingService      *tracing.Service
+	condEvaluator       *condition.Evaluator
+	templateEngine      *template.Engine
+	scriptEngine        *scripting.ScriptEngine
+	collectionExecutor  *collection.Executor
+	sessionManager      store.SessionRegistry // nil when Phase 2 is not configured
+	sessionHeaderName   string
+	recorder            *Recorder
+	aiGenerator         *ai.Generator
+	mu                  sync.RWMutex
+	warningMu           sync.Mutex
+	runtimeWarnings     map[string]struct{}
+	routes              map[string][]*route // method -> routes
 }
 
 // route represents a registered route
@@ -66,15 +68,16 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	}
 
 	e := &Engine{
-		store:           store,
-		statsCollector:  statsCollector,
-		tracingService:  tracingService,
-		condEvaluator:   condition.NewEvaluator(),
-		templateEngine:  template.NewEngine(),
-		scriptEngine:    scripting.NewScriptEngine(store, timeoutMs),
-		recorder:        NewRecorder(store),
-		runtimeWarnings: make(map[string]struct{}),
-		routes:          make(map[string][]*route),
+		store:               store,
+		statsCollector:      statsCollector,
+		tracingService:      tracingService,
+		condEvaluator:       condition.NewEvaluator(),
+		templateEngine:      template.NewEngine(),
+		scriptEngine:        scripting.NewScriptEngine(store, timeoutMs),
+		collectionExecutor:  collection.NewExecutor(store),
+		recorder:            NewRecorder(store),
+		runtimeWarnings:     make(map[string]struct{}),
+		routes:              make(map[string][]*route),
 	}
 
 	// Load initial routes
@@ -829,6 +832,29 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Run collection mappings for the matched response config. Mappings execute
+	// after response-level scripts so they can reference script output via the
+	// session store. The same sess is used so mapper writes are visible to any
+	// subsequent script calls within the same session.
+	var collectionOutput map[string]any
+	var collectionTraces []models.CollectionTrace
+	if sess != nil {
+		reqCtx := &collection.RequestContext{
+			PathParams:  pathParams,
+			QueryParams: r.URL.Query(),
+			Headers:     r.Header,
+			Body:        requestBody,
+			Session:     sess,
+		}
+		collectionOutput, collectionTraces, _ = e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sess)
+		if len(collectionTraces) > 0 {
+			reqLogger.Debug("Executed collection mappings",
+				"event", "collection_mappings_executed",
+				"mapping_count", len(collectionTraces),
+			)
+		}
+	}
+
 	// Apply delay if configured
 	if matchedConfig.Delay > 0 {
 		time.Sleep(time.Duration(matchedConfig.Delay) * time.Millisecond)
@@ -838,15 +864,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	seed := buildTemplateSeed(r, pathParams)
 	requestID := uuid.New().String()
 	templateCtx := &template.Context{
-		PathParams:   pathParams,
-		QueryParams:  r.URL.Query(),
-		Headers:      r.Header,
-		Body:         requestBody,
-		RNG:          rand.New(rand.NewSource(seed)),
-		ScriptOutput: scriptOutput,
-		Method:       r.Method,
-		RequestURL:   r.URL.String(),
-		RequestID:    requestID,
+		PathParams:       pathParams,
+		QueryParams:      r.URL.Query(),
+		Headers:          r.Header,
+		Body:             requestBody,
+		RNG:              rand.New(rand.NewSource(seed)),
+		ScriptOutput:     scriptOutput,
+		CollectionOutput: collectionOutput,
+		Method:           r.Method,
+		RequestURL:       r.URL.String(),
+		RequestID:        requestID,
 	}
 	if sess != nil {
 		templateCtx.StoreReader = func(key string) string {
@@ -969,6 +996,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			AISkippedReason:     modeSelection.AISkippedReason,
 			ProxySkippedReason:  modeSelection.ProxySkippedReason,
 			Scripts:             scriptTraces,
+			Collections:         collectionTraces,
 			Session:             sessionTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,

@@ -5,12 +5,13 @@ import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
     Plus, Trash2, AlertCircle, Wand2, X, Settings, Code2,
-    GitBranch, Zap, List
+    GitBranch, Zap, List, Database
 } from 'lucide-react'
 import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
 
@@ -466,7 +467,7 @@ export default function ResponseConfigIDE({
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
     const [isDirty, setIsDirty] = useState(false)
-    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
+    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings' | 'collections'>('metadata')
     const [refDrawerOpen, setRefDrawerOpen] = useState(false)
     const [showExamplePicker, setShowExamplePicker] = useState(false)
     const isDark = useIsDark()
@@ -851,6 +852,7 @@ export default function ResponseConfigIDE({
                             { id: 'metadata', label: 'Metadata', icon: Settings },
                             { id: 'conditions', label: 'Conditions', icon: GitBranch },
                             { id: 'scriptbindings', label: 'Scripts', icon: Zap },
+                            { id: 'collections', label: 'Collections', icon: Database },
                             { id: 'headers', label: 'Headers', icon: List },
                             { id: 'body', label: 'Body', icon: Code2 },
                         ] as const).map(({ id, label, icon: Icon }) => (
@@ -1292,6 +1294,16 @@ export default function ResponseConfigIDE({
                                                 </p>
                                             )}
                                         </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {ideActiveTab === 'collections' && (
+                                <div className="p-3">
+                                    {config?.id ? (
+                                        <CollectionMappingsPanel operationId={operationId} responseConfigId={config.id} />
+                                    ) : (
+                                        <p className="text-sm text-gray-600 dark:text-slate-300">Save the response first to add collection mappings.</p>
                                     )}
                                 </div>
                             )}

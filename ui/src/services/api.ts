@@ -603,6 +603,40 @@ export const responseScriptBindingsApi = {
     },
 };
 
+// Collection Mappings API
+export const collectionMappingsApi = {
+    listByResponse: async (operationId: string, responseConfigId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/mappings`);
+        return handleResponse<import('../types').CollectionMapping[]>(response);
+    },
+
+    create: async (operationId: string, responseConfigId: string, data: import('../types').CollectionMappingInput) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/mappings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').CollectionMapping>(response);
+    },
+
+    update: async (mappingId: string, data: import('../types').CollectionMappingInput) => {
+        const response = await fetch(`${API_BASE}/mappings/${mappingId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').CollectionMapping>(response);
+    },
+
+    delete: async (mappingId: string) => {
+        const response = await fetch(`${API_BASE}/mappings/${mappingId}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};
+
 // Global Store API
 export const storeApi = {
     list: async () => {

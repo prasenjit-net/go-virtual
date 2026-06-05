@@ -192,6 +192,11 @@ func (f *FileStorage) loadAll() error {
 		}
 	}
 
+	// Load collection mappings
+	if err := f.loadCollectionMappings(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -688,9 +693,11 @@ func (f *FileStorage) DeleteResponseConfig(id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	// Cascade-delete response-level script bindings
-	f.memory.DeleteScriptBindingsByResponse(id) //nolint:errcheck
+	// Cascade-delete response-level script bindings and collection mappings
+	f.memory.DeleteScriptBindingsByResponse(id)   //nolint:errcheck
+	f.memory.DeleteCollectionMappingsByResponse(id) //nolint:errcheck
 	os.Remove(f.responseScriptBindingsPath(id))
+	os.Remove(f.collectionMappingsPath(id))
 
 	if err := f.memory.DeleteResponseConfig(id); err != nil {
 		return err
@@ -712,10 +719,12 @@ func (f *FileStorage) DeleteResponseConfigsByOperation(opID string) error {
 		return err
 	}
 
-	// Delete files (including any response-level script binding files)
+	// Delete files (including any response-level script binding and mapping files)
 	for _, cfg := range cfgs {
-		f.memory.DeleteScriptBindingsByResponse(cfg.ID) //nolint:errcheck
+		f.memory.DeleteScriptBindingsByResponse(cfg.ID)   //nolint:errcheck
+		f.memory.DeleteCollectionMappingsByResponse(cfg.ID) //nolint:errcheck
 		os.Remove(f.responseScriptBindingsPath(cfg.ID))
+		os.Remove(f.collectionMappingsPath(cfg.ID))
 		f.deleteResponseConfigFile(cfg.ID)
 	}
 
@@ -891,6 +900,37 @@ func (f *FileStorage) loadScripts() error {
 		}
 	}
 
+	return nil
+}
+
+// loadCollectionMappings loads all collection mappings from responses/<id>.mappings.json files
+func (f *FileStorage) loadCollectionMappings() error {
+	respDir := filepath.Join(f.basePath, "responses")
+	entries, err := os.ReadDir(respDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mappings.json") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(respDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var mappings []*models.CollectionMapping
+		if err := json.Unmarshal(data, &mappings); err != nil {
+			continue
+		}
+		for _, m := range mappings {
+			if m != nil {
+				f.memory.collectionMappings[m.ID] = m
+			}
+		}
+	}
 	return nil
 }
 
@@ -1197,6 +1237,85 @@ func (f *FileStorage) DeleteScriptBindingsByResponse(responseConfigID string) er
 	}
 	// saveResponseScriptBindings removes the file when there are no bindings
 	return f.saveResponseScriptBindings(responseConfigID)
+}
+
+// ---- CollectionMapping operations ----
+
+func (f *FileStorage) collectionMappingsPath(responseConfigID string) string {
+	return filepath.Join(f.basePath, "responses", responseConfigID+".mappings.json")
+}
+
+func (f *FileStorage) saveCollectionMappings(responseConfigID string) error {
+	mappings, err := f.memory.GetCollectionMappingsByResponse(responseConfigID)
+	if err != nil {
+		return err
+	}
+	path := f.collectionMappingsPath(responseConfigID)
+	if len(mappings) == 0 {
+		os.Remove(path)
+		return nil
+	}
+	data, err := json.MarshalIndent(mappings, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func (f *FileStorage) GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error) {
+	return f.memory.GetCollectionMappingsByResponse(responseConfigID)
+}
+
+func (f *FileStorage) GetCollectionMapping(id string) (*models.CollectionMapping, error) {
+	return f.memory.GetCollectionMapping(id)
+}
+
+func (f *FileStorage) CreateCollectionMapping(cm *models.CollectionMapping) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.CreateCollectionMapping(cm); err != nil {
+		return err
+	}
+	return f.saveCollectionMappings(cm.ResponseConfigID)
+}
+
+func (f *FileStorage) UpdateCollectionMapping(cm *models.CollectionMapping) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.UpdateCollectionMapping(cm); err != nil {
+		return err
+	}
+	return f.saveCollectionMappings(cm.ResponseConfigID)
+}
+
+func (f *FileStorage) DeleteCollectionMapping(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.memory.mu.RLock()
+	cm, exists := f.memory.collectionMappings[id]
+	f.memory.mu.RUnlock()
+	if !exists {
+		return fmt.Errorf("collection mapping not found: %s", id)
+	}
+	responseConfigID := cm.ResponseConfigID
+
+	if err := f.memory.DeleteCollectionMapping(id); err != nil {
+		return err
+	}
+	return f.saveCollectionMappings(responseConfigID)
+}
+
+func (f *FileStorage) DeleteCollectionMappingsByResponse(responseConfigID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteCollectionMappingsByResponse(responseConfigID); err != nil {
+		return err
+	}
+	return f.saveCollectionMappings(responseConfigID)
 }
 
 // Close closes the storage

@@ -30,13 +30,14 @@ type MongoStorage struct {
 
 // collection names (without prefix)
 const (
-	colSpecs         = "specs"
-	colOperations    = "operations"
-	colResponses     = "responses"
-	colScripts       = "scripts"
-	colAIScenarios   = "ai_scenarios"
-	colBindings      = "script_bindings"
-	colTags          = "tags"
+	colSpecs            = "specs"
+	colOperations       = "operations"
+	colResponses        = "responses"
+	colScripts          = "scripts"
+	colAIScenarios      = "ai_scenarios"
+	colBindings         = "script_bindings"
+	colTags             = "tags"
+	colCollectionMappings = "collection_mappings"
 )
 
 // genericDoc is the BSON wrapper stored for each entity.
@@ -132,6 +133,7 @@ func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 		{colBindings, "script_id"},
 		{colBindings, "spec_id"},
 		{colBindings, "response_config_id"},
+		{colCollectionMappings, "response_config_id"},
 	}
 	for _, idx := range indexes {
 		model := mongo.IndexModel{
@@ -877,6 +879,90 @@ func (m *MongoStorage) DeleteScriptBindingsByResponse(responseConfigID string) e
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err := m.col(colBindings).DeleteMany(ctx, bson.M{"response_config_id": responseConfigID})
+	return err
+}
+
+// --- CollectionMapping operations -------------------------------------------
+
+func (m *MongoStorage) GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colCollectionMappings).Find(ctx, bson.M{"response_config_id": responseConfigID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var mappings []*models.CollectionMapping
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		var cm models.CollectionMapping
+		if err := unmarshalDoc(&doc, &cm); err != nil {
+			return nil, err
+		}
+		mappings = append(mappings, &cm)
+	}
+	return mappings, cursor.Err()
+}
+
+func (m *MongoStorage) GetCollectionMapping(id string) (*models.CollectionMapping, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	var doc genericDoc
+	if err := m.col(colCollectionMappings).FindOne(ctx, bson.M{"_id": id}).Decode(&doc); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, fmt.Errorf("collection mapping not found: %s", id)
+		}
+		return nil, err
+	}
+	var cm models.CollectionMapping
+	if err := unmarshalDoc(&doc, &cm); err != nil {
+		return nil, err
+	}
+	return &cm, nil
+}
+
+func (m *MongoStorage) CreateCollectionMapping(cm *models.CollectionMapping) error {
+	doc, err := marshalDoc(cm.ID, "", "", "", cm)
+	if err != nil {
+		return err
+	}
+	doc.ResponseConfigID = cm.ResponseConfigID
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err = m.col(colCollectionMappings).InsertOne(ctx, doc)
+	return err
+}
+
+func (m *MongoStorage) UpdateCollectionMapping(cm *models.CollectionMapping) error {
+	doc, err := marshalDoc(cm.ID, "", "", "", cm)
+	if err != nil {
+		return err
+	}
+	doc.ResponseConfigID = cm.ResponseConfigID
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	opts := options.Replace().SetUpsert(true)
+	_, err = m.col(colCollectionMappings).ReplaceOne(ctx, bson.M{"_id": cm.ID}, doc, opts)
+	return err
+}
+
+func (m *MongoStorage) DeleteCollectionMapping(id string) error {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colCollectionMappings).DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+func (m *MongoStorage) DeleteCollectionMappingsByResponse(responseConfigID string) error {
+	if responseConfigID == "" {
+		return nil
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colCollectionMappings).DeleteMany(ctx, bson.M{"response_config_id": responseConfigID})
 	return err
 }
 

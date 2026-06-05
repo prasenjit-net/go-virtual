@@ -161,6 +161,13 @@ func (r *Router) setupRoutes() {
 		api.PUT("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.UpdateResponseScriptBinding)
 		api.DELETE("/operations/:id/responses/:respId/scripts/:bindingId", r.handler.DeleteResponseScriptBinding)
 
+		// Collection mappings (per response config)
+		api.GET("/operations/:id/responses/:respId/mappings", r.handler.ListCollectionMappings)
+		api.POST("/operations/:id/responses/:respId/mappings", r.handler.CreateCollectionMapping)
+		api.GET("/mappings/:mappingId", r.handler.GetCollectionMapping)
+		api.PUT("/mappings/:mappingId", r.handler.UpdateCollectionMapping)
+		api.DELETE("/mappings/:mappingId", r.handler.DeleteCollectionMapping)
+
 		// Tags
 		api.GET("/tags", r.handler.ListTags)
 		api.POST("/tags", r.handler.CreateTag)

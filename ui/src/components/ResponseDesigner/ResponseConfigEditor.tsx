@@ -6,6 +6,7 @@ import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
 
@@ -1170,6 +1171,13 @@ export default function ResponseConfigEditor({
         {!isModal && config?.id && !readOnly && (
             <ScriptBindingsPanel
                 kind="response"
+                operationId={operationId}
+                responseConfigId={config.id}
+            />
+        )}
+        {/* Collection mappings — shown below script bindings in page mode */}
+        {!isModal && config?.id && !readOnly && (
+            <CollectionMappingsPanel
                 operationId={operationId}
                 responseConfigId={config.id}
             />
