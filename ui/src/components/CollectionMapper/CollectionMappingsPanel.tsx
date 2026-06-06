@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, forwardRef, useImperativeHandle } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Plus, Trash2, ToggleLeft, ToggleRight,
-    Database, X, Loader2, Pencil, Info,
+    Database, X, Loader2, Pencil, Info, ChevronDown,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { collectionMappingsApi, operationsApi } from '../../services/api'
@@ -13,30 +13,8 @@ interface Props {
     responseConfigId: string
 }
 
-interface OperationHints {
-    pathParams: string[]
-    queryParams: string[]
-    headerParams: string[]
-    bodyFields: string[]
-}
-
-function hintsFromOperation(op: Operation | undefined): OperationHints {
-    return {
-        pathParams: op?.declaredPathParams ?? [],
-        queryParams: op?.declaredQueryParams ?? [],
-        headerParams: op?.declaredHeaderParams ?? [],
-        bodyFields: op?.declaredBodyFields ?? [],
-    }
-}
-
-function sourceKeyOptionsFor(sourceType: FieldMappingRule['sourceType'], hints: OperationHints): string[] {
-    switch (sourceType) {
-        case 'path': return hints.pathParams
-        case 'query': return hints.queryParams
-        case 'header': return hints.headerParams
-        case 'body': return hints.bodyFields
-        default: return []
-    }
+export interface CollectionMappingsPanelHandle {
+    savePending: () => Promise<void>
 }
 
 const OP_OPTIONS: { value: CollectionOpType; label: string }[] = [
@@ -76,13 +54,8 @@ const OP_COLORS: Record<CollectionOpType, string> = {
     delete: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
 }
 
-function showFilterRules(op: CollectionOpType) {
-    return op !== 'insert'
-}
-
-function showDataRules(op: CollectionOpType) {
-    return op === 'insert' || op === 'update' || op === 'upsert'
-}
+function showFilterRules(op: CollectionOpType) { return op !== 'insert' }
+function showDataRules(op: CollectionOpType) { return op === 'insert' || op === 'update' || op === 'upsert' }
 
 const EMPTY_RULE: FieldMappingRule = { targetField: '', sourceType: 'literal', sourceKey: '' }
 
@@ -95,6 +68,32 @@ const EMPTY_FORM: CollectionMappingInput = {
     outputKey: '',
     order: 0,
     enabled: true,
+}
+
+interface OperationHints {
+    pathParams: string[]
+    queryParams: string[]
+    headerParams: string[]
+    bodyFields: string[]
+}
+
+function hintsFromOperation(op: Operation | undefined): OperationHints {
+    return {
+        pathParams: op?.declaredPathParams ?? [],
+        queryParams: op?.declaredQueryParams ?? [],
+        headerParams: op?.declaredHeaderParams ?? [],
+        bodyFields: op?.declaredBodyFields ?? [],
+    }
+}
+
+function sourceKeyOptionsFor(sourceType: FieldMappingRule['sourceType'], hints: OperationHints): string[] {
+    switch (sourceType) {
+        case 'path': return hints.pathParams
+        case 'query': return hints.queryParams
+        case 'header': return hints.headerParams
+        case 'body': return hints.bodyFields
+        default: return []
+    }
 }
 
 function RuleEditor({
@@ -110,13 +109,12 @@ function RuleEditor({
     label: string
     hint: string
     hints: OperationHints
-    ruleIndex: string // unique prefix for datalist IDs
+    ruleIndex: string
 }) {
     const addRule = () => onChange([...rules, { ...EMPTY_RULE }])
     const removeRule = (i: number) => onChange(rules.filter((_, idx) => idx !== i))
     const updateRule = (i: number, patch: Partial<FieldMappingRule>) => {
-        const next = rules.map((r, idx) => idx === i ? { ...r, ...patch } : r)
-        onChange(next)
+        onChange(rules.map((r, idx) => idx === i ? { ...r, ...patch } : r))
     }
 
     return (
@@ -126,11 +124,7 @@ function RuleEditor({
                     <span className="text-xs font-semibold text-gray-700 dark:text-slate-300 uppercase tracking-wide">{label}</span>
                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{hint}</p>
                 </div>
-                <button
-                    type="button"
-                    onClick={addRule}
-                    className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1"
-                >
+                <button type="button" onClick={addRule} className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1">
                     <Plus className="w-3 h-3" /> Add rule
                 </button>
             </div>
@@ -159,7 +153,7 @@ function RuleEditor({
                                         <option key={o.value} value={o.value}>{o.label}</option>
                                     ))}
                                 </select>
-                                <div className="flex-1 min-w-0 relative">
+                                <div className="flex-1 min-w-0">
                                     <input
                                         type="text"
                                         list={sourceOptions.length > 0 ? datalistId : undefined}
@@ -170,17 +164,11 @@ function RuleEditor({
                                     />
                                     {sourceOptions.length > 0 && (
                                         <datalist id={datalistId}>
-                                            {sourceOptions.map((opt) => (
-                                                <option key={opt} value={opt} />
-                                            ))}
+                                            {sourceOptions.map((opt) => <option key={opt} value={opt} />)}
                                         </datalist>
                                     )}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => removeRule(i)}
-                                    className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
-                                >
+                                <button type="button" onClick={() => removeRule(i)} className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0">
                                     <X className="w-3.5 h-3.5" />
                                 </button>
                             </div>
@@ -192,297 +180,243 @@ function RuleEditor({
     )
 }
 
-function MappingEditor({
-    initial,
-    nextOrder,
-    hints,
-    onSave,
-    onCancel,
-    isSaving,
-    saveError,
-}: {
-    initial: CollectionMappingInput
-    nextOrder: number
+interface MappingFormProps {
+    form: CollectionMappingInput
+    onChange: (form: CollectionMappingInput) => void
     hints: OperationHints
-    onSave: (data: CollectionMappingInput) => void
-    onCancel: () => void
-    isSaving: boolean
-    saveError: string | null
-}) {
-    const [form, setForm] = useState<CollectionMappingInput>({
-        ...initial,
-        order: initial.order ?? nextOrder,
-    })
+    idPrefix: string
+}
 
+function MappingForm({ form, onChange, hints, idPrefix }: MappingFormProps) {
     const set = <K extends keyof CollectionMappingInput>(k: K, v: CollectionMappingInput[K]) =>
-        setForm((f) => ({ ...f, [k]: v }))
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault()
-        onSave(form)
-    }
-
-    const opChanged = (op: CollectionOpType) => {
-        setForm((f) => ({ ...f, operation: op }))
-    }
+        onChange({ ...form, [k]: v })
 
     return (
-        <form onSubmit={handleSubmit} className="flex flex-col h-full">
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {/* Name */}
+        <div className="space-y-4">
+            <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Name <span className="text-gray-400">(optional)</span></label>
+                <input
+                    type="text"
+                    value={form.name ?? ''}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="e.g. Create User"
+                    className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500"
+                />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
                 <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Name <span className="text-gray-400">(optional)</span></label>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Collection <span className="text-red-500">*</span></label>
                     <input
                         type="text"
-                        value={form.name ?? ''}
-                        onChange={(e) => set('name', e.target.value)}
-                        placeholder="e.g. Create User"
-                        className="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500"
-                    />
-                </div>
-
-                {/* Collection Name + Operation (side by side) */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Collection <span className="text-red-500">*</span></label>
-                        <input
-                            type="text"
-                            value={form.collectionName}
-                            onChange={(e) => set('collectionName', e.target.value)}
-                            placeholder="e.g. users"
-                            required
-                            className="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Operation <span className="text-red-500">*</span></label>
-                        <select
-                            value={form.operation}
-                            onChange={(e) => opChanged(e.target.value as CollectionOpType)}
-                            className="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                        >
-                            {OP_OPTIONS.map((o) => (
-                                <option key={o.value} value={o.value}>{o.label}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                {/* Output Key */}
-                <div>
-                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Output key <span className="text-red-500">*</span></label>
-                    <input
-                        type="text"
-                        value={form.outputKey}
-                        onChange={(e) => set('outputKey', e.target.value)}
-                        placeholder="e.g. user"
+                        value={form.collectionName}
+                        onChange={(e) => set('collectionName', e.target.value)}
+                        placeholder="e.g. users"
                         required
-                        className="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
+                        className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
                     />
-                    {form.outputKey && (
-                        <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
-                            Reference result as <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded text-violet-700 dark:text-violet-400">{`{{.Collection.${form.outputKey}._id}}`}</code>
-                        </p>
-                    )}
                 </div>
-
-                {/* Filter Rules */}
-                {showFilterRules(form.operation) && (
-                    <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                        <RuleEditor
-                            rules={form.filterRules}
-                            onChange={(r) => set('filterRules', r)}
-                            label="Filter Rules"
-                            hint="Match documents where these fields equal the resolved values."
-                            hints={hints}
-                            ruleIndex="filter"
-                        />
-                    </div>
-                )}
-
-                {/* Data Rules */}
-                {showDataRules(form.operation) && (
-                    <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                        <RuleEditor
-                            rules={form.dataRules}
-                            onChange={(r) => set('dataRules', r)}
-                            label="Data Rules"
-                            hint="Set these fields on the inserted / updated document."
-                            hints={hints}
-                            ruleIndex="data"
-                        />
-                    </div>
-                )}
-
-                {/* Order + Enabled row */}
-                <div className="flex items-center gap-4">
-                    <div className="w-24">
-                        <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Order</label>
-                        <input
-                            type="number"
-                            min={0}
-                            value={form.order}
-                            onChange={(e) => set('order', parseInt(e.target.value, 10) || 0)}
-                            className="w-full text-sm px-3 py-2 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 mt-4">
-                        <input
-                            id="cm-enabled"
-                            type="checkbox"
-                            checked={form.enabled}
-                            onChange={(e) => set('enabled', e.target.checked)}
-                            className="rounded"
-                        />
-                        <label htmlFor="cm-enabled" className="text-sm text-gray-700 dark:text-slate-300">Enabled</label>
-                    </div>
+                <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Operation <span className="text-red-500">*</span></label>
+                    <select
+                        value={form.operation}
+                        onChange={(e) => onChange({ ...form, operation: e.target.value as CollectionOpType })}
+                        className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    >
+                        {OP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
                 </div>
+            </div>
 
-                {/* Output preview */}
+            <div>
+                <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Output key <span className="text-red-500">*</span></label>
+                <input
+                    type="text"
+                    value={form.outputKey}
+                    onChange={(e) => set('outputKey', e.target.value)}
+                    placeholder="e.g. user"
+                    required
+                    className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
+                />
                 {form.outputKey && (
-                    <div className="bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-900/40 rounded-lg p-3">
-                        <div className="flex items-center gap-1.5 mb-2">
-                            <Info className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-                            <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">Template tokens</span>
-                        </div>
-                        <div className="space-y-1 text-xs font-mono text-violet-800 dark:text-violet-300">
-                            {form.operation === 'find-many' ? (
-                                <>
-                                    <div><code>{`{{range .Collection.${form.outputKey}}}`}</code> <span className="font-sans text-violet-600 dark:text-violet-400">— iterate results</span></div>
-                                    <div className="ml-4"><code>{`{{._id}}`}</code> <span className="font-sans text-violet-600 dark:text-violet-400">— field access inside range</span></div>
-                                    <div><code>{`{{end}}`}</code></div>
-                                </>
-                            ) : (
-                                <>
-                                    <div><code>{`{{.Collection.${form.outputKey}._id}}`}</code></div>
-                                    <div><code>{`{{.Collection.${form.outputKey}.<field>}}`}</code></div>
-                                </>
-                            )}
-                        </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+                        Reference as <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1 rounded text-violet-700 dark:text-violet-400">{`{{.Collection.${form.outputKey}._id}}`}</code>
+                    </p>
+                )}
+            </div>
+
+            {showFilterRules(form.operation) && (
+                <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+                    <RuleEditor
+                        rules={form.filterRules}
+                        onChange={(r) => set('filterRules', r)}
+                        label="Filter Rules"
+                        hint="Match documents where these fields equal the resolved values."
+                        hints={hints}
+                        ruleIndex={`${idPrefix}-filter`}
+                    />
+                </div>
+            )}
+
+            {showDataRules(form.operation) && (
+                <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
+                    <RuleEditor
+                        rules={form.dataRules}
+                        onChange={(r) => set('dataRules', r)}
+                        label="Data Rules"
+                        hint="Set these fields on the inserted / updated document."
+                        hints={hints}
+                        ruleIndex={`${idPrefix}-data`}
+                    />
+                </div>
+            )}
+
+            <div className="flex items-center gap-4">
+                <div className="w-24">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Order</label>
+                    <input
+                        type="number"
+                        min={0}
+                        value={form.order}
+                        onChange={(e) => set('order', parseInt(e.target.value, 10) || 0)}
+                        className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                    />
+                </div>
+                <div className="flex items-center gap-2 mt-4">
+                    <input
+                        id={`${idPrefix}-enabled`}
+                        type="checkbox"
+                        checked={form.enabled}
+                        onChange={(e) => set('enabled', e.target.checked)}
+                        className="rounded"
+                    />
+                    <label htmlFor={`${idPrefix}-enabled`} className="text-sm text-gray-700 dark:text-slate-300">Enabled</label>
+                </div>
+            </div>
+
+            {form.outputKey && (
+                <div className="bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-900/40 rounded-lg p-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                        <Info className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
+                        <span className="text-xs font-semibold text-violet-700 dark:text-violet-300">Template tokens</span>
                     </div>
-                )}
-
-                {saveError && (
-                    <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>
-                )}
-            </div>
-
-            <div className="flex-shrink-0 flex items-center justify-end gap-2 p-4 border-t border-gray-200 dark:border-slate-700">
-                <button
-                    type="button"
-                    onClick={onCancel}
-                    className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                    Cancel
-                </button>
-                <button
-                    type="submit"
-                    disabled={isSaving}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors"
-                >
-                    {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-                    Save mapping
-                </button>
-            </div>
-        </form>
+                    <div className="space-y-1 text-xs font-mono text-violet-800 dark:text-violet-300">
+                        {form.operation === 'find-many' ? (
+                            <>
+                                <div><code>{`{{range .Collection.${form.outputKey}}}`}</code></div>
+                                <div className="ml-4"><code>{`{{._id}}`}</code></div>
+                                <div><code>{`{{end}}`}</code></div>
+                            </>
+                        ) : (
+                            <>
+                                <div><code>{`{{.Collection.${form.outputKey}._id}}`}</code></div>
+                                <div><code>{`{{.Collection.${form.outputKey}.<field>}}`}</code></div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
     )
 }
 
-export default function CollectionMappingsPanel({ operationId, responseConfigId }: Props) {
-    const queryClient = useQueryClient()
-    const queryKey = ['collectionMappings', responseConfigId]
+const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>(
+    function CollectionMappingsPanel({ operationId, responseConfigId }, ref) {
+        const queryClient = useQueryClient()
+        const queryKey = ['collectionMappings', responseConfigId]
 
-    const [panelOpen, setPanelOpen] = useState(false)
-    const [editing, setEditing] = useState<CollectionMapping | null>(null)
-    const [saveError, setSaveError] = useState<string | null>(null)
+        const [addFormOpen, setAddFormOpen] = useState(false)
+        const [pendingForm, setPendingForm] = useState<CollectionMappingInput>({ ...EMPTY_FORM })
+        const [editingId, setEditingId] = useState<string | null>(null)
+        const [editForm, setEditForm] = useState<CollectionMappingInput>({ ...EMPTY_FORM })
+        const [saveError, setSaveError] = useState<string | null>(null)
 
-    const { data: mappings, isLoading } = useQuery<CollectionMapping[]>({
-        queryKey,
-        queryFn: () => collectionMappingsApi.listByResponse(operationId, responseConfigId),
-    })
+        const { data: mappings, isLoading } = useQuery<CollectionMapping[]>({
+            queryKey,
+            queryFn: () => collectionMappingsApi.listByResponse(operationId, responseConfigId),
+        })
 
-    const { data: operation } = useQuery<Operation>({
-        queryKey: ['operation', operationId],
-        queryFn: () => operationsApi.get(operationId),
-        staleTime: 60_000,
-    })
+        const { data: operation } = useQuery<Operation>({
+            queryKey: ['operation', operationId],
+            queryFn: () => operationsApi.get(operationId),
+            staleTime: 60_000,
+        })
 
-    const hints = hintsFromOperation(operation)
+        const hints = hintsFromOperation(operation)
+        const sortedMappings = mappings ? [...mappings].sort((a, b) => a.order - b.order) : []
 
-    const invalidate = () => queryClient.invalidateQueries({ queryKey })
+        const invalidate = () => queryClient.invalidateQueries({ queryKey })
 
-    const createMutation = useMutation({
-        mutationFn: (data: CollectionMappingInput) => collectionMappingsApi.create(operationId, responseConfigId, data),
-        onSuccess: () => { invalidate(); setPanelOpen(false); setSaveError(null) },
-        onError: (e) => setSaveError((e as Error).message),
-    })
+        useImperativeHandle(ref, () => ({
+            savePending: async () => {
+                if (!addFormOpen) return
+                if (!pendingForm.collectionName || !pendingForm.outputKey || !pendingForm.operation) return
+                await collectionMappingsApi.create(operationId, responseConfigId, {
+                    ...pendingForm,
+                    order: pendingForm.order ?? sortedMappings.length,
+                })
+                invalidate()
+                setAddFormOpen(false)
+                setPendingForm({ ...EMPTY_FORM })
+            },
+        }), [addFormOpen, pendingForm, operationId, responseConfigId, sortedMappings.length])
 
-    const updateMutation = useMutation({
-        mutationFn: ({ id, data }: { id: string; data: CollectionMappingInput }) =>
-            collectionMappingsApi.update(id, data),
-        onSuccess: () => { invalidate(); setPanelOpen(false); setEditing(null); setSaveError(null) },
-        onError: (e) => setSaveError((e as Error).message),
-    })
+        const updateMutation = useMutation({
+            mutationFn: ({ id, data }: { id: string; data: CollectionMappingInput }) =>
+                collectionMappingsApi.update(id, data),
+            onSuccess: () => { invalidate(); setEditingId(null); setSaveError(null) },
+            onError: (e) => setSaveError((e as Error).message),
+        })
 
-    const toggleMutation = useMutation({
-        mutationFn: (m: CollectionMapping) => collectionMappingsApi.update(m.id, {
-            collectionName: m.collectionName,
-            name: m.name,
-            operation: m.operation,
-            filterRules: m.filterRules,
-            dataRules: m.dataRules,
-            outputKey: m.outputKey,
-            order: m.order,
-            enabled: !m.enabled,
-        }),
-        onSuccess: invalidate,
-    })
+        const toggleMutation = useMutation({
+            mutationFn: (m: CollectionMapping) => collectionMappingsApi.update(m.id, {
+                collectionName: m.collectionName,
+                name: m.name,
+                operation: m.operation,
+                filterRules: m.filterRules,
+                dataRules: m.dataRules,
+                outputKey: m.outputKey,
+                order: m.order,
+                enabled: !m.enabled,
+            }),
+            onSuccess: invalidate,
+        })
 
-    const deleteMutation = useMutation({
-        mutationFn: (id: string) => collectionMappingsApi.delete(id),
-        onSuccess: invalidate,
-    })
+        const deleteMutation = useMutation({
+            mutationFn: (id: string) => collectionMappingsApi.delete(id),
+            onSuccess: invalidate,
+        })
 
-    const sortedMappings = mappings ? [...mappings].sort((a, b) => a.order - b.order) : []
-
-    const openCreate = () => {
-        setEditing(null)
-        setSaveError(null)
-        setPanelOpen(true)
-    }
-
-    const openEdit = (m: CollectionMapping) => {
-        setEditing(m)
-        setSaveError(null)
-        setPanelOpen(true)
-    }
-
-    const handleSave = (data: CollectionMappingInput) => {
-        if (editing) {
-            updateMutation.mutate({ id: editing.id, data })
-        } else {
-            createMutation.mutate(data)
+        const openEdit = (m: CollectionMapping) => {
+            if (editingId === m.id) { setEditingId(null); return }
+            setEditingId(m.id)
+            setEditForm({
+                collectionName: m.collectionName,
+                name: m.name ?? '',
+                operation: m.operation,
+                filterRules: m.filterRules ?? [],
+                dataRules: m.dataRules ?? [],
+                outputKey: m.outputKey,
+                order: m.order,
+                enabled: m.enabled,
+            })
+            setSaveError(null)
         }
-    }
 
-    const isSaving = createMutation.isPending || updateMutation.isPending
-
-    const initialForm: CollectionMappingInput = editing
-        ? {
-            collectionName: editing.collectionName,
-            name: editing.name ?? '',
-            operation: editing.operation,
-            filterRules: editing.filterRules ?? [],
-            dataRules: editing.dataRules ?? [],
-            outputKey: editing.outputKey,
-            order: editing.order,
-            enabled: editing.enabled,
+        const handleAddClick = () => {
+            if (addFormOpen) {
+                setAddFormOpen(false)
+                setPendingForm({ ...EMPTY_FORM })
+            } else {
+                setPendingForm({ ...EMPTY_FORM, order: sortedMappings.length })
+                setAddFormOpen(true)
+                setEditingId(null)
+            }
         }
-        : EMPTY_FORM
 
-    return (
-        <>
+        return (
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                {/* Header */}
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
@@ -497,14 +431,20 @@ export default function CollectionMappingsPanel({ operationId, responseConfigId 
                         </div>
                     </div>
                     <button
-                        onClick={openCreate}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-violet-600 border border-violet-200 dark:border-violet-800 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
+                        onClick={handleAddClick}
+                        className={clsx(
+                            'inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border transition-colors',
+                            addFormOpen
+                                ? 'text-gray-600 border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-800'
+                                : 'text-violet-600 border-violet-200 dark:border-violet-800 hover:bg-violet-50 dark:hover:bg-violet-900/30'
+                        )}
                     >
-                        <Plus className="w-4 h-4" />
-                        Add Mapping
+                        {addFormOpen ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+                        {addFormOpen ? 'Discard' : 'Add Mapping'}
                     </button>
                 </div>
 
+                {/* Existing mappings list */}
                 {isLoading ? (
                     <div className="p-6">
                         <div className="animate-pulse space-y-3">
@@ -515,122 +455,136 @@ export default function CollectionMappingsPanel({ operationId, responseConfigId 
                 ) : sortedMappings.length > 0 ? (
                     <div className="divide-y divide-gray-100 dark:divide-slate-800">
                         {sortedMappings.map((m, idx) => (
-                            <div key={m.id} className="flex items-center gap-3 px-6 py-4">
-                                {/* Order badge */}
-                                <span className="w-6 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">
-                                    {idx + 1}
-                                </span>
-
-                                {/* Op badge */}
-                                <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[m.operation])}>
-                                    {OP_LABELS[m.operation]}
-                                </span>
-
-                                {/* Main info */}
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">
-                                            {m.name || m.collectionName}
-                                        </span>
-                                        {!m.enabled && (
-                                            <span className="text-xs bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                                                Disabled
+                            <div key={m.id}>
+                                {/* Row */}
+                                <div className="flex items-center gap-3 px-6 py-3">
+                                    <span className="w-6 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">{idx + 1}</span>
+                                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[m.operation])}>
+                                        {OP_LABELS[m.operation]}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium text-gray-900 dark:text-slate-100 truncate">
+                                                {m.name || m.collectionName}
                                             </span>
-                                        )}
+                                            {!m.enabled && (
+                                                <span className="text-xs bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full flex-shrink-0">Disabled</span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                                            <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{m.collectionName}</code>
+                                            <span>→</span>
+                                            <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{`{{.Collection.${m.outputKey}.*}}`}</code>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-slate-400">
-                                        <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                            {m.collectionName}
-                                        </code>
-                                        <span>→</span>
-                                        <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
-                                            {`{{.Collection.${m.outputKey}.*}}`}
-                                        </code>
-                                        <span className="text-gray-400 dark:text-slate-500">
-                                            {m.filterRules?.length > 0 && `${m.filterRules.length} filter${m.filterRules.length > 1 ? 's' : ''}`}
-                                            {m.filterRules?.length > 0 && m.dataRules?.length > 0 && ' · '}
-                                            {m.dataRules?.length > 0 && `${m.dataRules.length} data field${m.dataRules.length > 1 ? 's' : ''}`}
-                                        </span>
+                                    <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button
+                                            onClick={() => openEdit(m)}
+                                            className={clsx(
+                                                'p-1.5 rounded-lg transition-colors',
+                                                editingId === m.id
+                                                    ? 'text-violet-600 bg-violet-50 dark:bg-violet-950/40'
+                                                    : 'text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800'
+                                            )}
+                                            title="Edit"
+                                        >
+                                            <Pencil className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => toggleMutation.mutate(m)}
+                                            disabled={toggleMutation.isPending}
+                                            className={clsx(
+                                                'p-1.5 rounded-lg transition-colors',
+                                                m.enabled
+                                                    ? 'text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/40'
+                                                    : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'
+                                            )}
+                                            title={m.enabled ? 'Disable' : 'Enable'}
+                                        >
+                                            {m.enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                                        </button>
+                                        <button
+                                            onClick={() => { if (confirm(`Delete mapping "${m.name || m.collectionName}"?`)) deleteMutation.mutate(m.id) }}
+                                            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                            title="Delete"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
                                     </div>
                                 </div>
 
-                                {/* Actions */}
-                                <div className="flex items-center gap-1 flex-shrink-0">
-                                    <button
-                                        onClick={() => openEdit(m)}
-                                        className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                                        title="Edit"
-                                    >
-                                        <Pencil className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                        onClick={() => toggleMutation.mutate(m)}
-                                        disabled={toggleMutation.isPending}
-                                        className={clsx(
-                                            'p-1.5 rounded-lg transition-colors',
-                                            m.enabled
-                                                ? 'text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/40'
-                                                : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'
-                                        )}
-                                        title={m.enabled ? 'Disable' : 'Enable'}
-                                    >
-                                        {m.enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            if (confirm(`Delete mapping "${m.name || m.collectionName}"?`)) {
-                                                deleteMutation.mutate(m.id)
-                                            }
-                                        }}
-                                        className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                                        title="Delete"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
+                                {/* Inline edit form */}
+                                {editingId === m.id && (
+                                    <div className="mx-4 mb-3 border border-violet-200 dark:border-violet-800 rounded-lg bg-violet-50/40 dark:bg-violet-950/10 p-4 space-y-4">
+                                        <MappingForm
+                                            form={editForm}
+                                            onChange={setEditForm}
+                                            hints={hints}
+                                            idPrefix={`edit-${m.id}`}
+                                        />
+                                        {saveError && <p className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+                                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-violet-200 dark:border-violet-800">
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingId(null)}
+                                                className="px-3 py-1.5 text-sm text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={updateMutation.isPending}
+                                                onClick={() => updateMutation.mutate({ id: m.id, data: editForm })}
+                                                className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors"
+                                            >
+                                                {updateMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                                Update
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
-                ) : (
+                ) : !addFormOpen ? (
                     <div className="p-10 text-center">
                         <Database className="w-8 h-8 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
                         <p className="text-sm text-gray-500 dark:text-slate-400">No collection mappings yet.</p>
-                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
-                            Add a mapping to read from or write to a session-scoped collection.
-                        </p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Click "Add Mapping" to map request fields to a session-scoped collection.</p>
+                    </div>
+                ) : null}
+
+                {/* Pending new mapping form */}
+                {addFormOpen && (
+                    <div className="border-t border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/10">
+                        {/* Collapsible header */}
+                        <button
+                            type="button"
+                            onClick={() => setAddFormOpen(false)}
+                            className="w-full flex items-center justify-between px-6 py-3 text-left hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors"
+                        >
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-medium text-amber-800 dark:text-amber-300">New Mapping</span>
+                                <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full">
+                                    Unsaved — will be saved with the response
+                                </span>
+                            </div>
+                            <ChevronDown className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                        </button>
+
+                        <div className="px-6 pb-6">
+                            <MappingForm
+                                form={pendingForm}
+                                onChange={setPendingForm}
+                                hints={hints}
+                                idPrefix="new"
+                            />
+                        </div>
                     </div>
                 )}
             </div>
+        )
+    }
+)
 
-            {/* Slide-over editing panel */}
-            {panelOpen && (
-                <div className="fixed inset-0 z-50 flex justify-end">
-                    <div className="absolute inset-0 bg-black/30 dark:bg-black/60" onClick={() => setPanelOpen(false)} />
-                    <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 shadow-2xl flex flex-col h-full">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-slate-700">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100">
-                                {editing ? 'Edit Mapping' : 'New Collection Mapping'}
-                            </h3>
-                            <button
-                                onClick={() => setPanelOpen(false)}
-                                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-slate-300 rounded"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
-                        <MappingEditor
-                            key={editing?.id ?? 'new'}
-                            initial={initialForm}
-                            nextOrder={sortedMappings.length}
-                            hints={hints}
-                            onSave={handleSave}
-                            onCancel={() => setPanelOpen(false)}
-                            isSaving={isSaving}
-                            saveError={saveError}
-                        />
-                    </div>
-                </div>
-            )}
-        </>
-    )
-}
+export default CollectionMappingsPanel

@@ -11,7 +11,7 @@ import clsx from 'clsx'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
-import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
+import CollectionMappingsPanel, { type CollectionMappingsPanelHandle } from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
 
@@ -475,6 +475,7 @@ export default function ResponseConfigIDE({
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const handleSaveRef = useRef<() => void | Promise<void>>(() => undefined)
+    const collectionMappingsPanelRef = useRef<CollectionMappingsPanelHandle>(null)
 
     const queryClient = useQueryClient()
 
@@ -519,6 +520,7 @@ export default function ResponseConfigIDE({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
+            collectionMappingsPanelRef.current?.savePending()
             setIsDirty(false)
             onSaved()
         },
@@ -1301,7 +1303,7 @@ export default function ResponseConfigIDE({
                             {ideActiveTab === 'collections' && (
                                 <div className="p-3">
                                     {config?.id ? (
-                                        <CollectionMappingsPanel operationId={operationId} responseConfigId={config.id} />
+                                        <CollectionMappingsPanel ref={collectionMappingsPanelRef} operationId={operationId} responseConfigId={config.id} />
                                     ) : (
                                         <p className="text-sm text-gray-600 dark:text-slate-300">Save the response first to add collection mappings.</p>
                                     )}

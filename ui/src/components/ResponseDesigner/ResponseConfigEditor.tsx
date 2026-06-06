@@ -6,7 +6,7 @@ import type * as Monaco from 'monaco-editor'
 import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
-import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
+import CollectionMappingsPanel, { type CollectionMappingsPanelHandle } from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
 
@@ -250,6 +250,7 @@ export default function ResponseConfigEditor({
     const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<typeof Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const collectionMappingsPanelRef = useRef<CollectionMappingsPanelHandle>(null)
 
     const queryClient = useQueryClient()
     const isDark = useIsDark()
@@ -286,6 +287,7 @@ export default function ResponseConfigEditor({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
+            collectionMappingsPanelRef.current?.savePending()
             onClose()
         },
         onError: (err: Error) => setError(err.message),
@@ -1178,6 +1180,7 @@ export default function ResponseConfigEditor({
         {/* Collection mappings — shown below script bindings in page mode */}
         {!isModal && config?.id && !readOnly && (
             <CollectionMappingsPanel
+                ref={collectionMappingsPanelRef}
                 operationId={operationId}
                 responseConfigId={config.id}
             />
