@@ -10,9 +10,10 @@ import type { CollectionMapping, CollectionMappingInput, CollectionOpType, Field
 
 interface Props {
     operationId: string
-    responseConfigId: string
-    pendingMapping: CollectionMappingInput | null
-    onPendingMappingChange: (m: CollectionMappingInput | null) => void
+    /** Undefined when the response config has not been saved yet */
+    responseConfigId?: string
+    pendingMappings: CollectionMappingInput[]
+    onPendingMappingsChange: (ms: CollectionMappingInput[]) => void
 }
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -108,7 +109,6 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                 <p className="text-xs text-gray-400 dark:text-slate-500 italic">No rules — click "Add rule" to add one.</p>
             ) : (
                 <div className="space-y-2">
-                    {/* column headers */}
                     <div className="flex items-center gap-2 px-0.5">
                         <span className="flex-1 min-w-0 text-xs text-gray-400 dark:text-slate-500">Target field</span>
                         <span className="text-xs text-gray-400 dark:text-slate-500 w-28 flex-shrink-0">Source</span>
@@ -177,7 +177,6 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
                 />
             </div>
 
-            {/* Collection + Output key on the same row — both define the "what" */}
             <div className="grid grid-cols-2 gap-3">
                 <div>
                     <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Collection <span className="text-red-500">*</span></label>
@@ -200,14 +199,11 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
                 </p>
             )}
 
-            {/* Operation — pill buttons, same visual style as list badges */}
             <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-2">Operation <span className="text-red-500">*</span></label>
                 <div className="flex flex-wrap gap-1.5">
                     {OP_OPTIONS.map((o) => (
-                        <button
-                            key={o.value}
-                            type="button"
+                        <button key={o.value} type="button"
                             onClick={() => onChange({ ...form, operation: o.value })}
                             className={clsx(
                                 'px-2.5 py-1 text-xs font-semibold rounded-full transition-colors',
@@ -215,9 +211,7 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
                                     ? OP_COLORS[o.value]
                                     : 'text-gray-500 dark:text-slate-400 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700'
                             )}
-                        >
-                            {o.label}
-                        </button>
+                        >{o.label}</button>
                     ))}
                 </div>
             </div>
@@ -281,22 +275,24 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
 
 // ─── panel ───────────────────────────────────────────────────────────────────
 
-function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping, onPendingMappingChange }: Props) {
+export default function CollectionMappingsPanel({ operationId, responseConfigId, pendingMappings, onPendingMappingsChange }: Props) {
     const queryClient = useQueryClient()
-    const queryKey = ['collectionMappings', responseConfigId]
+    const queryKey = ['collectionMappings', responseConfigId ?? '']
 
-    const addFormOpen = pendingMapping !== null
+    // local add-form state — only for the form being filled; committed items go into pendingMappings prop
+    const [addFormOpen,     setAddFormOpen]     = useState(false)
     const [addFormExpanded, setAddFormExpanded] = useState(true)
+    const [addForm,         setAddForm]         = useState<CollectionMappingInput>({ ...EMPTY_FORM })
 
-    // inline edit state — only one row open at a time
-    const [editingId,   setEditingId]   = useState<string | null>(null)
-    const [editForm,    setEditForm]    = useState<CollectionMappingInput>({ ...EMPTY_FORM })
-    const [saveError,   setSaveError]   = useState<string | null>(null)
-    const [createError, setCreateError] = useState<string | null>(null)
+    // inline edit state for already-saved mappings
+    const [editingId,  setEditingId]  = useState<string | null>(null)
+    const [editForm,   setEditForm]   = useState<CollectionMappingInput>({ ...EMPTY_FORM })
+    const [saveError,  setSaveError]  = useState<string | null>(null)
 
-    const { data: mappings, isLoading } = useQuery<CollectionMapping[]>({
+    const { data: savedMappings, isLoading } = useQuery<CollectionMapping[]>({
         queryKey,
-        queryFn: () => collectionMappingsApi.listByResponse(operationId, responseConfigId),
+        queryFn: () => collectionMappingsApi.listByResponse(operationId, responseConfigId!),
+        enabled: !!responseConfigId,
     })
 
     const { data: operation } = useQuery<Operation>({
@@ -306,28 +302,39 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
     })
 
     const hints = hintsFromOperation(operation)
-    const sortedMappings = (mappings ?? []).slice().sort((a, b) => a.order - b.order)
+    const sortedSaved = (savedMappings ?? []).slice().sort((a, b) => a.order - b.order)
 
     const invalidate = () => queryClient.invalidateQueries({ queryKey })
 
-    // whether the pending form has all required fields filled
-    const isPendingValid = !!(pendingMapping?.collectionName && pendingMapping?.outputKey)
+    const isAddFormValid = !!(addForm.collectionName && addForm.outputKey)
 
-    // mutations
-    const createMutation = useMutation({
-        mutationFn: () => collectionMappingsApi.create(operationId, responseConfigId, {
-            ...pendingMapping!,
-            order: pendingMapping!.order ?? sortedMappings.length,
-        }),
-        onSuccess: () => {
-            invalidate()
-            onPendingMappingChange(null)
-            setAddFormExpanded(true)
-            setCreateError(null)
-        },
-        onError: (e) => setCreateError((e as Error).message),
-    })
+    // append to parent pending list — no API call
+    const appendPending = () => {
+        if (!isAddFormValid) return
+        const order = addForm.order ?? (sortedSaved.length + pendingMappings.length)
+        onPendingMappingsChange([...pendingMappings, { ...addForm, order }])
+        setAddFormOpen(false)
+        setAddFormExpanded(true)
+        setAddForm({ ...EMPTY_FORM })
+    }
 
+    const removePending = (idx: number) =>
+        onPendingMappingsChange(pendingMappings.filter((_, i) => i !== idx))
+
+    const openAddForm = () => {
+        setAddForm({ ...EMPTY_FORM, order: sortedSaved.length + pendingMappings.length })
+        setAddFormOpen(true)
+        setAddFormExpanded(true)
+        setEditingId(null)
+    }
+
+    const discardAddForm = () => {
+        setAddFormOpen(false)
+        setAddFormExpanded(true)
+        setAddForm({ ...EMPTY_FORM })
+    }
+
+    // mutations for already-saved mappings
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: CollectionMappingInput }) =>
             collectionMappingsApi.update(id, data),
@@ -364,18 +371,9 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
         }
     }
 
-    const openAddForm = () => {
-        onPendingMappingChange({ ...EMPTY_FORM, order: sortedMappings.length })
-        setAddFormExpanded(true)
-        setEditingId(null)
-    }
-
-    const toggleAddFormExpanded = () => setAddFormExpanded((v) => !v)
-
-    const discardPending = () => {
-        onPendingMappingChange(null)
-        setAddFormExpanded(true)
-    }
+    const hasSaved  = sortedSaved.length > 0
+    const hasPending = pendingMappings.length > 0
+    const isEmpty   = !hasSaved && !hasPending && !addFormOpen
 
     return (
         <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
@@ -395,35 +393,30 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
                     </div>
                 </div>
                 {!addFormOpen && (
-                    <button
-                        onClick={openAddForm}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-violet-600 border border-violet-200 dark:border-violet-800 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors"
-                    >
+                    <button onClick={openAddForm}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-violet-600 border border-violet-200 dark:border-violet-800 rounded-lg hover:bg-violet-50 dark:hover:bg-violet-900/30 transition-colors">
                         <Plus className="w-4 h-4" /> Add Mapping
                     </button>
                 )}
             </div>
 
-            {/* ── existing mappings ── */}
-            {isLoading ? (
+            {/* ── saved mappings (from API) ── */}
+            {isLoading && responseConfigId ? (
                 <div className="p-6">
                     <div className="animate-pulse space-y-3">
                         <div className="h-12 bg-gray-200 dark:bg-slate-800 rounded-lg" />
                         <div className="h-12 bg-gray-200 dark:bg-slate-800 rounded-lg" />
                     </div>
                 </div>
-            ) : sortedMappings.length > 0 ? (
+            ) : hasSaved ? (
                 <div className="divide-y divide-gray-100 dark:divide-slate-800">
-                    {sortedMappings.map((m, idx) => {
+                    {sortedSaved.map((m, idx) => {
                         const isExpanded = editingId === m.id
                         return (
                             <div key={m.id}>
                                 <div className="flex items-center gap-3 px-4 py-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRowClick(m)}
-                                        className="flex items-center gap-3 flex-1 min-w-0 text-left group"
-                                    >
+                                    <button type="button" onClick={() => handleRowClick(m)}
+                                        className="flex items-center gap-3 flex-1 min-w-0 text-left group">
                                         <span className="w-5 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">{idx + 1}</span>
                                         <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[m.operation])}>
                                             {OP_LABELS[m.operation]}
@@ -448,34 +441,23 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
                                             : <ChevronRight className="w-4 h-4 text-gray-300 dark:text-slate-600 group-hover:text-violet-400 flex-shrink-0 transition-colors" />
                                         }
                                     </button>
-
                                     <div className="flex items-center gap-1 flex-shrink-0">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); toggleMutation.mutate(m) }}
+                                        <button onClick={(e) => { e.stopPropagation(); toggleMutation.mutate(m) }}
                                             disabled={toggleMutation.isPending}
-                                            className={clsx(
-                                                'p-1.5 rounded-lg transition-colors',
-                                                m.enabled
-                                                    ? 'text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/40'
-                                                    : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800'
-                                            )}
-                                            title={m.enabled ? 'Disable' : 'Enable'}
-                                        >
+                                            className={clsx('p-1.5 rounded-lg transition-colors', m.enabled
+                                                ? 'text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-950/40'
+                                                : 'text-gray-400 dark:text-slate-500 hover:bg-gray-100 dark:hover:bg-slate-800')}
+                                            title={m.enabled ? 'Disable' : 'Enable'}>
                                             {m.enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
                                         </button>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation()
-                                                if (confirm(`Delete mapping "${m.name || m.collectionName}"?`)) deleteMutation.mutate(m.id)
-                                            }}
-                                            className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
-                                            title="Delete"
-                                        >
+                                        <button onClick={(e) => {
+                                            e.stopPropagation()
+                                            if (confirm(`Delete mapping "${m.name || m.collectionName}"?`)) deleteMutation.mutate(m.id)
+                                        }} className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors" title="Delete">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
                                 </div>
-
                                 {isExpanded && (
                                     <div className="mx-4 mb-3 border border-violet-200 dark:border-violet-800 rounded-lg bg-violet-50/40 dark:bg-violet-950/10 p-4 space-y-4">
                                         <MappingForm form={editForm} onChange={setEditForm} hints={hints} idPrefix={`edit-${m.id}`} />
@@ -498,76 +480,104 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
                         )
                     })}
                 </div>
-            ) : pendingMapping === null ? (
+            ) : null}
+
+            {/* ── pending (unsaved) mappings ── */}
+            {hasPending && (
+                <div className={clsx('divide-y divide-amber-100 dark:divide-amber-900/30', hasSaved && 'border-t border-amber-200 dark:border-amber-800/40')}>
+                    {pendingMappings.map((m, idx) => (
+                        <div key={idx} className="flex items-center gap-3 px-4 py-3 bg-amber-50/40 dark:bg-amber-950/5">
+                            <span className="w-5 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">
+                                {sortedSaved.length + idx + 1}
+                            </span>
+                            <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[m.operation])}>
+                                {OP_LABELS[m.operation]}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate">
+                                        {m.name || m.collectionName}
+                                    </span>
+                                    <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                        Unsaved
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                                    <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{m.collectionName}</code>
+                                    <span>→</span>
+                                    <code className="font-mono text-violet-700 dark:text-violet-400 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">{`{{.Collection.${m.outputKey}.*}}`}</code>
+                                </div>
+                            </div>
+                            <button onClick={() => removePending(idx)}
+                                className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex-shrink-0"
+                                title="Remove">
+                                <Trash2 className="w-4 h-4" />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* ── empty state ── */}
+            {isEmpty && (
                 <div className="p-10 text-center">
                     <Database className="w-8 h-8 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
                     <p className="text-sm text-gray-500 dark:text-slate-400">No collection mappings yet.</p>
                     <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Click "Add Mapping" to map request fields to a session-scoped collection.</p>
                 </div>
-            ) : null}
+            )}
 
-            {/* ── pending new-mapping form ── */}
+            {/* ── add form ── */}
             {addFormOpen && (
-                <div className="border-t border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/5">
-
-                    {/* header: collapse/expand + context summary + validation indicator + discard */}
+                <div className={clsx(
+                    'border-t border-amber-200 dark:border-amber-800/50 bg-amber-50/30 dark:bg-amber-950/5',
+                    (hasSaved || hasPending) && 'border-t'
+                )}>
                     <div className="flex items-center gap-2 px-4 py-3">
-                        <button
-                            type="button"
-                            onClick={toggleAddFormExpanded}
-                            className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                        >
+                        <button type="button" onClick={() => setAddFormExpanded(v => !v)}
+                            className="flex items-center gap-2 flex-1 min-w-0 text-left">
                             {addFormExpanded
                                 ? <ChevronDown  className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                                 : <ChevronRight className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
                             }
                             <span className="text-sm font-medium text-amber-800 dark:text-amber-300">New Mapping</span>
-
-                            {/* show collection + operation badge when collapsed so user retains context */}
-                            {!addFormExpanded && pendingMapping?.collectionName && (
+                            {!addFormExpanded && addForm.collectionName && (
                                 <>
-                                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[pendingMapping.operation])}>
-                                        {OP_LABELS[pendingMapping.operation]}
+                                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0', OP_COLORS[addForm.operation])}>
+                                        {OP_LABELS[addForm.operation]}
                                     </span>
                                     <code className="text-xs font-mono text-gray-600 dark:text-slate-300 bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded truncate">
-                                        {pendingMapping.collectionName}
+                                        {addForm.collectionName}
                                     </code>
                                 </>
                             )}
-
-                            {/* validation warning — shown when required fields are missing */}
-                            {!isPendingValid && (
+                            {!isAddFormValid && (
                                 <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full flex-shrink-0">
                                     <AlertTriangle className="w-3 h-3" />
                                     Fill required fields
                                 </span>
                             )}
                         </button>
-
-                        <button
-                            type="button"
-                            onClick={discardPending}
+                        <button type="button" onClick={discardAddForm}
                             className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex-shrink-0"
-                            title="Discard"
-                        >
+                            title="Discard">
                             <Trash2 className="w-4 h-4" />
                         </button>
                     </div>
 
                     {addFormExpanded && (
                         <div className="px-6 pb-6 space-y-4">
-                            <MappingForm form={pendingMapping!} onChange={onPendingMappingChange} hints={hints} idPrefix="new" />
-                            {createError && <p className="text-sm text-red-600 dark:text-red-400">{createError}</p>}
+                            <MappingForm form={addForm} onChange={setAddForm} hints={hints} idPrefix="new" />
                             <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
-                                <button type="button" onClick={discardPending}
+                                <button type="button" onClick={discardAddForm}
                                     className="px-3 py-1.5 text-sm text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
                                     Discard
                                 </button>
-                                <button type="button" disabled={!isPendingValid || createMutation.isPending}
-                                    onClick={() => createMutation.mutate()}
+                                <button type="button" disabled={!isAddFormValid}
+                                    onClick={appendPending}
                                     className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors">
-                                    {createMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                                    Save
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Add to response
                                 </button>
                             </div>
                         </div>
@@ -577,5 +587,3 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
         </div>
     )
 }
-
-export default CollectionMappingsPanel

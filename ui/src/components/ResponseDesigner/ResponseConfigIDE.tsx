@@ -8,8 +8,8 @@ import {
     GitBranch, Zap, List, Database
 } from 'lucide-react'
 import clsx from 'clsx'
-import { collectionMappingsApi, conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, CollectionMappingInput, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
+import { collectionMappingsApi, conditionsApi, responseScriptBindingsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
+import type { Condition, ConditionOperator, CollectionMappingInput, ResponseConfig, ResponseConfigInput, ScriptBinding, ScriptBindingInput, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
 import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
@@ -475,7 +475,8 @@ export default function ResponseConfigIDE({
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const handleSaveRef = useRef<() => void | Promise<void>>(() => undefined)
-    const [pendingCollectionMapping, setPendingCollectionMapping] = useState<CollectionMappingInput | null>(null)
+    const [pendingCollectionMappings, setPendingCollectionMappings] = useState<CollectionMappingInput[]>([])
+    const [pendingScriptBindings, setPendingScriptBindings] = useState<ScriptBindingInput[]>([])
 
     const queryClient = useQueryClient()
 
@@ -508,7 +509,14 @@ export default function ResponseConfigIDE({
 
     const createMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
-        onSuccess: () => {
+        onSuccess: async (savedConfig: ResponseConfig) => {
+            const id = savedConfig.id
+            await Promise.allSettled([
+                ...pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)),
+                ...pendingScriptBindings.map((b) => responseScriptBindingsApi.create(operationId, id, b)),
+            ])
+            setPendingCollectionMappings([])
+            setPendingScriptBindings([])
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
             onSaved()
@@ -519,13 +527,15 @@ export default function ResponseConfigIDE({
     const updateMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: async () => {
-            if (pendingCollectionMapping && config?.id) {
-                try {
-                    await collectionMappingsApi.create(operationId, config.id, pendingCollectionMapping)
-                    setPendingCollectionMapping(null)
-                    queryClient.invalidateQueries({ queryKey: ['collectionMappings', config.id] })
-                } catch { /* silent — pending form stays visible for retry */ }
-            }
+            const id = config!.id
+            await Promise.allSettled([
+                ...pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)),
+                ...pendingScriptBindings.map((b) => responseScriptBindingsApi.create(operationId, id, b)),
+            ])
+            setPendingCollectionMappings([])
+            setPendingScriptBindings([])
+            queryClient.invalidateQueries({ queryKey: ['collectionMappings', id] })
+            queryClient.invalidateQueries({ queryKey: ['responseScriptBindings', id] })
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
             onSaved()
@@ -1284,40 +1294,31 @@ export default function ResponseConfigIDE({
 
                             {ideActiveTab === 'scriptbindings' && (
                                 <div className="p-3">
-                                    {config?.id ? (
-                                        <div className="space-y-3">
-                                            {hasScriptTemplateData && (
-                                                <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-lg px-3 py-2">
-                                                    Operation script outputs can be referenced in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
-                                                </div>
-                                            )}
-                                            <ScriptBindingsPanel kind="response" operationId={operationId} responseConfigId={config.id} />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <p className="text-sm text-gray-600 dark:text-slate-300">Save the response first to add script bindings.</p>
-                                            {hasScriptTemplateData && (
-                                                <p className="text-xs text-blue-600 dark:text-blue-300">
-                                                    Operation-level script outputs are already available in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
+                                    <div className="space-y-3">
+                                        {hasScriptTemplateData && (
+                                            <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-lg px-3 py-2">
+                                                Operation script outputs can be referenced in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
+                                            </div>
+                                        )}
+                                        <ScriptBindingsPanel
+                                            kind="response"
+                                            operationId={operationId}
+                                            responseConfigId={config?.id}
+                                            pendingBindings={pendingScriptBindings}
+                                            onPendingBindingsChange={setPendingScriptBindings}
+                                        />
+                                    </div>
                                 </div>
                             )}
 
                             <div className={ideActiveTab !== 'collections' ? 'hidden' : undefined}>
                                 <div className="p-3">
-                                    {config?.id ? (
-                                        <CollectionMappingsPanel
-                                            operationId={operationId}
-                                            responseConfigId={config.id}
-                                            pendingMapping={pendingCollectionMapping}
-                                            onPendingMappingChange={setPendingCollectionMapping}
-                                        />
-                                    ) : (
-                                        <p className="text-sm text-gray-600 dark:text-slate-300">Save the response first to add collection mappings.</p>
-                                    )}
+                                    <CollectionMappingsPanel
+                                        operationId={operationId}
+                                        responseConfigId={config?.id}
+                                        pendingMappings={pendingCollectionMappings}
+                                        onPendingMappingsChange={setPendingCollectionMappings}
+                                    />
                                 </div>
                             </div>
                         </div>

@@ -250,7 +250,7 @@ export default function ResponseConfigEditor({
     const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<typeof Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const [pendingCollectionMapping, setPendingCollectionMapping] = useState<CollectionMappingInput | null>(null)
+    const [pendingCollectionMappings, setPendingCollectionMappings] = useState<CollectionMappingInput[]>([])
 
     const queryClient = useQueryClient()
     const isDark = useIsDark()
@@ -286,12 +286,11 @@ export default function ResponseConfigEditor({
     const updateMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
         onSuccess: async () => {
-            if (pendingCollectionMapping && config?.id) {
-                try {
-                    await collectionMappingsApi.create(operationId, config.id, pendingCollectionMapping)
-                    setPendingCollectionMapping(null)
-                    queryClient.invalidateQueries({ queryKey: ['collectionMappings', config.id] })
-                } catch { /* silent — pending form stays visible for retry */ }
+            const id = config!.id
+            if (pendingCollectionMappings.length > 0) {
+                await Promise.allSettled(pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)))
+                setPendingCollectionMappings([])
+                queryClient.invalidateQueries({ queryKey: ['collectionMappings', id] })
             }
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             onClose()
@@ -1188,8 +1187,8 @@ export default function ResponseConfigEditor({
             <CollectionMappingsPanel
                 operationId={operationId}
                 responseConfigId={config.id}
-                pendingMapping={pendingCollectionMapping}
-                onPendingMappingChange={setPendingCollectionMapping}
+                pendingMappings={pendingCollectionMappings}
+                onPendingMappingsChange={setPendingCollectionMappings}
             />
         )}
         {showExamplePicker && (
