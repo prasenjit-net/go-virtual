@@ -1,4 +1,4 @@
-import { useState, forwardRef, useImperativeHandle } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Plus, Trash2, ToggleLeft, ToggleRight,
@@ -11,10 +11,8 @@ import type { CollectionMapping, CollectionMappingInput, CollectionOpType, Field
 interface Props {
     operationId: string
     responseConfigId: string
-}
-
-export interface CollectionMappingsPanelHandle {
-    savePending: () => Promise<void>
+    pendingMapping: CollectionMappingInput | null
+    onPendingMappingChange: (m: CollectionMappingInput | null) => void
 }
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -262,15 +260,13 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
 
 // ─── panel ───────────────────────────────────────────────────────────────────
 
-const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>(
-    function CollectionMappingsPanel({ operationId, responseConfigId }, ref) {
+function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping, onPendingMappingChange }: Props) {
         const queryClient = useQueryClient()
         const queryKey = ['collectionMappings', responseConfigId]
 
-        // pending new-mapping form state
-        const [addFormOpen,     setAddFormOpen]     = useState(false)
+        // addFormOpen is derived from the parent-controlled pendingMapping
+        const addFormOpen = pendingMapping !== null
         const [addFormExpanded, setAddFormExpanded] = useState(true)
-        const [pendingForm,     setPendingForm]     = useState<CollectionMappingInput>({ ...EMPTY_FORM })
 
         // inline edit state — only one row open at a time
         const [editingId,  setEditingId]  = useState<string | null>(null)
@@ -293,22 +289,6 @@ const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>
         const sortedMappings = (mappings ?? []).slice().sort((a, b) => a.order - b.order)
 
         const invalidate = () => queryClient.invalidateQueries({ queryKey })
-
-        // exposed to parent editors — saves the pending form on response-save
-        useImperativeHandle(ref, () => ({
-            savePending: async () => {
-                if (!addFormOpen) return
-                if (!pendingForm.collectionName || !pendingForm.outputKey || !pendingForm.operation) return
-                await collectionMappingsApi.create(operationId, responseConfigId, {
-                    ...pendingForm,
-                    order: pendingForm.order ?? sortedMappings.length,
-                })
-                invalidate()
-                setAddFormOpen(false)
-                setAddFormExpanded(true)
-                setPendingForm({ ...EMPTY_FORM })
-            },
-        }), [addFormOpen, pendingForm, operationId, responseConfigId, sortedMappings.length])
 
         // mutations
         const updateMutation = useMutation({
@@ -350,8 +330,7 @@ const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>
 
         // open add form; close any open edit so list stays tidy
         const openAddForm = () => {
-            setPendingForm({ ...EMPTY_FORM, order: sortedMappings.length })
-            setAddFormOpen(true)
+            onPendingMappingChange({ ...EMPTY_FORM, order: sortedMappings.length })
             setAddFormExpanded(true)
             setEditingId(null)
         }
@@ -361,9 +340,8 @@ const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>
 
         // issue 5: explicit discard action (trash icon inside form)
         const discardPending = () => {
-            setAddFormOpen(false)
+            onPendingMappingChange(null)
             setAddFormExpanded(true)
-            setPendingForm({ ...EMPTY_FORM })
         }
 
         return (
@@ -493,7 +471,7 @@ const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>
                             )
                         })}
                     </div>
-                ) : !addFormOpen ? (
+                ) : pendingMapping === null ? (
                     <div className="p-10 text-center">
                         <Database className="w-8 h-8 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
                         <p className="text-sm text-gray-500 dark:text-slate-400">No collection mappings yet.</p>
@@ -538,14 +516,13 @@ const CollectionMappingsPanel = forwardRef<CollectionMappingsPanelHandle, Props>
                         {/* form body — hidden when collapsed */}
                         {addFormExpanded && (
                             <div className="px-6 pb-6">
-                                <MappingForm form={pendingForm} onChange={setPendingForm} hints={hints} idPrefix="new" />
+                                <MappingForm form={pendingMapping!} onChange={onPendingMappingChange} hints={hints} idPrefix="new" />
                             </div>
                         )}
                     </div>
                 )}
             </div>
         )
-    }
-)
+}
 
 export default CollectionMappingsPanel
