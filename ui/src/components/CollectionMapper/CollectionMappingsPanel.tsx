@@ -5,12 +5,38 @@ import {
     Database, X, Loader2, Pencil, Info,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { collectionMappingsApi } from '../../services/api'
-import type { CollectionMapping, CollectionMappingInput, CollectionOpType, FieldMappingRule } from '../../types'
+import { collectionMappingsApi, operationsApi } from '../../services/api'
+import type { CollectionMapping, CollectionMappingInput, CollectionOpType, FieldMappingRule, Operation } from '../../types'
 
 interface Props {
     operationId: string
     responseConfigId: string
+}
+
+interface OperationHints {
+    pathParams: string[]
+    queryParams: string[]
+    headerParams: string[]
+    bodyFields: string[]
+}
+
+function hintsFromOperation(op: Operation | undefined): OperationHints {
+    return {
+        pathParams: op?.declaredPathParams ?? [],
+        queryParams: op?.declaredQueryParams ?? [],
+        headerParams: op?.declaredHeaderParams ?? [],
+        bodyFields: op?.declaredBodyFields ?? [],
+    }
+}
+
+function sourceKeyOptionsFor(sourceType: FieldMappingRule['sourceType'], hints: OperationHints): string[] {
+    switch (sourceType) {
+        case 'path': return hints.pathParams
+        case 'query': return hints.queryParams
+        case 'header': return hints.headerParams
+        case 'body': return hints.bodyFields
+        default: return []
+    }
 }
 
 const OP_OPTIONS: { value: CollectionOpType; label: string }[] = [
@@ -76,11 +102,15 @@ function RuleEditor({
     onChange,
     label,
     hint,
+    hints,
+    ruleIndex,
 }: {
     rules: FieldMappingRule[]
     onChange: (rules: FieldMappingRule[]) => void
     label: string
     hint: string
+    hints: OperationHints
+    ruleIndex: string // unique prefix for datalist IDs
 }) {
     const addRule = () => onChange([...rules, { ...EMPTY_RULE }])
     const removeRule = (i: number) => onChange(rules.filter((_, idx) => idx !== i))
@@ -108,40 +138,54 @@ function RuleEditor({
                 <p className="text-xs text-gray-400 dark:text-slate-500 italic">No rules — click "Add rule" to add one.</p>
             ) : (
                 <div className="space-y-2">
-                    {rules.map((rule, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                            <input
-                                type="text"
-                                value={rule.targetField}
-                                onChange={(e) => updateRule(i, { targetField: e.target.value })}
-                                placeholder="Field name"
-                                className="flex-1 min-w-0 text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
-                            />
-                            <select
-                                value={rule.sourceType}
-                                onChange={(e) => updateRule(i, { sourceType: e.target.value as FieldMappingRule['sourceType'] })}
-                                className="text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-                            >
-                                {SOURCE_OPTIONS.map((o) => (
-                                    <option key={o.value} value={o.value}>{o.label}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                value={rule.sourceKey}
-                                onChange={(e) => updateRule(i, { sourceKey: e.target.value })}
-                                placeholder={rule.sourceType === 'literal' ? 'value' : 'key / path'}
-                                className="flex-1 min-w-0 text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => removeRule(i)}
-                                className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
-                            >
-                                <X className="w-3.5 h-3.5" />
-                            </button>
-                        </div>
-                    ))}
+                    {rules.map((rule, i) => {
+                        const sourceOptions = sourceKeyOptionsFor(rule.sourceType, hints)
+                        const datalistId = `${ruleIndex}-src-${i}`
+                        return (
+                            <div key={i} className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={rule.targetField}
+                                    onChange={(e) => updateRule(i, { targetField: e.target.value })}
+                                    placeholder="Field name"
+                                    className="flex-1 min-w-0 text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
+                                />
+                                <select
+                                    value={rule.sourceType}
+                                    onChange={(e) => updateRule(i, { sourceType: e.target.value as FieldMappingRule['sourceType'], sourceKey: '' })}
+                                    className="text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+                                >
+                                    {SOURCE_OPTIONS.map((o) => (
+                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                    ))}
+                                </select>
+                                <div className="flex-1 min-w-0 relative">
+                                    <input
+                                        type="text"
+                                        list={sourceOptions.length > 0 ? datalistId : undefined}
+                                        value={rule.sourceKey}
+                                        onChange={(e) => updateRule(i, { sourceKey: e.target.value })}
+                                        placeholder={rule.sourceType === 'literal' ? 'value' : 'key / path'}
+                                        className="w-full text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
+                                    />
+                                    {sourceOptions.length > 0 && (
+                                        <datalist id={datalistId}>
+                                            {sourceOptions.map((opt) => (
+                                                <option key={opt} value={opt} />
+                                            ))}
+                                        </datalist>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => removeRule(i)}
+                                    className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        )
+                    })}
                 </div>
             )}
         </div>
@@ -151,6 +195,7 @@ function RuleEditor({
 function MappingEditor({
     initial,
     nextOrder,
+    hints,
     onSave,
     onCancel,
     isSaving,
@@ -158,6 +203,7 @@ function MappingEditor({
 }: {
     initial: CollectionMappingInput
     nextOrder: number
+    hints: OperationHints
     onSave: (data: CollectionMappingInput) => void
     onCancel: () => void
     isSaving: boolean
@@ -248,6 +294,8 @@ function MappingEditor({
                             onChange={(r) => set('filterRules', r)}
                             label="Filter Rules"
                             hint="Match documents where these fields equal the resolved values."
+                            hints={hints}
+                            ruleIndex="filter"
                         />
                     </div>
                 )}
@@ -260,6 +308,8 @@ function MappingEditor({
                             onChange={(r) => set('dataRules', r)}
                             label="Data Rules"
                             hint="Set these fields on the inserted / updated document."
+                            hints={hints}
+                            ruleIndex="data"
                         />
                     </div>
                 )}
@@ -350,6 +400,14 @@ export default function CollectionMappingsPanel({ operationId, responseConfigId 
         queryKey,
         queryFn: () => collectionMappingsApi.listByResponse(operationId, responseConfigId),
     })
+
+    const { data: operation } = useQuery<Operation>({
+        queryKey: ['operation', operationId],
+        queryFn: () => operationsApi.get(operationId),
+        staleTime: 60_000,
+    })
+
+    const hints = hintsFromOperation(operation)
 
     const invalidate = () => queryClient.invalidateQueries({ queryKey })
 
@@ -564,6 +622,7 @@ export default function CollectionMappingsPanel({ operationId, responseConfigId 
                             key={editing?.id ?? 'new'}
                             initial={initialForm}
                             nextOrder={sortedMappings.length}
+                            hints={hints}
                             onSave={handleSave}
                             onCancel={() => setPanelOpen(false)}
                             isSaving={isSaving}
