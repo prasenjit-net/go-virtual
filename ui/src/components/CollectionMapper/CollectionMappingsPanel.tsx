@@ -289,9 +289,10 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
     const [addFormExpanded, setAddFormExpanded] = useState(true)
 
     // inline edit state — only one row open at a time
-    const [editingId,  setEditingId]  = useState<string | null>(null)
-    const [editForm,   setEditForm]   = useState<CollectionMappingInput>({ ...EMPTY_FORM })
-    const [saveError,  setSaveError]  = useState<string | null>(null)
+    const [editingId,   setEditingId]   = useState<string | null>(null)
+    const [editForm,    setEditForm]    = useState<CollectionMappingInput>({ ...EMPTY_FORM })
+    const [saveError,   setSaveError]   = useState<string | null>(null)
+    const [createError, setCreateError] = useState<string | null>(null)
 
     const { data: mappings, isLoading } = useQuery<CollectionMapping[]>({
         queryKey,
@@ -313,6 +314,20 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
     const isPendingValid = !!(pendingMapping?.collectionName && pendingMapping?.outputKey)
 
     // mutations
+    const createMutation = useMutation({
+        mutationFn: () => collectionMappingsApi.create(operationId, responseConfigId, {
+            ...pendingMapping!,
+            order: pendingMapping!.order ?? sortedMappings.length,
+        }),
+        onSuccess: () => {
+            invalidate()
+            onPendingMappingChange(null)
+            setAddFormExpanded(true)
+            setCreateError(null)
+        },
+        onError: (e) => setCreateError((e as Error).message),
+    })
+
     const updateMutation = useMutation({
         mutationFn: ({ id, data }: { id: string; data: CollectionMappingInput }) =>
             collectionMappingsApi.update(id, data),
@@ -521,14 +536,10 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
                             )}
 
                             {/* validation warning — shown when required fields are missing */}
-                            {!isPendingValid ? (
+                            {!isPendingValid && (
                                 <span className="inline-flex items-center gap-1 text-xs text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full flex-shrink-0">
                                     <AlertTriangle className="w-3 h-3" />
-                                    Fill required fields to save
-                                </span>
-                            ) : (
-                                <span className="text-xs text-amber-600 dark:text-amber-500 bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 rounded-full flex-shrink-0">
-                                    Will save with response
+                                    Fill required fields
                                 </span>
                             )}
                         </button>
@@ -544,8 +555,21 @@ function CollectionMappingsPanel({ operationId, responseConfigId, pendingMapping
                     </div>
 
                     {addFormExpanded && (
-                        <div className="px-6 pb-6">
+                        <div className="px-6 pb-6 space-y-4">
                             <MappingForm form={pendingMapping!} onChange={onPendingMappingChange} hints={hints} idPrefix="new" />
+                            {createError && <p className="text-sm text-red-600 dark:text-red-400">{createError}</p>}
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-amber-200 dark:border-amber-800">
+                                <button type="button" onClick={discardPending}
+                                    className="px-3 py-1.5 text-sm text-gray-600 dark:text-slate-300 border border-gray-300 dark:border-slate-600 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">
+                                    Discard
+                                </button>
+                                <button type="button" disabled={!isPendingValid || createMutation.isPending}
+                                    onClick={() => createMutation.mutate()}
+                                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-white bg-violet-600 hover:bg-violet-700 disabled:opacity-50 rounded-lg transition-colors">
+                                    {createMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                    Save
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
