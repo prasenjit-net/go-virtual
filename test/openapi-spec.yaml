@@ -1,0 +1,362 @@
+openapi: 3.0.2
+info:
+    title: Person API
+    version: 1.0.0
+    description: >-
+        Person API provides CRUD operations for managing people.
+        This specification includes standardized error responses for validation,
+        authentication, authorization, and internal server failures.
+paths:
+    /people:
+        summary: Path used to manage the list of people.
+        description: >-
+            The REST endpoint/path used to list and create zero or more `Person` entities.  This path contains
+            a `GET` and `POST` operation to perform the list and create tasks, respectively.
+        get:
+            tags:
+                - People
+            responses:
+                '200':
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/Person'
+                            examples:
+                                multiple-people:
+                                    summary: Multiple people
+                                    value:
+                                        - id: '1'
+                                          name: Alice Johnson
+                                          age: 32
+                                          email: alice@example.com
+                                        - id: '2'
+                                          name: Bob Smith
+                                          age: 45
+                                          email: bob@example.com
+                                        - id: '3'
+                                          name: Carol White
+                                          age: 27
+                                          email: carol@example.com
+                                empty-list:
+                                    summary: No people found
+                                    value: []
+                    description: Successful response - returns an array of `Person` entities.
+                '400':
+                    $ref: '#/components/responses/BadRequestError'
+                '401':
+                    $ref: '#/components/responses/UnauthorizedError'
+                '403':
+                    $ref: '#/components/responses/ForbiddenError'
+                '500':
+                    $ref: '#/components/responses/InternalServerError'
+            operationId: getpeople
+            summary: List All people
+            description: >-
+                Returns the full list of `Person` entities.
+                Clients should handle standardized error responses for invalid requests,
+                missing credentials, insufficient permissions, and server failures.
+        post:
+            tags:
+                - People
+            requestBody:
+                description: A new `Person` to be created.
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Person'
+                        examples:
+                            adult:
+                                summary: Adult person
+                                value:
+                                    name: Jane Doe
+                                    age: 28
+                                    email: jane.doe@example.com
+                            minor:
+                                summary: Minor person
+                                value:
+                                    name: Tom Junior
+                                    age: 15
+                                    email: tom.junior@example.com
+                required: true
+            responses:
+                '201':
+                    description: Person created successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Person'
+                            examples:
+                                created-adult:
+                                    summary: Newly created adult
+                                    value:
+                                        id: '4'
+                                        name: Jane Doe
+                                        age: 28
+                                        email: jane.doe@example.com
+                                created-minor:
+                                    summary: Newly created minor
+                                    value:
+                                        id: '5'
+                                        name: Tom Junior
+                                        age: 15
+                                        email: tom.junior@example.com
+                '400':
+                    $ref: '#/components/responses/BadRequestError'
+                '401':
+                    $ref: '#/components/responses/UnauthorizedError'
+                '403':
+                    $ref: '#/components/responses/ForbiddenError'
+                '500':
+                    $ref: '#/components/responses/InternalServerError'
+            operationId: createPerson
+            summary: Create a Person
+            description: >-
+                Creates a new `Person` entity from the request payload.
+                Returns a standardized error object when request validation or authorization fails.
+    '/people/{personId}':
+        summary: Path used to manage a single Person.
+        description: >-
+            The REST endpoint/path used to get, update, and delete single instances of an `Person`.  This path
+            contains `GET`, `PUT`, and `DELETE` operations used to perform the get, update, and delete tasks,
+            respectively.
+        get:
+            tags:
+                - People
+            responses:
+                '200':
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Person'
+                            examples:
+                                adult-person:
+                                    summary: Adult person
+                                    value:
+                                        id: '1'
+                                        name: Alice Johnson
+                                        age: 32
+                                        email: alice@example.com
+                                senior-person:
+                                    summary: Senior person
+                                    value:
+                                        id: '2'
+                                        name: Bob Smith
+                                        age: 72
+                                        email: bob.smith@example.com
+                    description: Successful response - returns a single `Person`.
+                '404':
+                    description: Person not found.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                            example:
+                                code: NOT_FOUND
+                                message: Person with id '99' does not exist.
+                '400':
+                    $ref: '#/components/responses/BadRequestError'
+                '401':
+                    $ref: '#/components/responses/UnauthorizedError'
+                '403':
+                    $ref: '#/components/responses/ForbiddenError'
+                '500':
+                    $ref: '#/components/responses/InternalServerError'
+            operationId: getPerson
+            summary: Get a Person
+            description: >-
+                Retrieves the details of a single `Person` by `personId`.
+                Error responses use a consistent `code` and `message` format.
+        put:
+            tags:
+                - People
+            requestBody:
+                description: Updated `Person` information.
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/Person'
+                        examples:
+                            update-age:
+                                summary: Birthday update
+                                value:
+                                    name: Jane Doe
+                                    age: 29
+                                    email: jane.doe@example.com
+                            update-email:
+                                summary: Email change
+                                value:
+                                    name: Jane Doe
+                                    age: 28
+                                    email: jane.new@example.com
+                required: true
+            responses:
+                '202':
+                    description: Person updated successfully.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Person'
+                            examples:
+                                updated-person:
+                                    summary: Person after update
+                                    value:
+                                        id: '1'
+                                        name: Jane Doe
+                                        age: 29
+                                        email: jane.doe@example.com
+                '404':
+                    description: Person not found.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                            example:
+                                code: NOT_FOUND
+                                message: Person with id '99' does not exist.
+                '400':
+                    $ref: '#/components/responses/BadRequestError'
+                '401':
+                    $ref: '#/components/responses/UnauthorizedError'
+                '403':
+                    $ref: '#/components/responses/ForbiddenError'
+                '500':
+                    $ref: '#/components/responses/InternalServerError'
+            operationId: updatePerson
+            summary: Update a Person
+            description: >-
+                Updates an existing `Person` using the provided payload.
+                Validation and authorization failures are returned as standardized errors.
+        delete:
+            tags:
+                - People
+            responses:
+                '204':
+                    description: Person deleted successfully.
+                '404':
+                    description: Person not found.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                            example:
+                                code: NOT_FOUND
+                                message: Person with id '99' does not exist.
+                '400':
+                    $ref: '#/components/responses/BadRequestError'
+                '401':
+                    $ref: '#/components/responses/UnauthorizedError'
+                '403':
+                    $ref: '#/components/responses/ForbiddenError'
+                '500':
+                    $ref: '#/components/responses/InternalServerError'
+            operationId: deletePerson
+            summary: Delete a Person
+            description: >-
+                Deletes an existing `Person` identified by `personId`.
+                Returns standardized error responses for invalid request state and server issues.
+        parameters:
+            -
+                name: personId
+                description: A unique identifier for a `Person`.
+                schema:
+                    type: string
+                in: path
+                required: true
+components:
+    responses:
+        BadRequestError:
+            description: Bad Request - request payload or parameters are invalid.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/ErrorResponse'
+                    example:
+                        code: BAD_REQUEST
+                        message: Invalid request. The field `age` must be a non-negative integer.
+        UnauthorizedError:
+            description: Unauthorized - authentication is required or invalid.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/ErrorResponse'
+                    example:
+                        code: UNAUTHORIZED
+                        message: Authentication token is missing or invalid.
+        ForbiddenError:
+            description: Forbidden - caller is authenticated but not allowed to perform this action.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/ErrorResponse'
+                    example:
+                        code: FORBIDDEN
+                        message: You do not have permission to access this resource.
+        InternalServerError:
+            description: Internal Server Error - unexpected server-side failure.
+            content:
+                application/json:
+                    schema:
+                        $ref: '#/components/schemas/ErrorResponse'
+                    example:
+                        code: INTERNAL_SERVER_ERROR
+                        message: An unexpected error occurred. Please try again later.
+    schemas:
+        Person:
+            title: Root Type for Person
+            description: Represents a person entity.
+            type: object
+            properties:
+                id:
+                    description: Unique identifier assigned on creation.
+                    type: string
+                    readOnly: true
+                name:
+                    description: Full name of the person.
+                    type: string
+                age:
+                    description: Age in years.
+                    format: int32
+                    type: integer
+                    minimum: 0
+                    maximum: 150
+                email:
+                    description: Contact email address.
+                    type: string
+                    format: email
+            required:
+                - name
+                - age
+            examples:
+                - id: '1'
+                  name: Alice Johnson
+                  age: 32
+                  email: alice@example.com
+                - id: '2'
+                  name: Bob Smith
+                  age: 45
+                  email: bob@example.com
+        ErrorResponse:
+            title: ErrorResponse
+            description: Standard error payload returned for failed requests.
+            type: object
+            required:
+                - code
+                - message
+            properties:
+                code:
+                    type: string
+                    description: Machine-readable application error code.
+                    example: BAD_REQUEST
+                message:
+                    type: string
+                    description: Human-readable error message.
+                    example: Invalid request body.
+            example:
+                code: BAD_REQUEST
+                message: Invalid request body.
+tags:
+    -
+        name: People
+        description: Operations related to managing people.
