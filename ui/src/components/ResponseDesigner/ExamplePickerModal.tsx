@@ -84,28 +84,20 @@ export default function ExamplePickerModal({ operationId, onSelect, onClose }: E
                                 grouped[code].map((ex, idx) => {
                                     const key = exampleKey(ex)
                                     const isExpanded = expanded === key
-                                    const isFirstInGroup = idx === 0
-                                    const hasMultiple = grouped[code].length > 1
 
                                     return (
                                         <li
                                             key={key}
-                                            className={isFirstInGroup && code !== sortedCodes[0]
+                                            className={idx === 0 && code !== sortedCodes[0]
                                                 ? 'border-t-2 border-gray-200 dark:border-slate-600'
                                                 : undefined}
                                         >
                                             <div className="flex items-start gap-3 p-4">
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                        {/* Status badge — only on first row of each group */}
-                                                        {(isFirstInGroup || !hasMultiple) && (
-                                                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${statusBadgeClass(code)}`}>
-                                                                {code === 0 ? 'default' : String(code)}
-                                                            </span>
-                                                        )}
-                                                        {hasMultiple && !isFirstInGroup && (
-                                                            <span className="w-14 flex-shrink-0" /> /* indent to align with badge */
-                                                        )}
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${statusBadgeClass(code)}`}>
+                                                            {code === 0 ? 'default' : String(code)}
+                                                        </span>
 
                                                         {/* Named example pill */}
                                                         {ex.exampleName && (
