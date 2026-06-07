@@ -328,15 +328,11 @@ components:
             required:
                 - name
                 - age
-            examples:
-                - id: '1'
-                  name: Alice Johnson
-                  age: 32
-                  email: alice@example.com
-                - id: '2'
-                  name: Bob Smith
-                  age: 45
-                  email: bob@example.com
+            example:
+                id: '1'
+                name: Alice Johnson
+                age: 32
+                email: alice@example.com
         ErrorResponse:
             title: ErrorResponse
             description: Standard error payload returned for failed requests.
