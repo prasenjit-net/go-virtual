@@ -128,6 +128,8 @@ export interface SpecExample {
     contentType: string;
     bodyExample: string;
     schemaHint: string;
+    exampleName?: string;
+    exampleSummary?: string;
 }
 
 export interface OperationSummary {
