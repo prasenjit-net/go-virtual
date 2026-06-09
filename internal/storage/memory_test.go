@@ -899,3 +899,281 @@ func TestMemoryListTags_Empty(t *testing.T) {
 		t.Error("Expected default tag in ListTags")
 	}
 }
+
+// ---- CollectionMapping tests ----
+
+func TestCreateCollectionMapping(t *testing.T) {
+	s := NewMemoryStorage()
+	cm := &models.CollectionMapping{
+		ID:               "cm-1",
+		ResponseConfigID: "rc-1",
+		CollectionName:   "users",
+		Operation:        models.ColOpInsert,
+		OutputKey:        "result",
+		Order:            1,
+		Enabled:          true,
+	}
+	if err := s.CreateCollectionMapping(cm); err != nil {
+		t.Fatalf("CreateCollectionMapping: %v", err)
+	}
+	// Duplicate should error
+	if err := s.CreateCollectionMapping(cm); err == nil {
+		t.Error("Expected error on duplicate collection mapping")
+	}
+}
+
+func TestGetCollectionMapping(t *testing.T) {
+	s := NewMemoryStorage()
+	cm := &models.CollectionMapping{
+		ID:               "cm-1",
+		ResponseConfigID: "rc-1",
+		CollectionName:   "users",
+		Operation:        models.ColOpFindOne,
+		OutputKey:        "user",
+	}
+	_ = s.CreateCollectionMapping(cm)
+
+	got, err := s.GetCollectionMapping("cm-1")
+	if err != nil {
+		t.Fatalf("GetCollectionMapping: %v", err)
+	}
+	if got.CollectionName != "users" {
+		t.Errorf("expected CollectionName=users, got %q", got.CollectionName)
+	}
+
+	_, err = s.GetCollectionMapping("nonexistent")
+	if err == nil {
+		t.Error("Expected error for missing collection mapping")
+	}
+}
+
+func TestUpdateCollectionMapping(t *testing.T) {
+	s := NewMemoryStorage()
+	cm := &models.CollectionMapping{
+		ID:               "cm-1",
+		ResponseConfigID: "rc-1",
+		CollectionName:   "old",
+		Operation:        models.ColOpFindOne,
+		OutputKey:        "x",
+	}
+	_ = s.CreateCollectionMapping(cm)
+
+	cm.CollectionName = "new"
+	if err := s.UpdateCollectionMapping(cm); err != nil {
+		t.Fatalf("UpdateCollectionMapping: %v", err)
+	}
+	got, _ := s.GetCollectionMapping("cm-1")
+	if got.CollectionName != "new" {
+		t.Errorf("expected CollectionName=new, got %q", got.CollectionName)
+	}
+
+	// Update non-existent
+	if err := s.UpdateCollectionMapping(&models.CollectionMapping{ID: "missing"}); err == nil {
+		t.Error("Expected error updating non-existent mapping")
+	}
+}
+
+func TestDeleteCollectionMapping(t *testing.T) {
+	s := NewMemoryStorage()
+	cm := &models.CollectionMapping{
+		ID:               "cm-1",
+		ResponseConfigID: "rc-1",
+		CollectionName:   "users",
+		Operation:        models.ColOpInsert,
+		OutputKey:        "result",
+	}
+	_ = s.CreateCollectionMapping(cm)
+
+	if err := s.DeleteCollectionMapping("cm-1"); err != nil {
+		t.Fatalf("DeleteCollectionMapping: %v", err)
+	}
+	if _, err := s.GetCollectionMapping("cm-1"); err == nil {
+		t.Error("Expected error after delete")
+	}
+	// Delete non-existent
+	if err := s.DeleteCollectionMapping("cm-1"); err == nil {
+		t.Error("Expected error deleting non-existent mapping")
+	}
+}
+
+func TestGetCollectionMappingsByResponse(t *testing.T) {
+	s := NewMemoryStorage()
+	_ = s.CreateCollectionMapping(&models.CollectionMapping{ID: "cm-1", ResponseConfigID: "rc-1", CollectionName: "a", Operation: models.ColOpInsert, OutputKey: "a", Order: 2})
+	_ = s.CreateCollectionMapping(&models.CollectionMapping{ID: "cm-2", ResponseConfigID: "rc-1", CollectionName: "b", Operation: models.ColOpInsert, OutputKey: "b", Order: 1})
+	_ = s.CreateCollectionMapping(&models.CollectionMapping{ID: "cm-3", ResponseConfigID: "rc-2", CollectionName: "c", Operation: models.ColOpInsert, OutputKey: "c", Order: 0})
+
+	mappings, err := s.GetCollectionMappingsByResponse("rc-1")
+	if err != nil {
+		t.Fatalf("GetCollectionMappingsByResponse: %v", err)
+	}
+	if len(mappings) != 2 {
+		t.Fatalf("expected 2 mappings for rc-1, got %d", len(mappings))
+	}
+	// Should be sorted by Order
+	if mappings[0].Order != 1 || mappings[1].Order != 2 {
+		t.Errorf("expected sorted by Order [1,2], got [%d,%d]", mappings[0].Order, mappings[1].Order)
+	}
+
+	// Other response config unaffected
+	mappings2, _ := s.GetCollectionMappingsByResponse("rc-2")
+	if len(mappings2) != 1 {
+		t.Errorf("expected 1 mapping for rc-2, got %d", len(mappings2))
+	}
+
+	// Empty for unknown response config
+	mappings3, _ := s.GetCollectionMappingsByResponse("unknown")
+	if len(mappings3) != 0 {
+		t.Errorf("expected 0 mappings for unknown response config, got %d", len(mappings3))
+	}
+}
+
+// ---- ValidationRule tests ----
+
+func TestCreateValidationRule(t *testing.T) {
+	s := NewMemoryStorage()
+	rule := &models.ValidationRule{
+		ID:          "vr-1",
+		SpecID:      "spec-1",
+		Name:        "myRule",
+		Enabled:     true,
+		Order:       0,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	got, err := s.CreateValidationRule(rule)
+	if err != nil {
+		t.Fatalf("CreateValidationRule: %v", err)
+	}
+	if got.ID != "vr-1" {
+		t.Errorf("expected ID=vr-1, got %q", got.ID)
+	}
+
+	// Duplicate should error
+	_, err = s.CreateValidationRule(rule)
+	if err == nil {
+		t.Error("Expected error on duplicate validation rule")
+	}
+}
+
+func TestGetValidationRule(t *testing.T) {
+	s := NewMemoryStorage()
+	rule := &models.ValidationRule{
+		ID:     "vr-1",
+		SpecID: "spec-1",
+		Name:   "myRule",
+	}
+	_, _ = s.CreateValidationRule(rule)
+
+	got, err := s.GetValidationRule("vr-1")
+	if err != nil {
+		t.Fatalf("GetValidationRule: %v", err)
+	}
+	if got.Name != "myRule" {
+		t.Errorf("expected Name=myRule, got %q", got.Name)
+	}
+
+	_, err = s.GetValidationRule("nonexistent")
+	if err == nil {
+		t.Error("Expected error for missing validation rule")
+	}
+}
+
+func TestUpdateValidationRule(t *testing.T) {
+	s := NewMemoryStorage()
+	rule := &models.ValidationRule{
+		ID:     "vr-1",
+		SpecID: "spec-1",
+		Name:   "old",
+	}
+	_, _ = s.CreateValidationRule(rule)
+
+	rule.Name = "new"
+	got, err := s.UpdateValidationRule(rule)
+	if err != nil {
+		t.Fatalf("UpdateValidationRule: %v", err)
+	}
+	if got.Name != "new" {
+		t.Errorf("expected Name=new, got %q", got.Name)
+	}
+
+	// Verify persisted
+	persisted, _ := s.GetValidationRule("vr-1")
+	if persisted.Name != "new" {
+		t.Errorf("persisted Name should be new, got %q", persisted.Name)
+	}
+
+	// Update non-existent
+	_, err = s.UpdateValidationRule(&models.ValidationRule{ID: "missing"})
+	if err == nil {
+		t.Error("Expected error updating non-existent rule")
+	}
+}
+
+func TestDeleteValidationRule(t *testing.T) {
+	s := NewMemoryStorage()
+	rule := &models.ValidationRule{ID: "vr-1", SpecID: "spec-1", Name: "myRule"}
+	_, _ = s.CreateValidationRule(rule)
+
+	if err := s.DeleteValidationRule("vr-1"); err != nil {
+		t.Fatalf("DeleteValidationRule: %v", err)
+	}
+	if _, err := s.GetValidationRule("vr-1"); err == nil {
+		t.Error("Expected error after delete")
+	}
+	// Delete non-existent
+	if err := s.DeleteValidationRule("vr-1"); err == nil {
+		t.Error("Expected error deleting non-existent rule")
+	}
+}
+
+func TestListValidationRulesBySpec(t *testing.T) {
+	s := NewMemoryStorage()
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-1", SpecID: "spec-1", Name: "b", Order: 2})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-2", SpecID: "spec-1", Name: "a", Order: 1})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-3", SpecID: "spec-2", Name: "c", Order: 0})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-4", OperationID: "op-1", Name: "d", Order: 0})
+
+	rules, err := s.ListValidationRulesBySpec("spec-1")
+	if err != nil {
+		t.Fatalf("ListValidationRulesBySpec: %v", err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules for spec-1, got %d", len(rules))
+	}
+	// Sorted by Order
+	if rules[0].Order != 1 || rules[1].Order != 2 {
+		t.Errorf("expected sorted by Order [1,2], got [%d,%d]", rules[0].Order, rules[1].Order)
+	}
+
+	// Empty for unknown spec
+	rules2, _ := s.ListValidationRulesBySpec("unknown")
+	if len(rules2) != 0 {
+		t.Errorf("expected 0 rules for unknown spec, got %d", len(rules2))
+	}
+}
+
+func TestListValidationRulesByOperation(t *testing.T) {
+	s := NewMemoryStorage()
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-1", OperationID: "op-1", Name: "b", Order: 2})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-2", OperationID: "op-1", Name: "a", Order: 1})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-3", OperationID: "op-2", Name: "c", Order: 0})
+	_, _ = s.CreateValidationRule(&models.ValidationRule{ID: "vr-4", SpecID: "spec-1", Name: "d", Order: 0})
+
+	rules, err := s.ListValidationRulesByOperation("op-1")
+	if err != nil {
+		t.Fatalf("ListValidationRulesByOperation: %v", err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("expected 2 rules for op-1, got %d", len(rules))
+	}
+	// Sorted by Order
+	if rules[0].Order != 1 || rules[1].Order != 2 {
+		t.Errorf("expected sorted by Order [1,2], got [%d,%d]", rules[0].Order, rules[1].Order)
+	}
+
+	// Empty for unknown operation
+	rules2, _ := s.ListValidationRulesByOperation("unknown")
+	if len(rules2) != 0 {
+		t.Errorf("expected 0 rules for unknown operation, got %d", len(rules2))
+	}
+}

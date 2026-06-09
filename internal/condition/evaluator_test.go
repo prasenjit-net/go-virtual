@@ -1041,6 +1041,254 @@ t.Errorf("expected %v, got %v", tt.expected, result)
 }
 }
 
+// ── EvaluateTree tests ───────────────────────────────────────────────────────
+
+func TestEvaluateTree_NilRoot(t *testing.T) {
+	e := NewEvaluator()
+	if !e.EvaluateTree(nil, &RequestData{}) {
+		t.Error("nil root should return true")
+	}
+}
+
+func TestEvaluateTree_Leaf(t *testing.T) {
+	e := NewEvaluator()
+
+	data := &RequestData{QueryParams: map[string][]string{"x": {"hello"}}}
+	leaf := &models.ConditionNode{
+		Condition: &models.Condition{
+			Source:   models.SourceQuery,
+			Key:      "x",
+			Operator: models.OpEquals,
+			Value:    "hello",
+		},
+	}
+	if !e.EvaluateTree(leaf, data) {
+		t.Error("matching leaf should return true")
+	}
+
+	// Change expected value so it fails
+	leaf.Condition.Value = "world"
+	if e.EvaluateTree(leaf, data) {
+		t.Error("non-matching leaf should return false")
+	}
+}
+
+func TestEvaluateTree_AND(t *testing.T) {
+	e := NewEvaluator()
+
+	data := &RequestData{
+		QueryParams: map[string][]string{
+			"a": {"1"},
+			"b": {"2"},
+		},
+	}
+	mkLeaf := func(key, val string) *models.ConditionNode {
+		return &models.ConditionNode{
+			Condition: &models.Condition{
+				Source: models.SourceQuery, Key: key,
+				Operator: models.OpEquals, Value: val,
+			},
+		}
+	}
+
+	// All match → true
+	andNode := &models.ConditionNode{
+		Operator: "AND",
+		Children: []*models.ConditionNode{mkLeaf("a", "1"), mkLeaf("b", "2")},
+	}
+	if !e.EvaluateTree(andNode, data) {
+		t.Error("AND with all matching children should return true")
+	}
+
+	// One fails → false
+	andNode.Children[1].Condition.Value = "99"
+	if e.EvaluateTree(andNode, data) {
+		t.Error("AND with one non-matching child should return false")
+	}
+
+	// Empty children → true (vacuous)
+	emptyAnd := &models.ConditionNode{Operator: "AND", Children: nil}
+	if !e.EvaluateTree(emptyAnd, data) {
+		t.Error("AND with no children should return true")
+	}
+}
+
+func TestEvaluateTree_OR(t *testing.T) {
+	e := NewEvaluator()
+
+	data := &RequestData{QueryParams: map[string][]string{"a": {"1"}}}
+
+	mkLeaf := func(key, val string) *models.ConditionNode {
+		return &models.ConditionNode{
+			Condition: &models.Condition{
+				Source: models.SourceQuery, Key: key,
+				Operator: models.OpEquals, Value: val,
+			},
+		}
+	}
+
+	// First matches → true
+	orNode := &models.ConditionNode{
+		Operator: "OR",
+		Children: []*models.ConditionNode{mkLeaf("a", "1"), mkLeaf("a", "99")},
+	}
+	if !e.EvaluateTree(orNode, data) {
+		t.Error("OR with at least one matching child should return true")
+	}
+
+	// None match → false
+	orNode.Children[0].Condition.Value = "99"
+	if e.EvaluateTree(orNode, data) {
+		t.Error("OR with no matching children should return false")
+	}
+
+	// Empty children → false
+	emptyOr := &models.ConditionNode{Operator: "OR", Children: nil}
+	if e.EvaluateTree(emptyOr, data) {
+		t.Error("OR with no children should return false")
+	}
+}
+
+func TestEvaluateTree_NOT(t *testing.T) {
+	e := NewEvaluator()
+
+	data := &RequestData{QueryParams: map[string][]string{"x": {"yes"}}}
+	child := &models.ConditionNode{
+		Condition: &models.Condition{
+			Source: models.SourceQuery, Key: "x",
+			Operator: models.OpEquals, Value: "yes",
+		},
+	}
+	notNode := &models.ConditionNode{
+		Operator: "NOT",
+		Children: []*models.ConditionNode{child},
+	}
+
+	// condition is true, NOT inverts → false
+	if e.EvaluateTree(notNode, data) {
+		t.Error("NOT of a true condition should return false")
+	}
+
+	// Make condition false, NOT inverts → true
+	child.Condition.Value = "no"
+	if !e.EvaluateTree(notNode, data) {
+		t.Error("NOT of a false condition should return true")
+	}
+}
+
+func TestEvaluateTree_UnknownOperator(t *testing.T) {
+	e := NewEvaluator()
+	node := &models.ConditionNode{
+		Operator: "XOR",
+		Children: []*models.ConditionNode{
+			{Condition: &models.Condition{Source: models.SourceQuery, Key: "x", Operator: models.OpExists}},
+		},
+	}
+	if e.EvaluateTree(node, &RequestData{QueryParams: map[string][]string{"x": {"v"}}}) {
+		t.Error("unknown operator should return false")
+	}
+}
+
+func TestEvaluateTree_NOT_WrongChildCount(t *testing.T) {
+	e := NewEvaluator()
+	data := &RequestData{}
+
+	// Zero children → false
+	notZero := &models.ConditionNode{Operator: "NOT", Children: nil}
+	if e.EvaluateTree(notZero, data) {
+		t.Error("NOT with 0 children should return false")
+	}
+
+	// Two children → false
+	leaf := &models.ConditionNode{Condition: &models.Condition{Source: models.SourceQuery, Key: "x", Operator: models.OpExists}}
+	notTwo := &models.ConditionNode{
+		Operator: "NOT",
+		Children: []*models.ConditionNode{leaf, leaf},
+	}
+	if e.EvaluateTree(notTwo, data) {
+		t.Error("NOT with 2 children should return false")
+	}
+}
+
+func TestExtractValue_Script(t *testing.T) {
+	e := NewEvaluator()
+	data := &RequestData{
+		ScriptOutput: map[string]any{
+			"myScript": map[string]any{
+				"result": "42",
+			},
+		},
+	}
+
+	cond := models.Condition{
+		Source:   models.SourceScriptOutput,
+		Key:      "myScript.result",
+		Operator: models.OpEquals,
+		Value:    "42",
+	}
+	if !e.Evaluate(cond, data) {
+		t.Error("expected script output evaluation to succeed")
+	}
+}
+
+func TestExtractValue_Validation(t *testing.T) {
+	e := NewEvaluator()
+	data := &RequestData{
+		ValidationOutput: map[string]*models.ValidationResult{
+			"checkAge": {
+				Status:     "pass",
+				Properties: map[string]string{"level": "ok"},
+			},
+		},
+	}
+
+	// Check status field
+	statusCond := models.Condition{
+		Source:   models.SourceValidation,
+		Key:      "checkAge.status",
+		Operator: models.OpEquals,
+		Value:    "pass",
+	}
+	if !e.Evaluate(statusCond, data) {
+		t.Error("expected validation status check to pass")
+	}
+
+	// Check a property field
+	propCond := models.Condition{
+		Source:   models.SourceValidation,
+		Key:      "checkAge.level",
+		Operator: models.OpEquals,
+		Value:    "ok",
+	}
+	if !e.Evaluate(propCond, data) {
+		t.Error("expected validation property check to pass")
+	}
+
+	// Missing rule name → ""
+	missingCond := models.Condition{
+		Source:   models.SourceValidation,
+		Key:      "missing.status",
+		Operator: models.OpEquals,
+		Value:    "",
+	}
+	// "" == "" is true because OpNotExists would work but OpEquals "" also passes
+	// Let's use OpNotExists instead to confirm empty
+	missingCond.Operator = models.OpNotExists
+	if !e.Evaluate(missingCond, data) {
+		t.Error("missing rule should produce empty string (not exists)")
+	}
+
+	// No dot separator → ""
+	noDotCond := models.Condition{
+		Source:   models.SourceValidation,
+		Key:      "nodot",
+		Operator: models.OpNotExists,
+	}
+	if !e.Evaluate(noDotCond, data) {
+		t.Error("key without dot separator should produce empty string")
+	}
+}
+
 // ── Regex token tests ────────────────────────────────────────────────────────
 
 func TestEvaluate_RegexTokens(t *testing.T) {
