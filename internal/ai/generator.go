@@ -163,14 +163,19 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 		return nil, fmt.Errorf("model returned invalid JSON: %w — raw: %s", err, content)
 	}
 
-	// Validate and sanitise conditions returned by the model.
-	if err := validateConditions(input.Conditions); err != nil {
-		return nil, fmt.Errorf("model generated invalid conditions: %w", err)
+	// Validate and convert conditions.
+	// The model may output conditionTree (preferred) or legacy flat conditions.
+	if input.ConditionTree != nil {
+		if err := validateConditionTree(input.ConditionTree); err != nil {
+			return nil, fmt.Errorf("model generated invalid conditionTree: %w", err)
+		}
+	} else {
+		// Flat conditions fallback: validate then convert to tree.
+		if err := validateConditions(input.Conditions); err != nil {
+			return nil, fmt.Errorf("model generated invalid conditions: %w", err)
+		}
+		input.ConditionTree = models.ConditionsToTree(input.Conditions)
 	}
-
-	// Convert flat conditions to a ConditionTree so they are evaluated via the
-	// tree path. NormaliseDeprecatedOperator is applied inside ConditionsToTree.
-	input.ConditionTree = models.ConditionsToTree(input.Conditions)
 	input.Conditions = nil
 
 	// Apply sensible defaults in case the model omitted optional fields.
@@ -644,6 +649,50 @@ func validateConditions(conditions []models.Condition) error {
 		}
 		if c.Key == "" && c.Source != "signature" {
 			return fmt.Errorf("condition[%d]: key must not be empty", i)
+		}
+	}
+	return nil
+}
+
+// validateConditionTree recursively validates a condition tree node.
+func validateConditionTree(node *models.ConditionNode) error {
+	return validateConditionTreeAt(node, "conditionTree")
+}
+
+func validateConditionTreeAt(node *models.ConditionNode, path string) error {
+	if node == nil {
+		return nil
+	}
+	if node.Condition != nil {
+		// Leaf node: validate the embedded condition.
+		c := node.Condition
+		if !validSources[c.Source] {
+			return fmt.Errorf("%s: invalid source %q", path, c.Source)
+		}
+		if !validOperators[c.Operator] {
+			return fmt.Errorf("%s: invalid operator %q", path, c.Operator)
+		}
+		if c.Key == "" && c.Source != "signature" {
+			return fmt.Errorf("%s: key must not be empty", path)
+		}
+		return nil
+	}
+	// Group node: validate operator and recurse.
+	switch node.Operator {
+	case "AND", "OR":
+		if len(node.Children) < 2 {
+			return fmt.Errorf("%s: %s group must have at least 2 children", path, node.Operator)
+		}
+	case "NOT":
+		if len(node.Children) != 1 {
+			return fmt.Errorf("%s: NOT group must have exactly 1 child", path)
+		}
+	default:
+		return fmt.Errorf("%s: invalid group operator %q (valid: AND, OR, NOT)", path, node.Operator)
+	}
+	for i, child := range node.Children {
+		if err := validateConditionTreeAt(child, fmt.Sprintf("%s.children[%d]", path, i)); err != nil {
+			return err
 		}
 	}
 	return nil

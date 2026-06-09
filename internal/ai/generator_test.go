@@ -179,7 +179,7 @@ func TestBuildSystemPrompt_Basic(t *testing.T) {
 	op := OperationContext{Method: "GET", Path: "/pets"}
 	prompt := buildSystemPrompt(op)
 
-	for _, want := range []string{"statusCode", "conditions", "body", "priority", "CONDITION SCHEMA"} {
+	for _, want := range []string{"statusCode", "conditionTree", "body", "priority", "CONDITION TREE SCHEMA"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt missing %q", want)
 		}
@@ -644,6 +644,71 @@ func TestGenerateResponse_InvalidConditions(t *testing.T) {
 	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/pets"}, "")
 	if err == nil {
 		t.Error("expected error for invalid condition source")
+	}
+}
+
+func TestGenerateResponse_ConditionTree_OR(t *testing.T) {
+	// Model returns conditionTree with OR logic (X-Head1 present OR X-Head2 absent).
+	responseBody := `{
+"statusCode": 200,
+"name": "Header OR",
+"description": "Matches when X-Head1 present or X-Head2 absent",
+"headers": {"Content-Type": "application/json"},
+"body": "{\"ok\":true}",
+"priority": 5,
+"enabled": true,
+"conditionTree": {
+  "operator": "OR",
+  "children": [
+    {"condition": {"source":"header","key":"X-Head1","operator":"exists","value":""}},
+    {"condition": {"source":"header","key":"X-Head2","operator":"exists","value":"","negate":true}}
+  ]
+},
+"delay": 0
+}`
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/items"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ConditionTree == nil {
+		t.Fatal("expected conditionTree to be set")
+	}
+	if result.ConditionTree.Operator != "OR" {
+		t.Errorf("expected OR root, got %q", result.ConditionTree.Operator)
+	}
+	if len(result.ConditionTree.Children) != 2 {
+		t.Errorf("expected 2 children, got %d", len(result.ConditionTree.Children))
+	}
+	if result.Conditions != nil {
+		t.Error("expected Conditions to be nil when conditionTree is used")
+	}
+}
+
+func TestGenerateResponse_ConditionTree_InvalidOperator(t *testing.T) {
+	responseBody := `{
+"statusCode": 200,
+"name": "Bad",
+"headers": {},
+"body": "{}",
+"priority": 5,
+"enabled": true,
+"conditionTree": {
+  "operator": "XOR",
+  "children": [
+    {"condition": {"source":"header","key":"X-A","operator":"exists","value":""}}
+  ]
+},
+"delay": 0
+}`
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/items"}, "")
+	if err == nil {
+		t.Error("expected error for invalid conditionTree operator")
 	}
 }
 

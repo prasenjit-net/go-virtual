@@ -4,64 +4,86 @@ Your task is to generate a single realistic mock response configuration for the 
 
 You MUST return a JSON object with EXACTLY these fields:
 {
-  "name":        string  — concise label, e.g. "Success", "Created", "Not Found", "Invalid Input",
-  "description": string  — one sentence explaining when this response is returned,
-  "statusCode":  number  — appropriate HTTP status code (200, 201, 400, 404, 422, 500, …),
-  "headers":     object  — at minimum {"Content-Type": "application/json"},
-  "body":        string  — the response body as a JSON string (the JSON object serialised to a string),
-  "priority":    number  — use 10 unless conditions require a higher priority (lower number = higher priority),
-  "enabled":     boolean — use true,
-  "conditions":  array   — list of condition objects (see schema below); use [] if no conditions are needed,
-  "delay":       number  — use 0
+  "name":          string       — concise label, e.g. "Success", "Created", "Not Found", "Invalid Input",
+  "description":   string       — one sentence explaining when this response is returned,
+  "statusCode":    number       — appropriate HTTP status code (200, 201, 400, 404, 422, 500, …),
+  "headers":       object       — at minimum {"Content-Type": "application/json"},
+  "body":          string       — the response body as a JSON string (the JSON object serialised to a string),
+  "priority":      number       — use 10 unless conditions require a higher priority (lower number = higher priority),
+  "enabled":       boolean      — use true,
+  "conditionTree": object|null  — condition tree (see schema below); use null if no conditions are needed,
+  "delay":         number       — use 0
 }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONDITION SCHEMA
+CONDITION TREE SCHEMA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Each element of "conditions" must be:
+A condition tree node is either a LEAF or a GROUP.
+
+LEAF node — tests one request value:
 {
-  "source":   one of: "path" | "query" | "header" | "body" | "signature" | "script"
-  "key":      parameter name, header name, gjson path (for body/script), or "" for signature
-  "operator": "eq" | "contains" | "regex" | "exists" |
-              "gt" | "lt" | "gte" | "lte" | "startsWith" | "endsWith" |
-              "dateEq" | "dateBefore" | "dateAfter" | "dateLte" | "dateGte" |
-              "dateInPast" | "dateInFuture" | "dateToday" | "dateBetween"
-  "value":    comparison value as string (leave "" for exists/date-no-arg operators)
-  "negate":   optional bool — set true to invert the result (e.g. negate+eq = not-equals, negate+exists = not-exists)
+  "condition": {
+    "source":   "path" | "query" | "header" | "body" | "signature" | "script",
+    "key":      parameter name, header name, gjson path (for body/script), or "" for signature,
+    "operator": "eq" | "contains" | "regex" | "exists" |
+                "gt" | "lt" | "gte" | "lte" | "startsWith" | "endsWith" |
+                "dateEq" | "dateBefore" | "dateAfter" | "dateLte" | "dateGte" |
+                "dateInPast" | "dateInFuture" | "dateToday" | "dateBetween",
+    "value":    comparison value as string (leave "" for exists / date-no-arg operators),
+    "negate":   optional bool — set true to invert (negate+exists = header absent, negate+eq = not-equals)
+  }
 }
+
+GROUP node — combines children with AND / OR / NOT:
+{
+  "operator": "AND" | "OR" | "NOT",
+  "children": [ <node>, <node>, … ]
+}
+  AND — all children must match
+  OR  — at least one child must match
+  NOT — exactly one child; inverts its result (prefer negate:true on a leaf instead)
 
 GJSON PATH SYNTAX (used for source="body" and source="script"):
   - Uses dot notation. NO leading "$" or "@" — this is NOT JSONPath RFC 9535.
   - Simple field:          "id"           → body.id  /  scriptOutput.id
   - Nested field:          "user.id"      → body.user.id  /  scriptOutput.user.id
   - Array element:         "items.0"      → first element of items array
-  - Nested in array item:  "items.0.id"   → id field of first item
   - WRONG (never use):     "$.id"  "body.id"  "/id"  "$['id']"
 
 SOURCE "script" — operation-level script output:
-  Scripts attached to the operation run before response matching. Their output is a
-  map keyed by the binding's outputKey. Use source="script" to route on computed values.
-  key = "<outputKey>.<fieldName>"  (same gjson dot-path as body)
-  Example: script binding with outputKey="authCheck" returns {"tier":"premium"}
-    → use key="authCheck.tier" with operator="eq", value="premium"
+  Scripts run before response matching; their output is keyed by outputKey.
+  key = "<outputKey>.<fieldName>"
+  Example: outputKey="authCheck", result={"tier":"premium"} → key="authCheck.tier"
 
-CONDITION EXAMPLES:
-  Path param {id} equals "42":
-    {"source":"path","key":"id","operator":"eq","value":"42"}
-  Query param ?status=active:
-    {"source":"query","key":"status","operator":"eq","value":"active"}
-  Header Authorization exists:
-    {"source":"header","key":"Authorization","operator":"exists","value":""}
-  Body field "id" equals 100:
-    {"source":"body","key":"id","operator":"eq","value":"100"}
-  Nested body field "user.role" equals "admin":
-    {"source":"body","key":"user.role","operator":"eq","value":"admin"}
-  Script output field "authCheck.tier" equals "premium":
-    {"source":"script","key":"authCheck.tier","operator":"eq","value":"premium"}
-  Date field in past:
-    {"source":"body","key":"createdAt","operator":"dateInPast","value":""}
-  Date between tokens:
-    {"source":"body","key":"dueDate","operator":"dateBetween","value":"today,now+7d"}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONDITION TREE EXAMPLES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Single condition (no group needed — a bare leaf is valid):
+  {"condition":{"source":"header","key":"Authorization","operator":"exists","value":""}}
+
+AND — all must match (query status=active AND header Authorization present):
+  {"operator":"AND","children":[
+    {"condition":{"source":"query","key":"status","operator":"eq","value":"active"}},
+    {"condition":{"source":"header","key":"Authorization","operator":"exists","value":""}}
+  ]}
+
+OR — any one must match (header X-Head1 present OR header X-Head2 absent):
+  {"operator":"OR","children":[
+    {"condition":{"source":"header","key":"X-Head1","operator":"exists","value":""}},
+    {"condition":{"source":"header","key":"X-Head2","operator":"exists","value":"","negate":true}}
+  ]}
+
+NOT-equals (negate on a leaf — body role is NOT "guest"):
+  {"condition":{"source":"body","key":"role","operator":"eq","value":"guest","negate":true}}
+
+Nested AND inside OR:
+  {"operator":"OR","children":[
+    {"operator":"AND","children":[
+      {"condition":{"source":"query","key":"type","operator":"eq","value":"premium"}},
+      {"condition":{"source":"header","key":"Authorization","operator":"exists","value":""}}
+    ]},
+    {"condition":{"source":"header","key":"X-Admin","operator":"exists","value":""}}
+  ]}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RULES
@@ -70,6 +92,6 @@ RULES
 - Use realistic fake data (names, UUIDs, ISO-8601 dates, URLs, numbers).
 - ALWAYS honour the spec-defined response structure provided below.
 - For body conditions use ONLY the gjson paths listed in the "Request body fields" section.
-- Add conditions ONLY when the user asks for conditional behaviour.
-- When conditions are present, lower the priority (e.g. 5) so they match before unconditional responses.
+- Add conditionTree ONLY when the user asks for conditional behaviour.
+- When conditionTree is present, lower the priority (e.g. 5) so this response matches before unconditional ones.
 - Return ONLY the raw JSON object — no markdown fences, no explanation.
