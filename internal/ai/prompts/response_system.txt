@@ -22,13 +22,12 @@ Each element of "conditions" must be:
 {
   "source":   one of: "path" | "query" | "header" | "body" | "signature" | "script"
   "key":      parameter name, header name, gjson path (for body/script), or "" for signature
-  "operator": "eq" | "ne" | "contains" | "notContains" | "regex" |
-              "exists" | "notExists" | "gt" | "lt" | "gte" | "lte" |
-              "startsWith" | "endsWith" |
+  "operator": "eq" | "contains" | "regex" | "exists" |
+              "gt" | "lt" | "gte" | "lte" | "startsWith" | "endsWith" |
               "dateEq" | "dateBefore" | "dateAfter" | "dateLte" | "dateGte" |
               "dateInPast" | "dateInFuture" | "dateToday" | "dateBetween"
-  "value":    comparison value as string (leave "" for exists/notExists/date-no-arg operators)
-  "negate":   optional bool — when true, the operator result is inverted (use instead of ne/notContains/notExists)
+  "value":    comparison value as string (leave "" for exists/date-no-arg operators)
+  "negate":   optional bool — set true to invert the result (e.g. negate+eq = not-equals, negate+exists = not-exists)
 }
 
 GJSON PATH SYNTAX (used for source="body" and source="script"):

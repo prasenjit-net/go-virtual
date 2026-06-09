@@ -84,6 +84,26 @@ func DeprecatedOperators() []string {
 	return []string{OpNotEquals, OpNotContains, OpNotExists}
 }
 
+// ConditionsToTree converts a flat AND-only condition list to a ConditionNode tree.
+// Returns nil for an empty slice, a single leaf node for one condition, and an AND
+// root with leaf children for multiple conditions. Deprecated operators are normalised
+// to their positive equivalents with Negate=true before the tree is built.
+func ConditionsToTree(conditions []Condition) *ConditionNode {
+	if len(conditions) == 0 {
+		return nil
+	}
+	if len(conditions) == 1 {
+		c := NormaliseDeprecatedOperator(conditions[0])
+		return &ConditionNode{Condition: &c}
+	}
+	children := make([]*ConditionNode, len(conditions))
+	for i, cond := range conditions {
+		c := NormaliseDeprecatedOperator(cond)
+		children[i] = &ConditionNode{Condition: &c}
+	}
+	return &ConditionNode{Operator: "AND", Children: children}
+}
+
 // NormaliseDeprecatedOperator converts a condition using a deprecated negative
 // operator into its positive equivalent with Negate set to true. Conditions that
 // already use current operators are returned unchanged.

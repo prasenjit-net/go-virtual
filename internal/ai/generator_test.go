@@ -682,8 +682,13 @@ func TestGenerateResponse_DefaultsApplied(t *testing.T) {
 	if result.Headers == nil {
 		t.Error("expected default headers to be applied")
 	}
-	if result.Conditions == nil {
-		t.Error("expected default conditions slice (not nil)")
+	// Flat conditions are converted to ConditionTree; Conditions is cleared.
+	// A null/empty conditions model response yields a nil ConditionTree (no conditions).
+	if result.Conditions != nil {
+		t.Error("expected Conditions to be nil after conversion to ConditionTree")
+	}
+	if result.ConditionTree != nil {
+		t.Error("expected ConditionTree to be nil when model returned no conditions")
 	}
 	if result.Priority != 10 {
 		t.Errorf("expected default priority 10, got %d", result.Priority)

@@ -168,15 +168,17 @@ func (g *Generator) GenerateResponse(ctx context.Context, op OperationContext, u
 		return nil, fmt.Errorf("model generated invalid conditions: %w", err)
 	}
 
+	// Convert flat conditions to a ConditionTree so they are evaluated via the
+	// tree path. NormaliseDeprecatedOperator is applied inside ConditionsToTree.
+	input.ConditionTree = models.ConditionsToTree(input.Conditions)
+	input.Conditions = nil
+
 	// Apply sensible defaults in case the model omitted optional fields.
 	if input.StatusCode == 0 {
 		input.StatusCode = 200
 	}
 	if input.Headers == nil {
 		input.Headers = map[string]string{"Content-Type": "application/json"}
-	}
-	if input.Conditions == nil {
-		input.Conditions = []models.Condition{}
 	}
 	if input.Priority == 0 {
 		input.Priority = 10
