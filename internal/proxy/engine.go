@@ -1104,11 +1104,19 @@ func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, re
 		if _, ok := enabledTags[tag]; !ok {
 			continue
 		}
-		if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
+		if e.evalConditions(cfg.ConditionTree, cfg.Conditions, reqData) {
 			return cfg
 		}
 	}
 	return nil
+}
+
+// evalConditions evaluates a ConditionTree when set, otherwise falls back to EvaluateAll(conditions).
+func (e *Engine) evalConditions(tree *models.ConditionNode, conditions []models.Condition, reqData *condition.RequestData) bool {
+	if tree != nil {
+		return e.condEvaluator.EvaluateTree(tree, reqData)
+	}
+	return e.condEvaluator.EvaluateAll(conditions, reqData)
 }
 
 // proxyConditionsMet returns (shouldActivate bool, skippedReason string).
@@ -1121,7 +1129,7 @@ func (e *Engine) proxyConditionsMet(spec *models.Spec, reqData *condition.Reques
 		e.warnModeUnavailable(spec, "proxy", "backend URI is not configured")
 		return false, "no-backend"
 	}
-	if e.condEvaluator.EvaluateAll(policy.Proxy.Conditions, reqData) {
+	if e.evalConditions(policy.Proxy.ConditionTree, policy.Proxy.Conditions, reqData) {
 		return true, ""
 	}
 	return false, "conditions-not-matched"
@@ -1137,7 +1145,7 @@ func (e *Engine) aiConditionsMet(spec *models.Spec, reqData *condition.RequestDa
 		e.warnModeUnavailable(spec, "AI", "AI generator is not configured")
 		return false, "not-configured"
 	}
-	if e.condEvaluator.EvaluateAll(policy.AI.Conditions, reqData) {
+	if e.evalConditions(policy.AI.ConditionTree, policy.AI.Conditions, reqData) {
 		return true, ""
 	}
 	return false, "conditions-not-matched"

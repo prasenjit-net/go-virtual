@@ -62,6 +62,7 @@ export interface ConditionalModeConfig {
     enabled: boolean;
     disableRecording?: boolean;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
 }
 
 export interface ModePolicy {
@@ -153,6 +154,7 @@ export interface ResponseConfig {
     tag?: string;
     priority: number;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
     statusCode: number;
     headers: Record<string, string>;
     body: string;
@@ -168,6 +170,7 @@ export interface ResponseConfigInput {
     tag?: string;
     priority: number;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
     statusCode: number;
     headers: Record<string, string>;
     body: string;

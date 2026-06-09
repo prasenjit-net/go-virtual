@@ -6,30 +6,8 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import { validationRulesApi } from '../../services/api'
-import type {
-    Condition, ConditionNode, ConditionOperator, ValidationInput, ValidationRule
-} from '../../types'
-
-// ---- shared condition constants (duplicated from ResponseConfigEditor to avoid coupling) ----
-
-const operators: { value: ConditionOperator; label: string }[] = [
-    { value: 'eq', label: 'Equals' },
-    { value: 'contains', label: 'Contains' },
-    { value: 'startsWith', label: 'Starts With' },
-    { value: 'endsWith', label: 'Ends With' },
-    { value: 'regex', label: 'Regex' },
-    { value: 'exists', label: 'Exists' },
-    { value: 'gt', label: '>' },
-    { value: 'lt', label: '<' },
-    { value: 'gte', label: '>=' },
-    { value: 'lte', label: '<=' },
-]
-
-const sources = ['path', 'query', 'header', 'body', 'signature', 'script', 'validation'] as const
-
-function emptyCondition(): Condition {
-    return { source: 'header', key: '', operator: 'eq', value: '', negate: false }
-}
+import ConditionEditor from '../shared/ConditionEditor'
+import type { ConditionNode, ValidationInput, ValidationRule } from '../../types'
 
 // ---- Props ----
 
@@ -111,216 +89,6 @@ function PropertyMapEditor({
                     </div>
                 ))}
             </div>
-        </div>
-    )
-}
-
-// ---- ConditionTreeEditor (simplified: root operator + flat children conditions) ----
-
-interface ConditionTreeEditorProps {
-    value: ConditionNode | undefined
-    onChange: (v: ConditionNode | undefined) => void
-}
-
-function ConditionTreeEditor({ value, onChange }: ConditionTreeEditorProps) {
-    // Determine if root is a leaf or a group
-    const isLeaf = !value || !!value.condition
-    const rootOperator = (value?.operator ?? 'AND') as 'AND' | 'OR'
-    const children = value?.children ?? []
-    const leafCondition = value?.condition ?? emptyCondition()
-
-    const setLeafMode = () => {
-        onChange({ condition: emptyCondition() })
-    }
-    const setGroupMode = (op: 'AND' | 'OR') => {
-        onChange({ operator: op, children: [{ condition: emptyCondition() }] })
-    }
-    const changeOperator = (op: 'AND' | 'OR') => {
-        onChange({ operator: op, children })
-    }
-    const updateLeaf = (updates: Partial<Condition>) => {
-        onChange({ condition: { ...leafCondition, ...updates } })
-    }
-    const addChild = () => {
-        onChange({ operator: rootOperator, children: [...children, { condition: emptyCondition() }] })
-    }
-    const removeChild = (i: number) => {
-        const next = children.filter((_, idx) => idx !== i)
-        if (next.length === 0) {
-            onChange(undefined)
-        } else if (next.length === 1 && next[0].condition) {
-            onChange(next[0])
-        } else {
-            onChange({ operator: rootOperator, children: next })
-        }
-    }
-    const updateChild = (i: number, child: ConditionNode) => {
-        const next = [...children]
-        next[i] = child
-        onChange({ operator: rootOperator, children: next })
-    }
-    const updateChildCondition = (i: number, updates: Partial<Condition>) => {
-        const child = children[i]
-        if (!child.condition) return
-        updateChild(i, { condition: { ...child.condition, ...updates } })
-    }
-
-    return (
-        <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3 bg-gray-50 dark:bg-slate-900/40">
-            <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs font-medium text-gray-600 dark:text-slate-400">Mode:</span>
-                <button
-                    type="button"
-                    onClick={setLeafMode}
-                    className={clsx(
-                        'px-2 py-0.5 rounded text-xs font-medium border transition-colors',
-                        isLeaf
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'border-gray-300 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:border-indigo-400'
-                    )}
-                >
-                    Single condition
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setGroupMode('AND')}
-                    className={clsx(
-                        'px-2 py-0.5 rounded text-xs font-medium border transition-colors',
-                        !isLeaf && rootOperator === 'AND'
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'border-gray-300 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:border-indigo-400'
-                    )}
-                >
-                    AND group
-                </button>
-                <button
-                    type="button"
-                    onClick={() => setGroupMode('OR')}
-                    className={clsx(
-                        'px-2 py-0.5 rounded text-xs font-medium border transition-colors',
-                        !isLeaf && rootOperator === 'OR'
-                            ? 'bg-indigo-600 text-white border-indigo-600'
-                            : 'border-gray-300 dark:border-slate-700 text-gray-600 dark:text-slate-400 hover:border-indigo-400'
-                    )}
-                >
-                    OR group
-                </button>
-            </div>
-
-            {isLeaf ? (
-                <ConditionRow
-                    cond={leafCondition}
-                    onChange={updateLeaf}
-                    canRemove={false}
-                    onRemove={() => {}}
-                />
-            ) : (
-                <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                        <span className={clsx(
-                            'text-xs font-bold px-1.5 py-0.5 rounded',
-                            rootOperator === 'AND'
-                                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                                : 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300'
-                        )}>
-                            {rootOperator}
-                        </span>
-                        <button
-                            type="button"
-                            onClick={() => changeOperator(rootOperator === 'AND' ? 'OR' : 'AND')}
-                            className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-slate-300"
-                        >
-                            (switch)
-                        </button>
-                    </div>
-                    {children.map((child, i) => {
-                        if (!child.condition) return null
-                        return (
-                            <ConditionRow
-                                key={i}
-                                cond={child.condition}
-                                onChange={updates => updateChildCondition(i, updates)}
-                                canRemove={true}
-                                onRemove={() => removeChild(i)}
-                            />
-                        )
-                    })}
-                    <button
-                        type="button"
-                        onClick={addChild}
-                        className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 mt-1"
-                    >
-                        <Plus className="w-3 h-3" /> Add condition
-                    </button>
-                </div>
-            )}
-        </div>
-    )
-}
-
-interface ConditionRowProps {
-    cond: Condition
-    onChange: (updates: Partial<Condition>) => void
-    canRemove: boolean
-    onRemove: () => void
-}
-
-function ConditionRow({ cond, onChange, canRemove, onRemove }: ConditionRowProps) {
-    return (
-        <div className="flex items-center gap-1.5 flex-wrap">
-            <select
-                value={cond.source}
-                onChange={e => onChange({ source: e.target.value as Condition['source'], key: '' })}
-                className="px-1.5 py-1 border border-gray-300 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-            >
-                {sources.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <input
-                type="text"
-                value={cond.key}
-                onChange={e => onChange({ key: e.target.value })}
-                placeholder={
-                    cond.source === 'signature' ? 'signature value'
-                    : cond.source === 'script' ? 'outputKey.field'
-                    : cond.source === 'validation' ? 'ruleName.status'
-                    : 'key'
-                }
-                disabled={cond.source === 'signature'}
-                className="w-28 px-1.5 py-1 border border-gray-300 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60"
-            />
-            <select
-                value={cond.operator}
-                onChange={e => onChange({ operator: e.target.value as ConditionOperator })}
-                className="px-1.5 py-1 border border-gray-300 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-            >
-                {operators.map(op => <option key={op.value} value={op.value}>{op.label}</option>)}
-            </select>
-            <button
-                type="button"
-                title="Negate"
-                onClick={() => onChange({ negate: !cond.negate })}
-                className={clsx(
-                    'px-1.5 py-1 rounded border text-xs font-semibold transition-colors',
-                    cond.negate
-                        ? 'bg-red-100 dark:bg-red-900/40 border-red-400 text-red-700 dark:text-red-300'
-                        : 'border-gray-300 dark:border-slate-700 text-gray-400 hover:border-red-400 hover:text-red-500'
-                )}
-            >
-                NOT
-            </button>
-            <input
-                type="text"
-                value={cond.value}
-                onChange={e => onChange({ value: e.target.value })}
-                placeholder="value"
-                disabled={cond.operator === 'exists'}
-                className="w-28 px-1.5 py-1 border border-gray-300 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 disabled:opacity-60"
-            />
-            {canRemove && (
-                <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-500">
-                    <X className="w-3.5 h-3.5" />
-                </button>
-            )}
         </div>
     )
 }
@@ -435,14 +203,16 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
 
                     {/* Condition Tree */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">
-                            Condition (when does the rule "pass"?)
-                        </label>
                         <p className="text-xs text-gray-400 dark:text-slate-500 mb-2">
-                            If the condition evaluates to <strong>true</strong>, onSuccess properties are injected.
-                            If <strong>false</strong>, onFailure properties are injected.
+                            When condition is <strong>true</strong> → onPass properties injected.
+                            When <strong>false</strong> → onFail properties injected.
                         </p>
-                        <ConditionTreeEditor value={conditionTree} onChange={setConditionTree} />
+                        <ConditionEditor
+                            label="Condition (when does this rule pass?)"
+                            value={conditionTree}
+                            onChange={setConditionTree}
+                            emptyHint="No condition — rule always passes."
+                        />
                     </div>
 
                     {/* OnSuccess / OnFailure */}

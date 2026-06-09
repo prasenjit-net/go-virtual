@@ -17,10 +17,10 @@ import {
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import ConditionEditor, { conditionsToTree, BASIC_SOURCES } from '../shared/ConditionEditor'
 import type {
     AIStatus,
-    Condition,
-    ConditionOperator,
+    ConditionNode,
     ModePolicy,
     OperationSummary,
     Spec,
@@ -36,21 +36,6 @@ const methodColors: Record<string, string> = {
     OPTIONS: 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300',
 }
 
-const operators: { value: ConditionOperator; label: string }[] = [
-    { value: 'eq', label: 'Equals' },
-    { value: 'contains', label: 'Contains' },
-    { value: 'startsWith', label: 'Starts With' },
-    { value: 'endsWith', label: 'Ends With' },
-    { value: 'regex', label: 'Regex' },
-    { value: 'exists', label: 'Exists' },
-    { value: 'gt', label: 'Greater Than' },
-    { value: 'lt', label: 'Less Than' },
-    { value: 'gte', label: 'Greater or Equal' },
-    { value: 'lte', label: 'Less or Equal' },
-]
-
-const sources = ['path', 'query', 'header', 'body'] as const
-
 const createDefaultPolicy = (): ModePolicy => ({
     configured: true,
     ai: { enabled: false, conditions: [] },
@@ -61,113 +46,16 @@ const clonePolicy = (policy?: ModePolicy): ModePolicy => ({
     configured: true,
     ai: {
         enabled: policy?.ai.enabled ?? false,
-        conditions: [...(policy?.ai.conditions ?? [])],
+        conditions: [],
+        conditionTree: policy?.ai.conditionTree ?? conditionsToTree(policy?.ai.conditions ?? []),
     },
     proxy: {
         enabled: policy?.proxy.enabled ?? false,
         disableRecording: policy?.proxy.disableRecording ?? false,
-        conditions: [...(policy?.proxy.conditions ?? [])],
+        conditions: [],
+        conditionTree: policy?.proxy.conditionTree ?? conditionsToTree(policy?.proxy.conditions ?? []),
     },
 })
-
-function ConditionsEditor({
-    title,
-    description,
-    conditions,
-    onChange,
-}: {
-    title: string
-    description: string
-    conditions: Condition[]
-    onChange: (conditions: Condition[]) => void
-}) {
-    const addCondition = () => {
-        onChange([...conditions, { source: 'query', key: '', operator: 'eq', value: '' }])
-    }
-
-    const updateCondition = (index: number, updates: Partial<Condition>) => {
-        const next = [...conditions]
-        next[index] = { ...next[index], ...updates }
-        onChange(next)
-    }
-
-    const removeCondition = (index: number) => {
-        onChange(conditions.filter((_, i) => i !== index))
-    }
-
-    return (
-        <div>
-            <div className="flex items-center justify-between mb-2">
-                <div>
-                    <h4 className="text-sm font-medium text-gray-900 dark:text-slate-100">{title}</h4>
-                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{description}</p>
-                </div>
-                <button
-                    type="button"
-                    onClick={addCondition}
-                    className="text-sm text-primary-600 hover:text-primary-700 flex items-center"
-                >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add Condition
-                </button>
-            </div>
-            <div className="space-y-2">
-                {conditions.length === 0 && (
-                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-slate-700 px-3 py-3 text-xs text-gray-500 dark:text-slate-400">
-                        No conditions configured. This mode matches all requests when enabled.
-                    </div>
-                )}
-                {conditions.map((cond, index) => (
-                    <div key={index} className="flex flex-wrap items-center gap-2">
-                        <select
-                            value={cond.source}
-                            onChange={(e) => updateCondition(index, { source: e.target.value as Condition['source'] })}
-                            className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                        >
-                            {sources.map((source) => (
-                                <option key={source} value={source}>
-                                    {source}
-                                </option>
-                            ))}
-                        </select>
-                        <input
-                            type="text"
-                            value={cond.key}
-                            onChange={(e) => updateCondition(index, { key: e.target.value })}
-                            placeholder="key / path"
-                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                        />
-                        <select
-                            value={cond.operator}
-                            onChange={(e) => updateCondition(index, { operator: e.target.value as ConditionOperator })}
-                            className="px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                        >
-                            {operators.map((operator) => (
-                                <option key={operator.value} value={operator.value}>
-                                    {operator.label}
-                                </option>
-                            ))}
-                        </select>
-                        <input
-                            type="text"
-                            value={cond.value}
-                            onChange={(e) => updateCondition(index, { value: e.target.value })}
-                            placeholder="value"
-                            className="min-w-[160px] flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded text-sm bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100"
-                        />
-                        <button
-                            type="button"
-                            onClick={() => removeCondition(index)}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg dark:hover:bg-red-950/30"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    </div>
-                ))}
-            </div>
-        </div>
-    )
-}
 
 export default function SpecDetail() {
     const { specId } = useParams<{ specId: string }>()
@@ -469,14 +357,16 @@ export default function SpecDetail() {
                                     Configure {aiProviderLabel} to enable AI fallback.
                                 </p>
                             )}
-                            <ConditionsEditor
-                                title="AI conditions"
-                                description="If no conditions are set, AI handles all unmatched requests while enabled."
-                                conditions={currentPolicy.ai.conditions}
-                                onChange={(conditions) => updatePolicy((policy) => ({
+                            <ConditionEditor
+                                label="AI conditions"
+                                value={currentPolicy.ai.conditionTree}
+                                onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
                                     ...policy,
-                                    ai: { ...policy.ai, conditions },
+                                    ai: { ...policy.ai, conditions: [], conditionTree },
                                 }))}
+                                sources={BASIC_SOURCES}
+                                emptyHint="No conditions — AI handles all unmatched requests when enabled."
+                                compact
                             />
                         </div>
 
@@ -538,14 +428,16 @@ export default function SpecDetail() {
                                     </div>
                                 </label>
                             )}
-                            <ConditionsEditor
-                                title="Proxy conditions"
-                                description="If no conditions are set, proxy handles all unmatched requests while enabled."
-                                conditions={currentPolicy.proxy.conditions}
-                                onChange={(conditions) => updatePolicy((policy) => ({
+                            <ConditionEditor
+                                label="Proxy conditions"
+                                value={currentPolicy.proxy.conditionTree}
+                                onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
                                     ...policy,
-                                    proxy: { ...policy.proxy, conditions },
+                                    proxy: { ...policy.proxy, conditions: [], conditionTree },
                                 }))}
+                                sources={BASIC_SOURCES}
+                                emptyHint="No conditions — proxy handles all unmatched requests when enabled."
+                                compact
                             />
                         </div>
                     </div>

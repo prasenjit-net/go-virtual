@@ -3,9 +3,10 @@ package models
 // ConditionalModeConfig controls whether a fallback mode is enabled and, when
 // enabled, which request conditions must match before it is selected.
 type ConditionalModeConfig struct {
-	Enabled           bool        `json:"enabled"`
-	DisableRecording  bool        `json:"disableRecording,omitempty"`
-	Conditions        []Condition `json:"conditions,omitempty"`
+	Enabled          bool           `json:"enabled"`
+	DisableRecording bool           `json:"disableRecording,omitempty"`
+	Conditions       []Condition    `json:"conditions,omitempty"`
+	ConditionTree    *ConditionNode `json:"conditionTree,omitempty"` // Tree replaces Conditions when set
 }
 
 // ModePolicy defines fallback mode behavior.
