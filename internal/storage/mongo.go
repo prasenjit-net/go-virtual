@@ -30,14 +30,15 @@ type MongoStorage struct {
 
 // collection names (without prefix)
 const (
-	colSpecs            = "specs"
-	colOperations       = "operations"
-	colResponses        = "responses"
-	colScripts          = "scripts"
-	colAIScenarios      = "ai_scenarios"
-	colBindings         = "script_bindings"
-	colTags             = "tags"
+	colSpecs              = "specs"
+	colOperations         = "operations"
+	colResponses          = "responses"
+	colScripts            = "scripts"
+	colAIScenarios        = "ai_scenarios"
+	colBindings           = "script_bindings"
+	colTags               = "tags"
 	colCollectionMappings = "collection_mappings"
+	colValidations        = "validations"
 )
 
 // genericDoc is the BSON wrapper stored for each entity.
@@ -134,6 +135,8 @@ func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 		{colBindings, "spec_id"},
 		{colBindings, "response_config_id"},
 		{colCollectionMappings, "response_config_id"},
+		{colValidations, "spec_id"},
+		{colValidations, "operation_id"},
 	}
 	for _, idx := range indexes {
 		model := mongo.IndexModel{
@@ -963,6 +966,106 @@ func (m *MongoStorage) DeleteCollectionMappingsByResponse(responseConfigID strin
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err := m.col(colCollectionMappings).DeleteMany(ctx, bson.M{"response_config_id": responseConfigID})
+	return err
+}
+
+// --- ValidationRule operations -----------------------------------------------
+
+func (m *MongoStorage) ListValidationRulesBySpec(specID string) ([]*models.ValidationRule, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colValidations).Find(ctx, bson.M{"spec_id": specID})
+	if err != nil {
+		return nil, err
+	}
+	return decodeValidationRules(cursor, ctx)
+}
+
+func (m *MongoStorage) ListValidationRulesByOperation(operationID string) ([]*models.ValidationRule, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colValidations).Find(ctx, bson.M{"operation_id": operationID})
+	if err != nil {
+		return nil, err
+	}
+	return decodeValidationRules(cursor, ctx)
+}
+
+func decodeValidationRules(cursor *mongo.Cursor, ctx context.Context) ([]*models.ValidationRule, error) {
+	defer cursor.Close(ctx)
+	var rules []*models.ValidationRule
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		var rule models.ValidationRule
+		if err := unmarshalDoc(&doc, &rule); err != nil {
+			return nil, err
+		}
+		rules = append(rules, &rule)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(rules, func(i, j int) bool { return rules[i].Order < rules[j].Order })
+	return rules, nil
+}
+
+func (m *MongoStorage) GetValidationRule(id string) (*models.ValidationRule, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	var doc genericDoc
+	err := m.col(colValidations).FindOne(ctx, bson.M{"_id": id}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("validation rule not found: %s", id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	var rule models.ValidationRule
+	if err := unmarshalDoc(&doc, &rule); err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+func (m *MongoStorage) CreateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	doc, err := marshalDoc(rule.ID, rule.SpecID, rule.OperationID, "", rule)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err = m.col(colValidations).InsertOne(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
+	return rule, nil
+}
+
+func (m *MongoStorage) UpdateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	doc, err := marshalDoc(rule.ID, rule.SpecID, rule.OperationID, "", rule)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	opts := options.Replace().SetUpsert(false)
+	res, err := m.col(colValidations).ReplaceOne(ctx, bson.M{"_id": rule.ID}, doc, opts)
+	if err != nil {
+		return nil, err
+	}
+	if res.MatchedCount == 0 {
+		return nil, fmt.Errorf("validation rule not found: %s", rule.ID)
+	}
+	return rule, nil
+}
+
+func (m *MongoStorage) DeleteValidationRule(id string) error {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colValidations).DeleteOne(ctx, bson.M{"_id": id})
 	return err
 }
 

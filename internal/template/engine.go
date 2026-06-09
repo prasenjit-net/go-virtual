@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/prasenjit/go-virtual/internal/models"
 	"github.com/tidwall/gjson"
 )
 
@@ -38,6 +39,8 @@ type Context struct {
 	ScriptOutput map[string]any
 	// CollectionOutput holds results from collection mappings, keyed by outputKey.
 	CollectionOutput map[string]any
+	// ValidationOutput holds results from validation rules, keyed by rule name.
+	ValidationOutput map[string]*models.ValidationResult
 
 	// New optional fields — all zero-value safe.
 	Method    string // HTTP method, e.g. "GET"
@@ -75,6 +78,8 @@ type TemplateData struct {
 	// Collection holds collection mapping output, keyed by outputKey.
 	// Access as {{.Collection.user.name}} in templates.
 	Collection map[string]any
+	// Validation holds validation rule results. Access as {{.Validation.auth_check.status}}
+	Validation map[string]map[string]string
 }
 
 // bodyTemplateData is a legacy alias kept for internal backward compat.
@@ -158,6 +163,16 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (TemplateData, texttmpl.
 		_ = json.Unmarshal([]byte(ctx.Body), &parsedBody)
 	}
 
+	// Build validation data map: name -> {status: "pass"|"fail", ...properties}
+	validationData := make(map[string]map[string]string)
+	for name, result := range ctx.ValidationOutput {
+		entry := map[string]string{"status": result.Status}
+		for k, v := range result.Properties {
+			entry[k] = v
+		}
+		validationData[name] = entry
+	}
+
 	data := TemplateData{
 		Path:       ctx.PathParams,
 		Query:      query,
@@ -166,6 +181,7 @@ func (e *Engine) buildBodyTemplateContext(ctx *Context) (TemplateData, texttmpl.
 		RawBody:    ctx.Body,
 		Script:     scriptOutput,
 		Collection: collectionOutput,
+		Validation: validationData,
 		Method:     ctx.Method,
 		URL:        ctx.RequestURL,
 		RequestID:  ctx.RequestID,

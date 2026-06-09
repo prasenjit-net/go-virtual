@@ -22,12 +22,13 @@ func NewEvaluator() *Evaluator {
 
 // RequestData contains all request data for condition evaluation
 type RequestData struct {
-	PathParams   map[string]string
-	QueryParams  map[string][]string
-	Headers      map[string][]string
-	Body         string
-	Signature    string            // Pre-computed request signature for signature conditions
-	ScriptOutput map[string]any    // Operation-level script output, available as source=script conditions
+	PathParams       map[string]string
+	QueryParams      map[string][]string
+	Headers          map[string][]string
+	Body             string
+	Signature        string                          // Pre-computed request signature for signature conditions
+	ScriptOutput     map[string]any                  // Operation-level script output, available as source=script conditions
+	ValidationOutput map[string]*models.ValidationResult // Populated at step ⑥ after validation rules run
 }
 
 // EvaluateAll evaluates all conditions against request data
@@ -100,9 +101,59 @@ func (e *Evaluator) extractValue(source, key string, data *RequestData) string {
 			return result.String()
 		}
 		return ""
+	case models.SourceValidation:
+		// key format: "<ruleName>.status" or "<ruleName>.<property>"
+		if data.ValidationOutput == nil {
+			return ""
+		}
+		parts := strings.SplitN(key, ".", 2)
+		if len(parts) != 2 {
+			return ""
+		}
+		result, ok := data.ValidationOutput[parts[0]]
+		if !ok {
+			return ""
+		}
+		if parts[1] == "status" {
+			return result.Status
+		}
+		return result.Properties[parts[1]]
 	default:
 		return ""
 	}
+}
+
+// EvaluateTree evaluates a ConditionNode tree against request data.
+// A nil root always returns true.
+func (e *Evaluator) EvaluateTree(node *models.ConditionNode, data *RequestData) bool {
+	if node == nil {
+		return true
+	}
+	if node.Condition != nil {
+		return e.Evaluate(*node.Condition, data)
+	}
+	switch strings.ToUpper(node.Operator) {
+	case "AND":
+		for _, child := range node.Children {
+			if !e.EvaluateTree(child, data) {
+				return false
+			}
+		}
+		return true
+	case "OR":
+		for _, child := range node.Children {
+			if e.EvaluateTree(child, data) {
+				return true
+			}
+		}
+		return false
+	case "NOT":
+		if len(node.Children) != 1 {
+			return false
+		}
+		return !e.EvaluateTree(node.Children[0], data)
+	}
+	return false
 }
 
 // compare compares a value against an expected value using the specified operator.

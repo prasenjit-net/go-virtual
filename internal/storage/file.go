@@ -197,6 +197,11 @@ func (f *FileStorage) loadAll() error {
 		return err
 	}
 
+	// Load validation rules
+	if err := f.loadValidationRules(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -1316,6 +1321,95 @@ func (f *FileStorage) DeleteCollectionMappingsByResponse(responseConfigID string
 		return err
 	}
 	return f.saveCollectionMappings(responseConfigID)
+}
+
+// ---- ValidationRule operations ----
+
+func (f *FileStorage) validationRulesFilePath() string {
+	return filepath.Join(f.basePath, "validations.json")
+}
+
+func (f *FileStorage) loadValidationRules() error {
+	path := f.validationRulesFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var rules []*models.ValidationRule
+	if err := json.Unmarshal(data, &rules); err != nil {
+		return err
+	}
+
+	for _, r := range rules {
+		if r != nil && r.ID != "" {
+			f.memory.validationRules[r.ID] = r
+		}
+	}
+	return nil
+}
+
+func (f *FileStorage) saveValidationRules() error {
+	rules := make([]*models.ValidationRule, 0, len(f.memory.validationRules))
+	for _, r := range f.memory.validationRules {
+		rules = append(rules, r)
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		return rules[i].ID < rules[j].ID
+	})
+
+	data, err := json.MarshalIndent(rules, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f.validationRulesFilePath(), data, 0644)
+}
+
+func (f *FileStorage) ListValidationRulesBySpec(specID string) ([]*models.ValidationRule, error) {
+	return f.memory.ListValidationRulesBySpec(specID)
+}
+
+func (f *FileStorage) ListValidationRulesByOperation(operationID string) ([]*models.ValidationRule, error) {
+	return f.memory.ListValidationRulesByOperation(operationID)
+}
+
+func (f *FileStorage) GetValidationRule(id string) (*models.ValidationRule, error) {
+	return f.memory.GetValidationRule(id)
+}
+
+func (f *FileStorage) CreateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	result, err := f.memory.CreateValidationRule(rule)
+	if err != nil {
+		return nil, err
+	}
+	return result, f.saveValidationRules()
+}
+
+func (f *FileStorage) UpdateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	result, err := f.memory.UpdateValidationRule(rule)
+	if err != nil {
+		return nil, err
+	}
+	return result, f.saveValidationRules()
+}
+
+func (f *FileStorage) DeleteValidationRule(id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteValidationRule(id); err != nil {
+		return err
+	}
+	return f.saveValidationRules()
 }
 
 // Close closes the storage

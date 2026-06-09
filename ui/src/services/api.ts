@@ -637,6 +637,59 @@ export const collectionMappingsApi = {
     },
 };
 
+// Validation Rules API
+export const validationRulesApi = {
+    listBySpec: async (specId: string) => {
+        const response = await fetch(`${API_BASE}/specs/${specId}/validations`);
+        return handleResponse<import('../types').ValidationRule[]>(response);
+    },
+
+    listByOperation: async (operationId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/validations`);
+        return handleResponse<import('../types').ValidationRule[]>(response);
+    },
+
+    createForSpec: async (specId: string, data: import('../types').ValidationInput) => {
+        const response = await fetch(`${API_BASE}/specs/${specId}/validations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ValidationRule>(response);
+    },
+
+    createForOperation: async (operationId: string, data: import('../types').ValidationInput) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/validations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ValidationRule>(response);
+    },
+
+    get: async (id: string) => {
+        const response = await fetch(`${API_BASE}/validations/${id}`);
+        return handleResponse<import('../types').ValidationRule>(response);
+    },
+
+    update: async (id: string, data: import('../types').ValidationInput) => {
+        const response = await fetch(`${API_BASE}/validations/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').ValidationRule>(response);
+    },
+
+    delete: async (id: string) => {
+        const response = await fetch(`${API_BASE}/validations/${id}`, { method: 'DELETE' });
+        if (!response.ok && response.status !== 204) {
+            const text = await response.text();
+            throw new Error(text || `HTTP ${response.status}`);
+        }
+    },
+};
+
 // Global Store API
 export const storeApi = {
     list: async () => {
