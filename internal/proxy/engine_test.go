@@ -86,8 +86,8 @@ func TestSelectMode_LogsAIMisconfigurationOnce(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 	defer slog.SetDefault(origLogger)
 
-	engine.selectMode(spec, nil)
-	engine.selectMode(spec, nil)
+	engine.aiConditionsMet(spec, nil)
+	engine.aiConditionsMet(spec, nil)
 
 	logs := buf.String()
 	if strings.Count(logs, "AI generator is not configured") != 1 {
@@ -112,8 +112,8 @@ func TestSelectMode_LogsMissingBackendOnce(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
 	defer slog.SetDefault(origLogger)
 
-	engine.selectMode(spec, nil)
-	engine.selectMode(spec, nil)
+	engine.proxyConditionsMet(spec, nil)
+	engine.proxyConditionsMet(spec, nil)
 
 	logs := buf.String()
 	if strings.Count(logs, "backend URI is not configured") != 1 {
@@ -1167,7 +1167,11 @@ func TestServeHTTP_ProxyMode_WithTracing(t *testing.T) {
 	}
 }
 
-func TestServeHTTP_PrefersConfiguredResponsesBeforeRecorded(t *testing.T) {
+// TestServeHTTP_PrefersRecordedResponsesBeforeConfigured verifies that under
+// the new 10-step pipeline, step ③ (recorded response check) runs before step
+// ⑦ (configured response matching). A signature-matched recorded response
+// should win over a non-recorded configured response.
+func TestServeHTTP_PrefersRecordedResponsesBeforeConfigured(t *testing.T) {
 	engine, store := setupTestEngine(t)
 
 	spec := &models.Spec{
@@ -1185,6 +1189,7 @@ func TestServeHTTP_PrefersConfiguredResponsesBeforeRecorded(t *testing.T) {
 		Path:     "/items",
 		FullPath: "/items",
 	})
+	// Non-recorded configured response — should be found at step ⑦
 	store.CreateResponseConfig(&models.ResponseConfig{
 		ID:          "manual-1",
 		OperationID: "op-order-1",
@@ -1196,6 +1201,7 @@ func TestServeHTTP_PrefersConfiguredResponsesBeforeRecorded(t *testing.T) {
 		Origin:      models.ResponseOriginAI,
 		Recorded:    false,
 	})
+	// Recorded proxy response with matching signature — wins at step ③
 	store.CreateResponseConfig(&models.ResponseConfig{
 		ID:          "recorded-1",
 		OperationID: "op-order-1",
@@ -1216,8 +1222,10 @@ func TestServeHTTP_PrefersConfiguredResponsesBeforeRecorded(t *testing.T) {
 	w := httptest.NewRecorder()
 	engine.ServeHTTP(w, req)
 
-	if body := w.Body.String(); !strings.Contains(body, `"source":"manual"`) {
-		t.Fatalf("expected configured response to win, got %q", body)
+	// Under the new pipeline, recorded responses win at step ③ before configured
+	// responses are evaluated at step ⑦.
+	if body := w.Body.String(); !strings.Contains(body, `"source":"recorded"`) {
+		t.Fatalf("expected recorded response to win at step ③, got %q", body)
 	}
 }
 

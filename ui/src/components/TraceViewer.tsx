@@ -16,11 +16,13 @@ import {
     Check,
     Code2,
     Terminal,
-    Users
+    Users,
+    ShieldCheck,
+    Database
 } from 'lucide-react'
 import clsx from 'clsx'
 import { tracesApi, specsApi } from '../services/api'
-import type { Trace, Spec, ScriptTrace, SessionTrace } from '../types'
+import type { Trace, Spec, ScriptTrace, SessionTrace, ValidationTrace, CollectionTrace } from '../types'
 
 const methodColors: Record<string, string> = {
     GET: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
@@ -381,6 +383,103 @@ function SessionSection({ session }: { session: SessionTrace }) {
     )
 }
 
+function CollectionsSection({ collections }: { collections: CollectionTrace[] }) {
+    return (
+        <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <Database className="w-4 h-4 text-teal-500" />
+                Collection Mappings
+                <span className="text-xs font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal">
+                    {collections.length} mapping{collections.length !== 1 ? 's' : ''} executed
+                </span>
+            </h3>
+            <div className="space-y-2">
+                {collections.map((ct, i) => (
+                    <div
+                        key={ct.mappingId || i}
+                        className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3 flex items-start justify-between gap-3 flex-wrap"
+                    >
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-mono font-medium bg-teal-100 dark:bg-teal-900/30 text-teal-700 dark:text-teal-300`}>
+                                {ct.operation}
+                            </span>
+                            <code className="text-sm font-mono font-medium text-gray-900 dark:text-slate-100">
+                                {ct.collectionName}
+                            </code>
+                            {ct.mappingName && ct.mappingName !== ct.collectionName && (
+                                <span className="text-xs text-gray-400 dark:text-slate-500 truncate">
+                                    ({ct.mappingName})
+                                </span>
+                            )}
+                            <span className="text-xs text-gray-400 dark:text-slate-500 font-mono">
+                                → .{ct.outputKey}
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs shrink-0">
+                            {ct.error ? (
+                                <span className="text-red-600 dark:text-red-400 font-medium">{ct.error}</span>
+                            ) : (
+                                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                    {ct.recordCount} record{ct.recordCount !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                            <span className="text-gray-400 dark:text-slate-500">{ct.durationMs}ms</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+function ValidationsSection({ validations }: { validations: ValidationTrace[] }) {
+    return (
+        <div>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-indigo-500" />
+                Validations
+                <span className="text-xs font-normal text-gray-400 dark:text-slate-500 normal-case tracking-normal">
+                    {validations.length} rule{validations.length !== 1 ? 's' : ''} evaluated
+                </span>
+            </h3>
+            <div className="space-y-2">
+                {validations.map((vt, i) => (
+                    <div
+                        key={vt.ruleId || i}
+                        className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 px-4 py-3 flex items-start justify-between gap-3 flex-wrap"
+                    >
+                        <div className="flex items-center gap-2 min-w-0">
+                            <code className="text-sm font-mono font-medium text-gray-900 dark:text-slate-100">{vt.ruleName}</code>
+                            <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                vt.scope === 'spec'
+                                    ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                            }`}>
+                                {vt.scope}
+                            </span>
+                            {vt.properties && Object.keys(vt.properties).length > 0 && (
+                                <span className="text-xs text-gray-400 dark:text-slate-500 font-mono truncate">
+                                    {Object.entries(vt.properties).map(([k, v]) => `${k}=${v}`).join(', ')}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs shrink-0">
+                            <span className={`font-semibold ${
+                                vt.status === 'pass'
+                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                    : 'text-red-600 dark:text-red-400'
+                            }`}>
+                                {vt.status.toUpperCase()}
+                            </span>
+                            <span className="text-gray-400 dark:text-slate-500">{vt.durationMs}ms</span>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 function ScriptsSection({ scripts }: { scripts: ScriptTrace[] }) {
     return (
         <div>
@@ -707,6 +806,16 @@ function TraceDetail({
             {/* Session info */}
             {trace.session && (
                 <SessionSection session={trace.session} />
+            )}
+
+            {/* Collection mapping traces */}
+            {trace.collections && trace.collections.length > 0 && (
+                <CollectionsSection collections={trace.collections} />
+            )}
+
+            {/* Validation traces */}
+            {trace.validations && trace.validations.length > 0 && (
+                <ValidationsSection validations={trace.validations} />
             )}
 
             {/* Script traces */}

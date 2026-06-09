@@ -30,6 +30,7 @@ import (
 	"github.com/prasenjit/go-virtual/internal/store"
 	"github.com/prasenjit/go-virtual/internal/template"
 	"github.com/prasenjit/go-virtual/internal/tracing"
+	"github.com/prasenjit/go-virtual/internal/validation"
 )
 
 // Engine handles proxying requests to virtual API endpoints
@@ -275,7 +276,10 @@ func (e *Engine) Handler() http.Handler {
 	return http.HandlerFunc(e.ServeHTTP)
 }
 
-// ServeHTTP handles incoming requests
+// ServeHTTP handles incoming requests using a 10-step pipeline:
+// ① Operation matching  ② Initialisation  ③ Recorded response check
+// ④ Scripts  ⑤ Proxy  ⑥ Validations  ⑦ Configured response matching
+// ⑧ AI fallback  ⑨ Spec example fallback  ⑩ 404
 func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 	reqLogger := logging.Logger("proxy.request").With(
@@ -292,14 +296,13 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		requestBody = string(bodyBytes)
 	}
 
-	// Find matching route
+	// ① Operation matching
 	e.mu.RLock()
 	matchedRoute, pathParams := e.matchRoute(r.Method, r.URL.Path)
 	e.mu.RUnlock()
 
 	if matchedRoute == nil {
 		reqLogger.Info("No route matched incoming request", "event", "proxy_route_unmatched")
-		// Record trace for unmatched request if any spec has tracing enabled
 		e.recordUnmatchedTrace(r, requestBody, startTime)
 		metrics.UnmatchedRequestsTotal.Inc()
 		http.NotFound(w, r)
@@ -316,7 +319,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"path_params", pathParams,
 	)
 
-	// Compute the request signature (needed for both proxy recording and condition evaluation)
+	// ② Initialisation: signature, session
 	effectiveSignatureConfig := ResolveSignatureConfig(matchedRoute.spec, matchedRoute.operation)
 	signature := ComputeSignature(
 		pathParams,
@@ -327,10 +330,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 	reqLogger = reqLogger.With("signature", signature)
 
-	// ---- Virtual response mode ----
-	// Resolve session and run operation-level scripts BEFORE response matching so
-	// that script output can be used as a condition source (source=script).
-	//
 	// Session creation rules:
 	//   1. Session header sent + session exists        → reuse, echo ID in response
 	//   2. Session header sent + session not found     → create with that ID, echo in response
@@ -343,7 +342,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if e.sessionManager != nil {
 		rawSessionID := r.Header.Get(e.sessionHeaderName)
 		if rawSessionID != "" {
-			// Case 1 or 2: explicit ID provided
 			var sessErr error
 			sess, sessionIsNew, sessErr = e.sessionManager.GetOrCreate(rawSessionID)
 			if sessErr != nil {
@@ -364,16 +362,52 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"session_is_new", sessionIsNew,
 			)
 		} else {
-			// Case 3 or 4: no ID — create a lazy session that materialises on first store op
 			lazySession = store.NewLazySession(e.sessionManager)
 			sess = lazySession
 		}
 	}
 
-	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
+	// Load response configs for the operation (needed for steps ③ and ⑦)
+	responseConfigs, respErr := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
+	if respErr != nil {
+		reqLogger.Error("Failed to load response configs for operation",
+			"event", "response_configs_load_failed",
+			"error", respErr,
+		)
+	} else {
+		reqLogger.Debug("Loaded response configs for operation",
+			"event", "response_configs_loaded",
+			"config_count", len(responseConfigs),
+		)
+	}
 
-	// Run spec-level script bindings first, then operation-level bindings.
-	// Spec scripts provide a shared base; operation scripts can override by key.
+	enabledTags := make(map[string]struct{})
+	enabledTags[models.DefaultTagName] = struct{}{}
+	for _, tag := range matchedRoute.spec.EnabledTags {
+		enabledTags[tag] = struct{}{}
+	}
+
+	// ③ Recorded response check — signature-based, runs BEFORE scripts
+	if respErr == nil && len(responseConfigs) > 0 {
+		if recorded := e.findRecordedResponse(responseConfigs, signature); recorded != nil {
+			reqLogger.Info("Selected recorded response (pre-script)",
+				"event", "response_config_selected",
+				"response_config_id", recorded.ID,
+				"response_config_name", recorded.Name,
+				"response_origin", recorded.EffectiveOrigin(),
+				"response_tier", models.TraceResponseTierRecorded,
+			)
+			e.serveMatchedConfig(w, r, recorded, pathParams, requestBody, signature, startTime,
+				matchedRoute, sess, lazySession, &sessionIsNew,
+				nil, nil, nil, nil, nil, // no scripts, no validations at this stage
+				models.TraceResponseTierRecorded,
+				"", "", "", "")
+			return
+		}
+	}
+
+	// ④ Scripts — spec-level then operation-level
+	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
 	scriptOutput, scriptTraces := e.scriptEngine.RunSpecBindings(r.Context(), matchedRoute.spec.ID, scriptInput, sess)
 	opOutput, opTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
 	for k, v := range opOutput {
@@ -385,7 +419,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"binding_count", len(scriptTraces),
 	)
 
-	// Build request data for condition evaluation (include pre-computed signature and script output)
+	// Build initial reqData (ScriptOutput available from here onwards)
 	reqData := &condition.RequestData{
 		PathParams:   pathParams,
 		QueryParams:  r.URL.Query(),
@@ -395,29 +429,120 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ScriptOutput: scriptOutput,
 	}
 
-	// Get response configs for the operation
-	responseConfigs, err := e.store.GetResponseConfigsByOperation(matchedRoute.operation.ID)
-	if err != nil {
-		reqLogger.Error("Failed to load response configs for operation",
-			"event", "response_configs_load_failed",
-			"error", err,
+	// ⑤ Proxy — evaluate proxy conditions (uses ScriptOutput); if triggered, forward + return
+	proxyActivated, proxySkippedReason := e.proxyConditionsMet(matchedRoute.spec, reqData)
+	if proxyActivated {
+		reqLogger.Info("Using proxy fallback for request",
+			"event", "proxy_fallback_selected",
+			"backend_uri", matchedRoute.spec.BackendURI,
 		)
-	} else {
-		reqLogger.Debug("Loaded response configs for operation",
-			"event", "response_configs_loaded",
-			"config_count", len(responseConfigs),
+		record := !matchedRoute.spec.ModePolicy.Proxy.DisableRecording
+		statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
+			r.Method,
+			r.URL.Path,
+			r.URL.RawQuery,
+			r.Header,
+			requestBody,
+			matchedRoute.operation,
+			matchedRoute.spec,
+			signature,
+			record,
 		)
-	}
-	enabledTags := make(map[string]struct{})
-	enabledTags[models.DefaultTagName] = struct{}{}
-	for _, tag := range matchedRoute.spec.EnabledTags {
-		enabledTags[tag] = struct{}{}
+		if proxyErr != nil {
+			reqLogger.Error("Proxy fallback request failed",
+				"event", "proxy_fallback_failed",
+				"backend_uri", matchedRoute.spec.BackendURI,
+				"error", proxyErr,
+			)
+			statusCode = http.StatusBadGateway
+			respBody = `{"error":"proxy backend unavailable: ` + proxyErr.Error() + `"}`
+			http.Error(w, respBody, statusCode)
+		} else {
+			reqLogger.Info("Proxy fallback request succeeded",
+				"event", "proxy_fallback_succeeded",
+				"backend_uri", matchedRoute.spec.BackendURI,
+				"status_code", statusCode,
+			)
+			for key, val := range respHeaders {
+				w.Header().Set(key, val)
+			}
+			w.WriteHeader(statusCode)
+			_, _ = w.Write([]byte(respBody))
+		}
+
+		duration := time.Since(startTime)
+		isError := statusCode >= 400
+		e.statsCollector.RecordRequest(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			duration,
+			isError,
+		)
+		metrics.RequestsTotal.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+			metrics.StatusLabel(statusCode),
+		).Inc()
+		metrics.RequestDurationSeconds.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.operation.Method,
+			matchedRoute.operation.Path,
+		).Observe(duration.Seconds())
+		metrics.ProxyRequestsTotal.WithLabelValues(
+			matchedRoute.spec.ID,
+			matchedRoute.spec.BackendURI,
+		).Inc()
+		if matchedRoute.spec.Tracing {
+			e.tracingService.RecordTrace(&models.Trace{
+				SpecID:             matchedRoute.spec.ID,
+				SpecName:           matchedRoute.spec.Name,
+				OperationID:        matchedRoute.operation.ID,
+				OperationPath:      matchedRoute.operation.Path,
+				Timestamp:          startTime,
+				Duration:           duration.Nanoseconds(),
+				MatchedConfig:      "[proxy-recorded]",
+				ResponseSource:     models.TraceResponseSourceProxy,
+				ResponseTier:       models.TraceResponseTierFallback,
+				ProxyMode:          proxyErr == nil,
+				Signature:          signature,
+				BackendURI:         matchedRoute.spec.BackendURI,
+				ProxySkippedReason: proxySkippedReason,
+				Scripts:            scriptTraces,
+				Request: models.TraceRequest{
+					Method:  r.Method,
+					URL:     r.URL.String(),
+					Path:    r.URL.Path,
+					Query:   r.URL.Query(),
+					Headers: r.Header,
+					Body:    requestBody,
+				},
+				Response: models.TraceResponse{
+					StatusCode: statusCode,
+					Headers:    headersToMap(w.Header()),
+					Body:       respBody,
+				},
+			})
+		}
+		return
 	}
 
+	// ⑥ Validations — run spec-level then operation-level validation rules
+	validationRules := e.loadValidationRules(matchedRoute.spec.ID, matchedRoute.operation.ID)
+	validationOutput, validationTraces := validation.RunRules(validationRules, reqData)
+	reqData.ValidationOutput = validationOutput
+	reqLogger.Debug("Evaluated validation rules",
+		"event", "validation_rules_evaluated",
+		"rule_count", len(validationTraces),
+	)
+
+	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput
 	var matchedConfig *models.ResponseConfig
 	responseTier := ""
-	if err == nil && len(responseConfigs) > 0 {
-		matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, false)
+	if respErr == nil && len(responseConfigs) > 0 {
+		matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags)
 		if matchedConfig != nil {
 			responseTier = models.TraceResponseTierConfigured
 			reqLogger.Info("Selected configured response",
@@ -427,37 +552,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"response_origin", matchedConfig.EffectiveOrigin(),
 				"response_tier", responseTier,
 			)
-		} else {
-			matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags, true)
-			if matchedConfig != nil {
-				responseTier = models.TraceResponseTierRecorded
-				reqLogger.Info("Selected recorded response",
-					"event", "response_config_selected",
-					"response_config_id", matchedConfig.ID,
-					"response_config_name", matchedConfig.Name,
-					"response_origin", matchedConfig.EffectiveOrigin(),
-					"response_tier", responseTier,
-				)
-			}
 		}
 	}
 
-	modeSelection := e.selectMode(matchedRoute.spec, reqData)
-	specMode := modeSelection.Mode
+	// ⑧ AI fallback — evaluate AI conditions (uses ScriptOutput + ValidationOutput)
 	requestedScenarioName := strings.TrimSpace(r.Header.Get("X-Virtual-AI-Scenario"))
 	appliedScenario := e.resolveAIScenario(requestedScenarioName)
-	reqLogger.Debug("Resolved fallback mode for request",
-		"event", "fallback_mode_resolved",
-		"mode", specMode,
-		"ai_skipped_reason", modeSelection.AISkippedReason,
-		"proxy_skipped_reason", modeSelection.ProxySkippedReason,
-		"ai_scenario_requested", requestedScenarioName,
-		"ai_scenario_applied", aiScenarioName(appliedScenario),
-	)
 
 	if matchedConfig == nil {
-		switch specMode {
-		case models.SpecModeAI:
+		aiActivated, aiSkippedReason := e.aiConditionsMet(matchedRoute.spec, reqData)
+		if aiActivated {
 			reqLogger.Info("Using AI fallback for unmatched request", "event", "ai_fallback_selected")
 			opCtx := e.buildAIOperationContext(matchedRoute.operation)
 			reqLogger.Debug("Starting AI runtime response generation", "event", "ai_runtime_generation_started")
@@ -505,14 +609,15 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						OperationPath:       matchedRoute.operation.Path,
 						Timestamp:           startTime,
 						Duration:            duration.Nanoseconds(),
-						Mode:                specMode,
 						ResponseSource:      models.TraceResponseSourceAI,
 						ResponseTier:        models.TraceResponseTierFallback,
 						Signature:           signature,
-						AISkippedReason:     modeSelection.AISkippedReason,
-						ProxySkippedReason:  modeSelection.ProxySkippedReason,
+						AISkippedReason:     aiSkippedReason,
+						ProxySkippedReason:  proxySkippedReason,
 						AIScenarioRequested: requestedScenarioName,
 						AIScenarioApplied:   aiScenarioName(appliedScenario),
+						Scripts:             scriptTraces,
+						Validations:         validationTraces,
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -581,14 +686,15 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					Timestamp:           startTime,
 					Duration:            duration.Nanoseconds(),
 					MatchedConfig:       "[ai-generated]",
-					Mode:                specMode,
 					ResponseSource:      models.TraceResponseSourceAI,
 					ResponseTier:        models.TraceResponseTierFallback,
 					Signature:           signature,
-					AISkippedReason:     modeSelection.AISkippedReason,
-					ProxySkippedReason:  modeSelection.ProxySkippedReason,
+					AISkippedReason:     aiSkippedReason,
+					ProxySkippedReason:  proxySkippedReason,
 					AIScenarioRequested: requestedScenarioName,
 					AIScenarioApplied:   aiScenarioName(appliedScenario),
+					Scripts:             scriptTraces,
+					Validations:         validationTraces,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -605,47 +711,30 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 			return
-		case models.SpecModeProxy:
-			reqLogger.Info("Using proxy fallback for unmatched request",
-				"event", "proxy_fallback_selected",
-				"backend_uri", matchedRoute.spec.BackendURI,
+		}
+		_ = aiSkippedReason // used in traces above; suppress unused warning
+
+		// ⑨ Spec example fallback
+		if matchedRoute.spec.UseExampleFallback && matchedRoute.operation.ExampleResponse != nil {
+			example := matchedRoute.operation.ExampleResponse
+			reqLogger.Info("Using OpenAPI example fallback",
+				"event", "example_fallback_selected",
+				"status_code", example.StatusCode,
 			)
-			record := !matchedRoute.spec.ModePolicy.Proxy.DisableRecording
-			statusCode, respHeaders, respBody, proxyErr := e.recorder.ProxyAndRecord(
-				r.Method,
-				r.URL.Path,
-				r.URL.RawQuery,
-				r.Header,
-				requestBody,
-				matchedRoute.operation,
-				matchedRoute.spec,
-				signature,
-				record,
-			)
-			if proxyErr != nil {
-				reqLogger.Error("Proxy fallback request failed",
-					"event", "proxy_fallback_failed",
-					"backend_uri", matchedRoute.spec.BackendURI,
-					"error", proxyErr,
-				)
-				statusCode = http.StatusBadGateway
-				respBody = `{"error":"proxy backend unavailable: ` + proxyErr.Error() + `"}`
-				http.Error(w, respBody, statusCode)
-			} else {
-				reqLogger.Info("Proxy fallback request succeeded",
-					"event", "proxy_fallback_succeeded",
-					"backend_uri", matchedRoute.spec.BackendURI,
-					"status_code", statusCode,
-				)
-				for key, val := range respHeaders {
-					w.Header().Set(key, val)
-				}
-				w.WriteHeader(statusCode)
-				_, _ = w.Write([]byte(respBody))
+
+			for key, value := range example.Headers {
+				w.Header().Set(key, value)
+			}
+			if w.Header().Get("Content-Type") == "" && example.Body != "" {
+				w.Header().Set("Content-Type", "application/json")
+			}
+			w.WriteHeader(example.StatusCode)
+			if example.Body != "" {
+				w.Write([]byte(example.Body))
 			}
 
 			duration := time.Since(startTime)
-			isError := statusCode >= 400
+			isError := example.StatusCode >= 400
 			e.statsCollector.RecordRequest(
 				matchedRoute.spec.ID,
 				matchedRoute.operation.ID,
@@ -658,34 +747,28 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				matchedRoute.spec.ID,
 				matchedRoute.operation.Method,
 				matchedRoute.operation.Path,
-				metrics.StatusLabel(statusCode),
+				metrics.StatusLabel(example.StatusCode),
 			).Inc()
 			metrics.RequestDurationSeconds.WithLabelValues(
 				matchedRoute.spec.ID,
 				matchedRoute.operation.Method,
 				matchedRoute.operation.Path,
 			).Observe(duration.Seconds())
-			metrics.ProxyRequestsTotal.WithLabelValues(
-				matchedRoute.spec.ID,
-				matchedRoute.spec.BackendURI,
-			).Inc()
+
 			if matchedRoute.spec.Tracing {
-				trace := &models.Trace{
+				e.tracingService.RecordTrace(&models.Trace{
 					SpecID:             matchedRoute.spec.ID,
 					SpecName:           matchedRoute.spec.Name,
 					OperationID:        matchedRoute.operation.ID,
 					OperationPath:      matchedRoute.operation.Path,
 					Timestamp:          startTime,
 					Duration:           duration.Nanoseconds(),
-					MatchedConfig:      "[proxy-recorded]",
-					Mode:               specMode,
-					ResponseSource:     models.TraceResponseSourceProxy,
+					MatchedConfig:      "spec-example",
+					ResponseSource:     models.TraceResponseSourceExample,
 					ResponseTier:       models.TraceResponseTierFallback,
-					ProxyMode:          proxyErr == nil,
-					Signature:          signature,
-					BackendURI:         matchedRoute.spec.BackendURI,
-					AISkippedReason:    modeSelection.AISkippedReason,
-					ProxySkippedReason: modeSelection.ProxySkippedReason,
+					ProxySkippedReason: proxySkippedReason,
+					Scripts:            scriptTraces,
+					Validations:        validationTraces,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -695,128 +778,88 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						Body:    requestBody,
 					},
 					Response: models.TraceResponse{
-						StatusCode: statusCode,
+						StatusCode: example.StatusCode,
 						Headers:    headersToMap(w.Header()),
-						Body:       respBody,
+						Body:       example.Body,
 					},
-				}
-				e.tracingService.RecordTrace(trace)
+				})
 			}
 			return
 		}
-	}
 
-	// If no matching config found, try to use example response from OpenAPI spec.
-	// Only standard mode falls back to spec examples/defaults.
-	if matchedConfig == nil && specMode == models.SpecModeStandard && matchedRoute.spec.UseExampleFallback && matchedRoute.operation.ExampleResponse != nil {
-		example := matchedRoute.operation.ExampleResponse
-		reqLogger.Info("Using OpenAPI example fallback",
-			"event", "example_fallback_selected",
-			"status_code", example.StatusCode,
-		)
-
-		// Set headers from example
-		for key, value := range example.Headers {
-			w.Header().Set(key, value)
-		}
-
-		// Set default content-type if not set
-		if w.Header().Get("Content-Type") == "" && example.Body != "" {
-			w.Header().Set("Content-Type", "application/json")
-		}
-
-		// Write response
-		w.WriteHeader(example.StatusCode)
-		if example.Body != "" {
-			w.Write([]byte(example.Body))
-		}
-
-		// Calculate duration and record stats
-		duration := time.Since(startTime)
-		isError := example.StatusCode >= 400
-		e.statsCollector.RecordRequest(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-			duration,
-			isError,
-		)
-		metrics.RequestsTotal.WithLabelValues(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-			metrics.StatusLabel(example.StatusCode),
-		).Inc()
-		metrics.RequestDurationSeconds.WithLabelValues(
-			matchedRoute.spec.ID,
-			matchedRoute.operation.Method,
-			matchedRoute.operation.Path,
-		).Observe(duration.Seconds())
-
-		// Record trace if enabled
-		if matchedRoute.spec.Tracing {
-			trace := &models.Trace{
-				SpecID:             matchedRoute.spec.ID,
-				SpecName:           matchedRoute.spec.Name,
-				OperationID:        matchedRoute.operation.ID,
-				OperationPath:      matchedRoute.operation.Path,
-				Timestamp:          startTime,
-				Duration:           duration.Nanoseconds(),
-				MatchedConfig:      "spec-example",
-				Mode:               specMode,
-				ResponseSource:     models.TraceResponseSourceExample,
-				ResponseTier:       models.TraceResponseTierFallback,
-				AISkippedReason:    modeSelection.AISkippedReason,
-				ProxySkippedReason: modeSelection.ProxySkippedReason,
-				Request: models.TraceRequest{
-					Method:  r.Method,
-					URL:     r.URL.String(),
-					Path:    r.URL.Path,
-					Query:   r.URL.Query(),
-					Headers: r.Header,
-					Body:    requestBody,
-				},
-				Response: models.TraceResponse{
-					StatusCode: example.StatusCode,
-					Headers:    headersToMap(w.Header()),
-					Body:       example.Body,
-				},
-			}
-			e.tracingService.RecordTrace(trace)
-		}
-		return
-	}
-
-	// If still no match and no example, return error
-	if matchedConfig == nil {
+		// ⑩ 404
 		reqLogger.Info("No response configuration matched request",
 			"event", "response_config_not_found",
-			"mode", specMode,
 		)
 		w.WriteHeader(http.StatusNotFound)
 		_, _ = w.Write([]byte(`{"error": "No matching response configuration for this request"}`))
 		return
 	}
 
-	// Run response-level script bindings (if any) and merge their output into scriptOutput.
-	// Response-level scripts run after the config is selected so they have access to
-	// operation-level output while adding response-specific computed values.
-	if respScriptOutput, respScriptTraces := e.scriptEngine.RunResponseBindings(r.Context(), matchedConfig.ID, scriptInput, sess); len(respScriptOutput) > 0 {
-		for k, v := range respScriptOutput {
-			scriptOutput[k] = v
-		}
-		scriptTraces = append(scriptTraces, respScriptTraces...)
-		reqLogger.Debug("Executed response script bindings",
-			"event", "response_script_bindings_executed",
-			"binding_count", len(respScriptTraces),
-		)
+	// Step ⑦ found a matching config — serve it
+	e.serveMatchedConfig(w, r, matchedConfig, pathParams, requestBody, signature, startTime,
+		matchedRoute, sess, lazySession, &sessionIsNew,
+		scriptInput, scriptOutput, scriptTraces,
+		validationOutput, validationTraces,
+		responseTier,
+		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario))
+}
+
+// serveMatchedConfig renders and returns a matched ResponseConfig.
+// It handles response-level scripts, collection mappings, template rendering, stats, and tracing.
+func (e *Engine) serveMatchedConfig(
+	w http.ResponseWriter,
+	r *http.Request,
+	matchedConfig *models.ResponseConfig,
+	pathParams map[string]string,
+	requestBody string,
+	signature string,
+	startTime time.Time,
+	matchedRoute *route,
+	sess store.SessionState,
+	lazySession *store.LazySession,
+	sessionIsNewPtr *bool,
+	scriptInput *scripting.ScriptInput,
+	scriptOutput map[string]any,
+	scriptTraces []models.ScriptTrace,
+	validationOutput map[string]*models.ValidationResult,
+	validationTraces []models.ValidationTrace,
+	responseTier string,
+	aiSkippedReason string,
+	proxySkippedReason string,
+	requestedScenarioName string,
+	appliedScenarioName string,
+) {
+	reqLogger := logging.Logger("proxy.request").With(
+		"method", r.Method,
+		"path", r.URL.Path,
+		"response_config_id", matchedConfig.ID,
+	)
+
+	sessionIsNew := false
+	if sessionIsNewPtr != nil {
+		sessionIsNew = *sessionIsNewPtr
 	}
 
-	// Case 3 of session-creation rules: if a lazy session was used (no header
-	// sent by the client) and any script performed a store operation, the session
-	// will now be materialised — echo its generated ID back to the caller.
-	// If nothing materialised, clear sess so downstream code treats it as absent.
+	// Run response-level script bindings (if any)
+	if scriptInput != nil {
+		if respScriptOutput, respScriptTraces := e.scriptEngine.RunResponseBindings(r.Context(), matchedConfig.ID, scriptInput, sess); len(respScriptOutput) > 0 {
+			if scriptOutput == nil {
+				scriptOutput = make(map[string]any)
+			}
+			for k, v := range respScriptOutput {
+				scriptOutput[k] = v
+			}
+			scriptTraces = append(scriptTraces, respScriptTraces...)
+			reqLogger.Debug("Executed response script bindings",
+				"event", "response_script_bindings_executed",
+				"binding_count", len(respScriptTraces),
+			)
+		}
+	}
+
+	// Case 3 of session-creation rules: if a lazy session was used and any script
+	// performed a store operation, the session will now be materialised.
 	if lazySession != nil {
 		if inner := lazySession.Materialized(); inner != nil {
 			info := inner.Info(false)
@@ -832,10 +875,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Run collection mappings for the matched response config. Mappings execute
-	// after response-level scripts so they can reference script output via the
-	// session store. The same sess is used so mapper writes are visible to any
-	// subsequent script calls within the same session.
+	// Run collection mappings for the matched response config.
 	var collectionOutput map[string]any
 	var collectionTraces []models.CollectionTrace
 	if sess != nil {
@@ -871,6 +911,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		RNG:              rand.New(rand.NewSource(seed)),
 		ScriptOutput:     scriptOutput,
 		CollectionOutput: collectionOutput,
+		ValidationOutput: validationOutput,
 		Method:           r.Method,
 		RequestURL:       r.URL.String(),
 		RequestID:        requestID,
@@ -901,8 +942,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Process headers – skip any that Go's ResponseWriter manages automatically
-	// or that are stale/misleading for virtual responses (see skipRecordedResponseHeaders).
+	// Process headers
 	responseHeaders := e.templateEngine.ProcessHeaders(matchedConfig.Headers, templateCtx)
 	for key, value := range responseHeaders {
 		if skipRecordedResponseHeaders[http.CanonicalHeaderKey(key)] {
@@ -911,7 +951,6 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(key, value)
 	}
 
-	// Set default content-type if not set
 	if w.Header().Get("Content-Type") == "" {
 		w.Header().Set("Content-Type", "application/json")
 	}
@@ -989,14 +1028,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			MatchedConfigID:     matchedConfig.ID,
 			MatchedConfig:       matchedConfig.Name,
 			MatchedConfigOrigin: matchedConfig.EffectiveOrigin(),
-			Mode:                specMode,
 			ResponseSource:      models.TraceResponseSourceConfig,
 			ResponseTier:        responseTier,
 			Signature:           signature,
-			AISkippedReason:     modeSelection.AISkippedReason,
-			ProxySkippedReason:  modeSelection.ProxySkippedReason,
+			AISkippedReason:     aiSkippedReason,
+			ProxySkippedReason:  proxySkippedReason,
+			AIScenarioRequested: requestedScenarioName,
+			AIScenarioApplied:   appliedScenarioName,
 			Scripts:             scriptTraces,
 			Collections:         collectionTraces,
+			Validations:         validationTraces,
 			Session:             sessionTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
@@ -1016,18 +1057,44 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type modeSelection struct {
-	Mode               string
-	AISkippedReason    string
-	ProxySkippedReason string
+// findRecordedResponse filters configs where recorded==true (origin=proxy) and matches by signature.
+// Recorded responses store the request signature as a Condition with Source=signature.
+// Returns the first enabled match sorted by priority ASC.
+func (e *Engine) findRecordedResponse(configs []*models.ResponseConfig, signature string) *models.ResponseConfig {
+	sorted := make([]*models.ResponseConfig, 0, len(configs))
+	for _, cfg := range configs {
+		if cfg.Recorded || cfg.EffectiveOrigin() == models.ResponseOriginProxy {
+			sorted = append(sorted, cfg)
+		}
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Priority < sorted[j].Priority
+	})
+	for _, cfg := range sorted {
+		if !cfg.Enabled {
+			continue
+		}
+		// Match by signature condition
+		for _, cond := range cfg.Conditions {
+			if cond.Source == models.SourceSignature && cond.Value == signature {
+				return cfg
+			}
+		}
+	}
+	return nil
 }
 
-func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, reqData *condition.RequestData, enabledTags map[string]struct{}, recorded bool) *models.ResponseConfig {
+// findMatchingResponseConfig matches non-recorded configs only, using ScriptOutput + ValidationOutput.
+func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, reqData *condition.RequestData, enabledTags map[string]struct{}) *models.ResponseConfig {
 	sort.Slice(configs, func(i, j int) bool {
 		return configs[i].Priority < configs[j].Priority
 	})
 	for _, cfg := range configs {
-		if !cfg.Enabled || cfg.Recorded != recorded {
+		if !cfg.Enabled {
+			continue
+		}
+		// Skip recorded/proxy-origin configs (handled at step ③)
+		if cfg.Recorded || cfg.EffectiveOrigin() == models.ResponseOriginProxy {
 			continue
 		}
 		tag := cfg.Tag
@@ -1037,44 +1104,64 @@ func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, re
 		if _, ok := enabledTags[tag]; !ok {
 			continue
 		}
-		if e.condEvaluator.EvaluateAll(cfg.Conditions, reqData) {
+		if e.evalConditions(cfg.ConditionTree, cfg.Conditions, reqData) {
 			return cfg
 		}
 	}
 	return nil
 }
 
-func (e *Engine) selectMode(spec *models.Spec, reqData *condition.RequestData) modeSelection {
-	selection := modeSelection{Mode: models.SpecModeStandard}
-	policy := spec.EffectiveModePolicy()
-
-	if !policy.AI.Enabled {
-		selection.AISkippedReason = "disabled"
-	} else if e.aiGenerator == nil || !e.aiGenerator.IsConfigured() {
-		selection.AISkippedReason = "not-configured"
-		e.warnModeUnavailable(spec, "AI", "AI generator is not configured")
-	} else if e.condEvaluator.EvaluateAll(policy.AI.Conditions, reqData) {
-		selection.Mode = models.SpecModeAI
-		return selection
-	} else {
-		selection.AISkippedReason = "conditions-not-matched"
+// evalConditions evaluates a ConditionTree when set, otherwise falls back to EvaluateAll(conditions).
+func (e *Engine) evalConditions(tree *models.ConditionNode, conditions []models.Condition, reqData *condition.RequestData) bool {
+	if tree != nil {
+		return e.condEvaluator.EvaluateTree(tree, reqData)
 	}
+	return e.condEvaluator.EvaluateAll(conditions, reqData)
+}
 
+// proxyConditionsMet returns (shouldActivate bool, skippedReason string).
+func (e *Engine) proxyConditionsMet(spec *models.Spec, reqData *condition.RequestData) (bool, string) {
+	policy := spec.EffectiveModePolicy()
 	if !policy.Proxy.Enabled {
-		selection.ProxySkippedReason = "disabled"
-		return selection
+		return false, "disabled"
 	}
 	if spec == nil || spec.BackendURI == "" {
-		selection.ProxySkippedReason = "no-backend"
 		e.warnModeUnavailable(spec, "proxy", "backend URI is not configured")
-		return selection
+		return false, "no-backend"
 	}
-	if e.condEvaluator.EvaluateAll(policy.Proxy.Conditions, reqData) {
-		selection.Mode = models.SpecModeProxy
-		return selection
+	if e.evalConditions(policy.Proxy.ConditionTree, policy.Proxy.Conditions, reqData) {
+		return true, ""
 	}
-	selection.ProxySkippedReason = "conditions-not-matched"
-	return selection
+	return false, "conditions-not-matched"
+}
+
+// aiConditionsMet returns (shouldActivate bool, skippedReason string).
+func (e *Engine) aiConditionsMet(spec *models.Spec, reqData *condition.RequestData) (bool, string) {
+	policy := spec.EffectiveModePolicy()
+	if !policy.AI.Enabled {
+		return false, "disabled"
+	}
+	if e.aiGenerator == nil || !e.aiGenerator.IsConfigured() {
+		e.warnModeUnavailable(spec, "AI", "AI generator is not configured")
+		return false, "not-configured"
+	}
+	if e.evalConditions(policy.AI.ConditionTree, policy.AI.Conditions, reqData) {
+		return true, ""
+	}
+	return false, "conditions-not-matched"
+}
+
+// loadValidationRules loads spec-level + operation-level validation rules sorted by Order.
+func (e *Engine) loadValidationRules(specID, operationID string) []*models.ValidationRule {
+	var rules []*models.ValidationRule
+	if specRules, err := e.store.ListValidationRulesBySpec(specID); err == nil {
+		rules = append(rules, specRules...)
+	}
+	if opRules, err := e.store.ListValidationRulesByOperation(operationID); err == nil {
+		rules = append(rules, opRules...)
+	}
+	sort.Slice(rules, func(i, j int) bool { return rules[i].Order < rules[j].Order })
+	return rules
 }
 
 func (e *Engine) warnModeUnavailable(spec *models.Spec, mode, reason string) {

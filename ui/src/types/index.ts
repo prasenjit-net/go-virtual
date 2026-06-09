@@ -62,6 +62,7 @@ export interface ConditionalModeConfig {
     enabled: boolean;
     disableRecording?: boolean;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
 }
 
 export interface ModePolicy {
@@ -153,6 +154,7 @@ export interface ResponseConfig {
     tag?: string;
     priority: number;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
     statusCode: number;
     headers: Record<string, string>;
     body: string;
@@ -168,6 +170,7 @@ export interface ResponseConfigInput {
     tag?: string;
     priority: number;
     conditions: Condition[];
+    conditionTree?: ConditionNode;
     statusCode: number;
     headers: Record<string, string>;
     body: string;
@@ -182,9 +185,51 @@ export interface Tag {
     updatedAt?: string;
 }
 
+// ---- Validation Rules ----
+
+export interface ConditionNode {
+    condition?: Condition;
+    operator?: 'AND' | 'OR' | 'NOT';
+    children?: ConditionNode[];
+}
+
+export interface ValidationRule {
+    id: string;
+    specId?: string;
+    operationId?: string;
+    name: string;
+    description?: string;
+    order: number;
+    enabled: boolean;
+    conditionTree?: ConditionNode;
+    onSuccess?: Record<string, string>;
+    onFailure?: Record<string, string>;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export interface ValidationInput {
+    name: string;
+    description?: string;
+    order: number;
+    enabled: boolean;
+    conditionTree?: ConditionNode;
+    onSuccess?: Record<string, string>;
+    onFailure?: Record<string, string>;
+}
+
+export interface ValidationTrace {
+    ruleId: string;
+    ruleName: string;
+    scope: 'spec' | 'operation';
+    status: 'pass' | 'fail';
+    properties?: Record<string, string>;
+    durationMs: number;
+}
+
 // Condition types
 export interface Condition {
-    source: 'path' | 'query' | 'header' | 'body' | 'signature' | 'script';
+    source: 'path' | 'query' | 'header' | 'body' | 'signature' | 'script' | 'validation';
     key: string;
     operator: ConditionOperator;
     value: string;
@@ -245,6 +290,8 @@ export interface Trace {
     session?: SessionTrace;
     // Collection mapping traces
     collections?: CollectionTrace[];
+    // Validation rule traces
+    validations?: ValidationTrace[];
 }
 
 export interface TraceRequest {

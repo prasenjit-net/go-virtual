@@ -67,19 +67,20 @@ func (h *Handler) GenerateAIResponse(c *gin.Context) {
 
 	// Persist using the same path as CreateResponseConfig.
 	cfg := &models.ResponseConfig{
-		ID:          generateID(),
-		OperationID: opID,
-		Name:        input.Name,
-		Description: input.Description,
-		Tag:         normalizeTag(input.Tag),
-		Priority:    input.Priority,
-		Conditions:  input.Conditions,
-		StatusCode:  input.StatusCode,
-		Headers:     input.Headers,
-		Body:        input.Body,
-		Delay:       input.Delay,
-		Enabled:     input.Enabled,
-		Origin:      models.ResponseOriginAI,
+		ID:            generateID(),
+		OperationID:   opID,
+		Name:          input.Name,
+		Description:   input.Description,
+		Tag:           normalizeTag(input.Tag),
+		Priority:      input.Priority,
+		Conditions:    input.Conditions,
+		ConditionTree: input.ConditionTree,
+		StatusCode:    input.StatusCode,
+		Headers:       input.Headers,
+		Body:          input.Body,
+		Delay:         input.Delay,
+		Enabled:       input.Enabled,
+		Origin:        models.ResponseOriginAI,
 	}
 	if cfg.Tag == "" {
 		cfg.Tag = models.DefaultTagName

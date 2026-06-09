@@ -179,7 +179,7 @@ func TestBuildSystemPrompt_Basic(t *testing.T) {
 	op := OperationContext{Method: "GET", Path: "/pets"}
 	prompt := buildSystemPrompt(op)
 
-	for _, want := range []string{"statusCode", "conditions", "body", "priority", "CONDITION SCHEMA"} {
+	for _, want := range []string{"statusCode", "conditionTree", "body", "priority", "CONDITION TREE SCHEMA"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("system prompt missing %q", want)
 		}
@@ -647,6 +647,71 @@ func TestGenerateResponse_InvalidConditions(t *testing.T) {
 	}
 }
 
+func TestGenerateResponse_ConditionTree_OR(t *testing.T) {
+	// Model returns conditionTree with OR logic (X-Head1 present OR X-Head2 absent).
+	responseBody := `{
+"statusCode": 200,
+"name": "Header OR",
+"description": "Matches when X-Head1 present or X-Head2 absent",
+"headers": {"Content-Type": "application/json"},
+"body": "{\"ok\":true}",
+"priority": 5,
+"enabled": true,
+"conditionTree": {
+  "operator": "OR",
+  "children": [
+    {"condition": {"source":"header","key":"X-Head1","operator":"exists","value":""}},
+    {"condition": {"source":"header","key":"X-Head2","operator":"exists","value":"","negate":true}}
+  ]
+},
+"delay": 0
+}`
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	result, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/items"}, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.ConditionTree == nil {
+		t.Fatal("expected conditionTree to be set")
+	}
+	if result.ConditionTree.Operator != "OR" {
+		t.Errorf("expected OR root, got %q", result.ConditionTree.Operator)
+	}
+	if len(result.ConditionTree.Children) != 2 {
+		t.Errorf("expected 2 children, got %d", len(result.ConditionTree.Children))
+	}
+	if result.Conditions != nil {
+		t.Error("expected Conditions to be nil when conditionTree is used")
+	}
+}
+
+func TestGenerateResponse_ConditionTree_InvalidOperator(t *testing.T) {
+	responseBody := `{
+"statusCode": 200,
+"name": "Bad",
+"headers": {},
+"body": "{}",
+"priority": 5,
+"enabled": true,
+"conditionTree": {
+  "operator": "XOR",
+  "children": [
+    {"condition": {"source":"header","key":"X-A","operator":"exists","value":""}}
+  ]
+},
+"delay": 0
+}`
+	_, url := mockOpenAI(t, 200, openAISuccessResponse(responseBody))
+
+	g := NewGenerator(Config{APIKey: "test-key", Endpoint: url})
+	_, err := g.GenerateResponse(context.Background(), OperationContext{Method: "GET", Path: "/items"}, "")
+	if err == nil {
+		t.Error("expected error for invalid conditionTree operator")
+	}
+}
+
 func TestGenerateResponse_NoChoices(t *testing.T) {
 	_, url := mockOpenAI(t, 200, `{"choices":[]}`)
 
@@ -682,8 +747,13 @@ func TestGenerateResponse_DefaultsApplied(t *testing.T) {
 	if result.Headers == nil {
 		t.Error("expected default headers to be applied")
 	}
-	if result.Conditions == nil {
-		t.Error("expected default conditions slice (not nil)")
+	// Flat conditions are converted to ConditionTree; Conditions is cleared.
+	// A null/empty conditions model response yields a nil ConditionTree (no conditions).
+	if result.Conditions != nil {
+		t.Error("expected Conditions to be nil after conversion to ConditionTree")
+	}
+	if result.ConditionTree != nil {
+		t.Error("expected ConditionTree to be nil when model returned no conditions")
 	}
 	if result.Priority != 10 {
 		t.Errorf("expected default priority 10, got %d", result.Priority)

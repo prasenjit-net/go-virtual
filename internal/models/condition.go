@@ -18,6 +18,7 @@ const (
 	SourceBody         = "body"
 	SourceSignature    = "signature"    // Matches against a pre-computed request signature hash
 	SourceScriptOutput = "script"       // Matches against operation-level script output (dot-path key)
+	SourceValidation   = "validation"   // Matches against validation rule output (key: "<ruleName>.status" or "<ruleName>.<property>")
 )
 
 // Supported condition operators
@@ -63,7 +64,7 @@ const (
 
 // ValidSources returns all valid condition sources
 func ValidSources() []string {
-	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody, SourceSignature, SourceScriptOutput}
+	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody, SourceSignature, SourceScriptOutput, SourceValidation}
 }
 
 // ValidOperators returns all current (non-deprecated) condition operators.
@@ -81,6 +82,26 @@ func ValidOperators() []string {
 // superseded by Condition.Negate on the positive equivalent.
 func DeprecatedOperators() []string {
 	return []string{OpNotEquals, OpNotContains, OpNotExists}
+}
+
+// ConditionsToTree converts a flat AND-only condition list to a ConditionNode tree.
+// Returns nil for an empty slice, a single leaf node for one condition, and an AND
+// root with leaf children for multiple conditions. Deprecated operators are normalised
+// to their positive equivalents with Negate=true before the tree is built.
+func ConditionsToTree(conditions []Condition) *ConditionNode {
+	if len(conditions) == 0 {
+		return nil
+	}
+	if len(conditions) == 1 {
+		c := NormaliseDeprecatedOperator(conditions[0])
+		return &ConditionNode{Condition: &c}
+	}
+	children := make([]*ConditionNode, len(conditions))
+	for i, cond := range conditions {
+		c := NormaliseDeprecatedOperator(cond)
+		children[i] = &ConditionNode{Condition: &c}
+	}
+	return &ConditionNode{Operator: "AND", Children: children}
 }
 
 // NormaliseDeprecatedOperator converts a condition using a deprecated negative

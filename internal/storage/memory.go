@@ -21,6 +21,7 @@ type MemoryStorage struct {
 	aiScenarios         map[string]*models.AIScenario
 	scriptBindings      map[string]*models.ScriptBinding
 	collectionMappings  map[string]*models.CollectionMapping
+	validationRules     map[string]*models.ValidationRule
 }
 
 // NewMemoryStorage creates a new in-memory storage
@@ -34,6 +35,7 @@ func NewMemoryStorage() *MemoryStorage {
 		aiScenarios:        make(map[string]*models.AIScenario),
 		scriptBindings:     make(map[string]*models.ScriptBinding),
 		collectionMappings: make(map[string]*models.CollectionMapping),
+		validationRules:    make(map[string]*models.ValidationRule),
 	}
 
 	// Ensure default tag exists
@@ -758,6 +760,93 @@ func (m *MemoryStorage) DeleteCollectionMappingsByResponse(responseConfigID stri
 			delete(m.collectionMappings, id)
 		}
 	}
+	return nil
+}
+
+// ---- ValidationRule operations ----
+
+// ListValidationRulesBySpec returns all validation rules for a spec, sorted by Order.
+func (m *MemoryStorage) ListValidationRulesBySpec(specID string) ([]*models.ValidationRule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	rules := make([]*models.ValidationRule, 0)
+	for _, r := range m.validationRules {
+		if r.SpecID == specID {
+			clone := *r
+			rules = append(rules, &clone)
+		}
+	}
+	sort.Slice(rules, func(i, j int) bool { return rules[i].Order < rules[j].Order })
+	return rules, nil
+}
+
+// ListValidationRulesByOperation returns all validation rules for an operation, sorted by Order.
+func (m *MemoryStorage) ListValidationRulesByOperation(operationID string) ([]*models.ValidationRule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	rules := make([]*models.ValidationRule, 0)
+	for _, r := range m.validationRules {
+		if r.OperationID == operationID {
+			clone := *r
+			rules = append(rules, &clone)
+		}
+	}
+	sort.Slice(rules, func(i, j int) bool { return rules[i].Order < rules[j].Order })
+	return rules, nil
+}
+
+// GetValidationRule retrieves a single validation rule by ID.
+func (m *MemoryStorage) GetValidationRule(id string) (*models.ValidationRule, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	r, exists := m.validationRules[id]
+	if !exists {
+		return nil, fmt.Errorf("validation rule not found: %s", id)
+	}
+	clone := *r
+	return &clone, nil
+}
+
+// CreateValidationRule stores a new validation rule.
+func (m *MemoryStorage) CreateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.validationRules[rule.ID]; exists {
+		return nil, fmt.Errorf("validation rule with ID %s already exists", rule.ID)
+	}
+	clone := *rule
+	m.validationRules[rule.ID] = &clone
+	result := *rule
+	return &result, nil
+}
+
+// UpdateValidationRule replaces a stored validation rule.
+func (m *MemoryStorage) UpdateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.validationRules[rule.ID]; !exists {
+		return nil, fmt.Errorf("validation rule not found: %s", rule.ID)
+	}
+	clone := *rule
+	m.validationRules[rule.ID] = &clone
+	result := *rule
+	return &result, nil
+}
+
+// DeleteValidationRule removes a validation rule by ID.
+func (m *MemoryStorage) DeleteValidationRule(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.validationRules[id]; !exists {
+		return fmt.Errorf("validation rule not found: %s", id)
+	}
+	delete(m.validationRules, id)
 	return nil
 }
 

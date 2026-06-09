@@ -71,6 +71,14 @@ type Storage interface {
 	DeleteCollectionMapping(id string) error
 	DeleteCollectionMappingsByResponse(responseConfigID string) error
 
+	// ValidationRule operations
+	ListValidationRulesBySpec(specID string) ([]*models.ValidationRule, error)
+	ListValidationRulesByOperation(operationID string) ([]*models.ValidationRule, error)
+	GetValidationRule(id string) (*models.ValidationRule, error)
+	CreateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error)
+	UpdateValidationRule(rule *models.ValidationRule) (*models.ValidationRule, error)
+	DeleteValidationRule(id string) error
+
 	// Utility
 	Close() error
 }

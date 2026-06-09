@@ -168,6 +168,17 @@ func (r *Router) setupRoutes() {
 		api.PUT("/mappings/:mappingId", r.handler.UpdateCollectionMapping)
 		api.DELETE("/mappings/:mappingId", r.handler.DeleteCollectionMapping)
 
+		// Validation rules (per spec)
+		api.GET("/specs/:id/validations", r.handler.ListSpecValidations)
+		api.POST("/specs/:id/validations", r.handler.CreateSpecValidation)
+		// Validation rules (per operation)
+		api.GET("/operations/:id/validations", r.handler.ListOperationValidations)
+		api.POST("/operations/:id/validations", r.handler.CreateOperationValidation)
+		// Validation rule CRUD
+		api.GET("/validations/:id", r.handler.GetValidation)
+		api.PUT("/validations/:id", r.handler.UpdateValidation)
+		api.DELETE("/validations/:id", r.handler.DeleteValidation)
+
 		// Tags
 		api.GET("/tags", r.handler.ListTags)
 		api.POST("/tags", r.handler.CreateTag)

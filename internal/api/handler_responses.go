@@ -39,18 +39,19 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 
 	// Generate ID
 	cfg := &models.ResponseConfig{
-		ID:          generateID(),
-		OperationID: opID,
-		Name:        input.Name,
-		Description: input.Description,
-		Tag:         normalizeTag(input.Tag),
-		Priority:    input.Priority,
-		Conditions:  input.Conditions,
-		StatusCode:  input.StatusCode,
-		Headers:     input.Headers,
-		Body:        input.Body,
-		Delay:       input.Delay,
-		Enabled:     input.Enabled,
+		ID:            generateID(),
+		OperationID:   opID,
+		Name:          input.Name,
+		Description:   input.Description,
+		Tag:           normalizeTag(input.Tag),
+		Priority:      input.Priority,
+		Conditions:    input.Conditions,
+		ConditionTree: input.ConditionTree,
+		StatusCode:    input.StatusCode,
+		Headers:       input.Headers,
+		Body:          input.Body,
+		Delay:         input.Delay,
+		Enabled:       input.Enabled,
 	}
 
 	if cfg.Tag == "" {
@@ -132,6 +133,9 @@ func (h *Handler) UpdateResponseConfig(c *gin.Context) {
 	if update.Conditions != nil {
 		cfg.Conditions = *update.Conditions
 	}
+	if update.ConditionTree != nil {
+		cfg.ConditionTree = update.ConditionTree
+	}
 	if update.StatusCode != nil {
 		cfg.StatusCode = *update.StatusCode
 	}
@@ -203,20 +207,21 @@ func (h *Handler) CloneResponseConfig(c *gin.Context) {
 	}
 
 	clone := &models.ResponseConfig{
-		ID:          generateID(),
-		OperationID: src.OperationID,
-		Name:        input.Name,
-		Description: src.Description,
-		Tag:         src.Tag,
-		Priority:    src.Priority,
-		Conditions:  clonedConditions,
-		StatusCode:  src.StatusCode,
-		Headers:     clonedHeaders,
-		Body:        src.Body,
-		Delay:       src.Delay,
-		Enabled:     src.Enabled,
-		Origin:      models.ResponseOriginManual,
-		Recorded:    false,
+		ID:            generateID(),
+		OperationID:   src.OperationID,
+		Name:          input.Name,
+		Description:   src.Description,
+		Tag:           src.Tag,
+		Priority:      src.Priority,
+		Conditions:    clonedConditions,
+		ConditionTree: cloneConditionTree(src.ConditionTree),
+		StatusCode:    src.StatusCode,
+		Headers:       clonedHeaders,
+		Body:          src.Body,
+		Delay:         src.Delay,
+		Enabled:       src.Enabled,
+		Origin:        models.ResponseOriginManual,
+		Recorded:      false,
 	}
 
 	if err := h.store.CreateResponseConfig(clone); err != nil {
@@ -226,6 +231,31 @@ func (h *Handler) CloneResponseConfig(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, clone)
 }
+
+// cloneConditionTree deep-copies a ConditionNode tree, stripping signature leaf nodes.
+func cloneConditionTree(node *models.ConditionNode) *models.ConditionNode {
+	if node == nil {
+		return nil
+	}
+	if node.Condition != nil {
+		if node.Condition.Source == "signature" {
+			return nil
+		}
+		c := *node.Condition
+		return &models.ConditionNode{Condition: &c}
+	}
+	var children []*models.ConditionNode
+	for _, child := range node.Children {
+		if cloned := cloneConditionTree(child); cloned != nil {
+			children = append(children, cloned)
+		}
+	}
+	if len(children) == 0 {
+		return nil
+	}
+	return &models.ConditionNode{Operator: node.Operator, Children: children}
+}
+
 func (h *Handler) UpdateResponsePriority(c *gin.Context) {
 	id := c.Param("id")
 

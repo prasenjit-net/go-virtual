@@ -46,6 +46,8 @@ type Trace struct {
 	Scripts []ScriptTrace `json:"scripts,omitempty"`
 	// Collection execution traces — one entry per executed mapping
 	Collections []CollectionTrace `json:"collections,omitempty"`
+	// Validation traces — one entry per evaluated validation rule
+	Validations []ValidationTrace `json:"validations,omitempty"`
 
 	// Session identifies the session that was active during this request.
 	// Populated in Phase 2 when session management is enabled.
