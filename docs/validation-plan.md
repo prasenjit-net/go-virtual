@@ -73,20 +73,23 @@ Example: a rule named `auth_check` with `onFailure: {error_code: "AUTH_MISSING",
 
 ### 2.4 Execution Order
 
+> **See [processing-order-plan.md](processing-order-plan.md) for the authoritative full pipeline.**
+> The diagram below shows only the validation-relevant slice.
+
 ```
-Request arrives
-  │
-  ├─ 1. Spec-level scripts (existing)
-  ├─ 2. Operation-level scripts (existing)
-  │       └─ ScriptOutput → RequestData
-  │
-  ├─ 3. Spec-level ValidationRules (ordered by .order ASC)
-  ├─ 4. Operation-level ValidationRules (ordered by .order ASC)
-  │       └─ ValidationOutput → RequestData + template.Context
-  │
-  ├─ 5. Response config matching (conditions can use source="validation")
-  └─ 6. Response rendering (templates can use .Validation.*)
+  ├─ ③ Scripts (spec → operation level)  →  ScriptOutput
+  ├─ ④ Recorded response check           →  return if matched
+  ├─ ⑤ Proxy step                        →  return if triggered
+  ├─ ⑥ Validations (spec → operation)   →  ValidationOutput
+  ├─ ⑦ Configured response matching     →  (uses ScriptOutput + ValidationOutput)
+  ├─ ⑧ AI fallback
+  ├─ ⑨ Spec example fallback
+  └─ ⑩ 404
 ```
+
+Validations run at step ⑥ — after scripts (so `source=script` conditions work inside
+validation trees) and after proxy (so validation output is available for configured-response
+condition matching at step ⑦).
 
 ---
 
