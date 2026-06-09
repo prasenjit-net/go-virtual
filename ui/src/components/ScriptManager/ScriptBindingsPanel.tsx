@@ -17,7 +17,11 @@ interface OperationProps {
 interface ResponseProps {
     kind: 'response'
     operationId: string
-    responseConfigId: string
+    /** Undefined when the response config has not been saved yet */
+    responseConfigId?: string
+    /** When provided, "Attach" pushes to this list instead of calling the API */
+    pendingBindings?: ScriptBindingInput[]
+    onPendingBindingsChange?: (bs: ScriptBindingInput[]) => void
 }
 
 interface SpecProps {
@@ -42,8 +46,13 @@ export default function ScriptBindingsPanel(props: Props) {
 
     const isResponse = props.kind === 'response'
     const isSpec = props.kind === 'spec'
+    const responseConfigId = isResponse ? (props as ResponseProps).responseConfigId : undefined
+    const pendingBindings  = isResponse ? ((props as ResponseProps).pendingBindings ?? []) : []
+    const onPendingBindingsChange = isResponse ? (props as ResponseProps).onPendingBindingsChange : undefined
+    const deferredMode = !!onPendingBindingsChange
+
     const queryKey = isResponse
-        ? ['responseScriptBindings', (props as ResponseProps).responseConfigId]
+        ? ['responseScriptBindings', responseConfigId ?? '']
         : isSpec
             ? ['specScriptBindings', (props as SpecProps).specId]
             : ['scriptBindings', (props as OperationProps).operationId]
@@ -58,10 +67,11 @@ export default function ScriptBindingsPanel(props: Props) {
     const { data: bindings, isLoading } = useQuery<ScriptBinding[]>({
         queryKey,
         queryFn: () => isResponse
-            ? responseScriptBindingsApi.listByResponse((props as ResponseProps).operationId, (props as ResponseProps).responseConfigId)
+            ? responseScriptBindingsApi.listByResponse((props as ResponseProps).operationId, responseConfigId!)
             : isSpec
                 ? specScriptBindingsApi.list((props as SpecProps).specId)
                 : scriptBindingsApi.listByOperation((props as OperationProps).operationId),
+        enabled: isResponse ? !!responseConfigId : true,
     })
 
     const invalidate = () => {
@@ -80,7 +90,7 @@ export default function ScriptBindingsPanel(props: Props) {
         mutationFn: ({ binding }: { binding: ScriptBinding }) => isResponse
             ? responseScriptBindingsApi.update(
                 (props as ResponseProps).operationId,
-                (props as ResponseProps).responseConfigId,
+                responseConfigId!,
                 binding.id,
                 buildUpdatePayload(binding, { enabled: !binding.enabled }),
               )
@@ -102,7 +112,7 @@ export default function ScriptBindingsPanel(props: Props) {
         mutationFn: (bindingId: string) => isResponse
             ? responseScriptBindingsApi.delete(
                 (props as ResponseProps).operationId,
-                (props as ResponseProps).responseConfigId,
+                responseConfigId!,
                 bindingId,
               )
             : isSpec
@@ -112,19 +122,26 @@ export default function ScriptBindingsPanel(props: Props) {
     })
 
     const attachMutation = useMutation({
-        mutationFn: () => isResponse
-            ? responseScriptBindingsApi.create(
-                (props as ResponseProps).operationId,
-                (props as ResponseProps).responseConfigId,
-                form,
-              )
-            : isSpec
-                ? specScriptBindingsApi.create((props as SpecProps).specId, form)
-                : scriptBindingsApi.create((props as OperationProps).operationId, form),
+        mutationFn: () => {
+            if (deferredMode) return Promise.resolve(null)
+            return isResponse
+                ? responseScriptBindingsApi.create(
+                    (props as ResponseProps).operationId,
+                    responseConfigId!,
+                    form,
+                  )
+                : isSpec
+                    ? specScriptBindingsApi.create((props as SpecProps).specId, form)
+                    : scriptBindingsApi.create((props as OperationProps).operationId, form)
+        },
         onSuccess: () => {
-            invalidate()
+            if (deferredMode) {
+                onPendingBindingsChange!([...pendingBindings, { ...form }])
+            } else {
+                invalidate()
+            }
             setModalOpen(false)
-            setForm({ scriptId: '', outputKey: '', order: (bindings?.length ?? 0), enabled: true })
+            setForm({ scriptId: '', outputKey: '', order: (bindings?.length ?? 0) + pendingBindings.length, enabled: true })
             setFormError(null)
         },
         onError: (e) => setFormError((e as Error).message),
@@ -134,7 +151,7 @@ export default function ScriptBindingsPanel(props: Props) {
         mutationFn: (items: { id: string; order: number }[]) => isResponse
             ? responseScriptBindingsApi.reorder(
                 (props as ResponseProps).operationId,
-                (props as ResponseProps).responseConfigId,
+                responseConfigId!,
                 items,
               )
             : isSpec
@@ -147,7 +164,7 @@ export default function ScriptBindingsPanel(props: Props) {
         setForm({
             scriptId: allScripts?.[0]?.id ?? '',
             outputKey: '',
-            order: bindings?.length ?? 0,
+            order: (bindings?.length ?? 0) + pendingBindings.length,
             enabled: true,
         })
         setFormError(null)
@@ -208,6 +225,7 @@ export default function ScriptBindingsPanel(props: Props) {
                         </div>
                     </div>
                 ) : sortedBindings.length > 0 ? (
+                    <>
                     <div className="divide-y divide-gray-100 dark:divide-slate-800">
                         {sortedBindings.map((binding, idx) => (
                             <div key={binding.id} className="flex items-center gap-3 px-6 py-4">
@@ -294,7 +312,8 @@ export default function ScriptBindingsPanel(props: Props) {
                             </div>
                         ))}
                     </div>
-                ) : (
+                    </>
+                ) : pendingBindings.length === 0 ? (
                     <div className="p-10 text-center">
                         <Code2 className="w-8 h-8 text-gray-300 dark:text-slate-700 mx-auto mb-3" />
                         <p className="text-sm text-gray-500 dark:text-slate-400 mb-1">
@@ -304,10 +323,54 @@ export default function ScriptBindingsPanel(props: Props) {
                             Attach a script to enrich responses with dynamic computed data.
                         </p>
                     </div>
+                ) : null}
+
+                {/* Pending (unsaved) bindings — deferred mode only */}
+                {pendingBindings.length > 0 && (
+                    <div className={clsx('divide-y divide-amber-100 dark:divide-amber-900/30', sortedBindings.length > 0 && 'border-t border-amber-200 dark:border-amber-800/40')}>
+                        {pendingBindings.map((b, idx) => {
+                            const script = allScripts?.find((s) => s.id === b.scriptId)
+                            return (
+                                <div key={idx} className="flex items-center gap-3 px-6 py-4 bg-amber-50/40 dark:bg-amber-950/5">
+                                    <span className="w-6 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">
+                                        {sortedBindings.length + idx + 1}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-medium text-gray-700 dark:text-slate-200 truncate">
+                                                {script?.name ?? b.scriptId}
+                                            </span>
+                                            <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                                Unsaved
+                                            </span>
+                                            {!b.enabled && (
+                                                <span className="text-xs bg-gray-100 dark:bg-slate-800 text-gray-500 dark:text-slate-400 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                                    Disabled
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                                            <span>Output key:</span>
+                                            <code className="font-mono bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-emerald-700 dark:text-emerald-400">
+                                                {`{{.script.${b.outputKey}.*}}`}
+                                            </code>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => onPendingBindingsChange!(pendingBindings.filter((_, i) => i !== idx))}
+                                        className="p-1.5 text-gray-400 dark:text-slate-500 hover:text-red-600 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors flex-shrink-0"
+                                        title="Remove"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            )
+                        })}
+                    </div>
                 )}
 
                 {/* Info bar */}
-                {sortedBindings.length > 0 && (
+                {(sortedBindings.length > 0 || pendingBindings.length > 0) && (
                     <div className="px-6 py-3 border-t border-gray-100 dark:border-slate-800 flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                         <Info className="w-3.5 h-3.5 flex-shrink-0" />
                         Scripts execute in listed order on every matched request. Access output in templates via{' '}

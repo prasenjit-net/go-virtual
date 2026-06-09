@@ -344,12 +344,15 @@ func (p *Parser) ExtractExampleResponse(content string, method, pathPattern stri
 }
 
 // SpecResponseDef holds spec-defined response information for a single status code.
+// When a response has multiple named examples, one SpecResponseDef is emitted per example.
 type SpecResponseDef struct {
-	StatusCode  int    `json:"statusCode"`
-	Description string `json:"description"`
-	ContentType string `json:"contentType,omitempty"` // e.g. "application/json"
-	BodyExample string `json:"bodyExample,omitempty"` // JSON string or schema-derived example
-	SchemaHint  string `json:"schemaHint,omitempty"`  // Human-readable schema summary
+	StatusCode     int    `json:"statusCode"`
+	Description    string `json:"description"`
+	ContentType    string `json:"contentType,omitempty"`    // e.g. "application/json"
+	BodyExample    string `json:"bodyExample,omitempty"`    // JSON string or schema-derived example
+	SchemaHint     string `json:"schemaHint,omitempty"`     // Human-readable schema summary
+	ExampleName    string `json:"exampleName,omitempty"`    // Named example key from the spec
+	ExampleSummary string `json:"exampleSummary,omitempty"` // Human-readable summary of the named example
 }
 
 // ParamDef describes a single path or query parameter.
@@ -575,7 +578,9 @@ func (p *Parser) ExtractAllResponses(content string, method, pathPattern string)
 			def.Description = *rv.Description
 		}
 
-		// Extract body example from the first JSON media type
+		// Extract body examples from the first JSON media type.
+		// When multiple named examples exist, emit one SpecResponseDef per example.
+		appended := false
 		for mediaType, mt := range rv.Content {
 			if !strings.Contains(mediaType, "json") {
 				continue
@@ -584,16 +589,42 @@ func (p *Parser) ExtractAllResponses(content string, method, pathPattern string)
 				continue
 			}
 			def.ContentType = mediaType
+
 			if mt.Example != nil {
+				// Single inline example
 				def.BodyExample = formatExample(mt.Example)
-			} else if len(mt.Examples) > 0 {
-				for _, ex := range mt.Examples {
+			} else if len(mt.Examples) > 1 {
+				// Multiple named examples — emit one entry per example
+				// Sort keys for deterministic ordering
+				names := make([]string, 0, len(mt.Examples))
+				for name := range mt.Examples {
+					names = append(names, name)
+				}
+				sort.Strings(names)
+				for _, name := range names {
+					ex := mt.Examples[name]
+					if ex == nil || ex.Value == nil || ex.Value.Value == nil {
+						continue
+					}
+					namedDef := def
+					namedDef.BodyExample = formatExample(ex.Value.Value)
+					namedDef.ExampleName = name
+					namedDef.ExampleSummary = ex.Value.Summary
+					defs = append(defs, namedDef)
+					appended = true
+				}
+				break
+			} else if len(mt.Examples) == 1 {
+				// Single named example — use it but still surface the name
+				for name, ex := range mt.Examples {
 					if ex.Value != nil && ex.Value.Value != nil {
 						def.BodyExample = formatExample(ex.Value.Value)
-						break
+						def.ExampleName = name
+						def.ExampleSummary = ex.Value.Summary
 					}
 				}
 			}
+
 			if def.BodyExample == "" && mt.Schema != nil && mt.Schema.Value != nil {
 				def.BodyExample = generateExampleFromSchema(mt.Schema.Value)
 				def.SchemaHint = schemaTypeHint(mt.Schema.Value)
@@ -601,7 +632,9 @@ func (p *Parser) ExtractAllResponses(content string, method, pathPattern string)
 			break
 		}
 
-		defs = append(defs, def)
+		if !appended {
+			defs = append(defs, def)
+		}
 	}
 
 	return defs, nil

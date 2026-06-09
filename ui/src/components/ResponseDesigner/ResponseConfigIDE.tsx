@@ -5,12 +5,13 @@ import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
     Plus, Trash2, AlertCircle, Wand2, X, Settings, Code2,
-    GitBranch, Zap, List
+    GitBranch, Zap, List, Database
 } from 'lucide-react'
 import clsx from 'clsx'
-import { conditionsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { Condition, ConditionOperator, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
+import { collectionMappingsApi, conditionsApi, responseScriptBindingsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
+import type { Condition, ConditionOperator, CollectionMappingInput, ResponseConfig, ResponseConfigInput, ScriptBinding, ScriptBindingInput, SpecExample } from '../../types'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
 
@@ -466,7 +467,7 @@ export default function ResponseConfigIDE({
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
     const [isDirty, setIsDirty] = useState(false)
-    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings'>('metadata')
+    const [ideActiveTab, setIdeActiveTab] = useState<'metadata' | 'body' | 'conditions' | 'headers' | 'scriptbindings' | 'collections'>('metadata')
     const [refDrawerOpen, setRefDrawerOpen] = useState(false)
     const [showExamplePicker, setShowExamplePicker] = useState(false)
     const isDark = useIsDark()
@@ -474,6 +475,8 @@ export default function ResponseConfigIDE({
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const handleSaveRef = useRef<() => void | Promise<void>>(() => undefined)
+    const [pendingCollectionMappings, setPendingCollectionMappings] = useState<CollectionMappingInput[]>([])
+    const [pendingScriptBindings, setPendingScriptBindings] = useState<ScriptBindingInput[]>([])
 
     const queryClient = useQueryClient()
 
@@ -506,7 +509,14 @@ export default function ResponseConfigIDE({
 
     const createMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
-        onSuccess: () => {
+        onSuccess: async (savedConfig: ResponseConfig) => {
+            const id = savedConfig.id
+            await Promise.allSettled([
+                ...pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)),
+                ...pendingScriptBindings.map((b) => responseScriptBindingsApi.create(operationId, id, b)),
+            ])
+            setPendingCollectionMappings([])
+            setPendingScriptBindings([])
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
             onSaved()
@@ -516,7 +526,16 @@ export default function ResponseConfigIDE({
 
     const updateMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
-        onSuccess: () => {
+        onSuccess: async () => {
+            const id = config!.id
+            await Promise.allSettled([
+                ...pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)),
+                ...pendingScriptBindings.map((b) => responseScriptBindingsApi.create(operationId, id, b)),
+            ])
+            setPendingCollectionMappings([])
+            setPendingScriptBindings([])
+            queryClient.invalidateQueries({ queryKey: ['collectionMappings', id] })
+            queryClient.invalidateQueries({ queryKey: ['responseScriptBindings', id] })
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             setIsDirty(false)
             onSaved()
@@ -851,6 +870,7 @@ export default function ResponseConfigIDE({
                             { id: 'metadata', label: 'Metadata', icon: Settings },
                             { id: 'conditions', label: 'Conditions', icon: GitBranch },
                             { id: 'scriptbindings', label: 'Scripts', icon: Zap },
+                            { id: 'collections', label: 'Collections', icon: Database },
                             { id: 'headers', label: 'Headers', icon: List },
                             { id: 'body', label: 'Body', icon: Code2 },
                         ] as const).map(({ id, label, icon: Icon }) => (
@@ -1274,27 +1294,33 @@ export default function ResponseConfigIDE({
 
                             {ideActiveTab === 'scriptbindings' && (
                                 <div className="p-3">
-                                    {config?.id ? (
-                                        <div className="space-y-3">
-                                            {hasScriptTemplateData && (
-                                                <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-lg px-3 py-2">
-                                                    Operation script outputs can be referenced in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
-                                                </div>
-                                            )}
-                                            <ScriptBindingsPanel kind="response" operationId={operationId} responseConfigId={config.id} />
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <p className="text-sm text-gray-600 dark:text-slate-300">Save the response first to add script bindings.</p>
-                                            {hasScriptTemplateData && (
-                                                <p className="text-xs text-blue-600 dark:text-blue-300">
-                                                    Operation-level script outputs are already available in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
-                                                </p>
-                                            )}
-                                        </div>
-                                    )}
+                                    <div className="space-y-3">
+                                        {hasScriptTemplateData && (
+                                            <div className="text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/40 rounded-lg px-3 py-2">
+                                                Operation script outputs can be referenced in templates via <code className="font-mono">{'{{.Script.<binding>.*}}'}</code>.
+                                            </div>
+                                        )}
+                                        <ScriptBindingsPanel
+                                            kind="response"
+                                            operationId={operationId}
+                                            responseConfigId={config?.id}
+                                            pendingBindings={pendingScriptBindings}
+                                            onPendingBindingsChange={setPendingScriptBindings}
+                                        />
+                                    </div>
                                 </div>
                             )}
+
+                            <div className={ideActiveTab !== 'collections' ? 'hidden' : undefined}>
+                                <div className="p-3">
+                                    <CollectionMappingsPanel
+                                        operationId={operationId}
+                                        responseConfigId={config?.id}
+                                        pendingMappings={pendingCollectionMappings}
+                                        onPendingMappingsChange={setPendingCollectionMappings}
+                                    />
+                                </div>
+                            </div>
                         </div>
                         )}
                     </div>

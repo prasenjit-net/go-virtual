@@ -44,6 +44,8 @@ type Trace struct {
 
 	// Script execution traces — one entry per executed binding
 	Scripts []ScriptTrace `json:"scripts,omitempty"`
+	// Collection execution traces — one entry per executed mapping
+	Collections []CollectionTrace `json:"collections,omitempty"`
 
 	// Session identifies the session that was active during this request.
 	// Populated in Phase 2 when session management is enabled.

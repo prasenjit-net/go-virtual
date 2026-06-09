@@ -63,6 +63,14 @@ type Storage interface {
 	DeleteScriptBindingsBySpec(specID string) error
 	DeleteScriptBindingsByResponse(responseConfigID string) error
 
+	// CollectionMapping operations
+	GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error)
+	GetCollectionMapping(id string) (*models.CollectionMapping, error)
+	CreateCollectionMapping(m *models.CollectionMapping) error
+	UpdateCollectionMapping(m *models.CollectionMapping) error
+	DeleteCollectionMapping(id string) error
+	DeleteCollectionMappingsByResponse(responseConfigID string) error
+
 	// Utility
 	Close() error
 }

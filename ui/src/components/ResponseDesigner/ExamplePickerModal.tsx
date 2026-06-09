@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { X, BookOpen, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
+import { X, BookOpen, AlertTriangle, ChevronDown, ChevronRight, Tag } from 'lucide-react'
 import { operationsApi } from '../../services/api'
 import type { SpecExample } from '../../types'
 
@@ -11,28 +11,19 @@ interface ExamplePickerModalProps {
 }
 
 function statusBadgeClass(code: number): string {
-    if (code >= 200 && code < 300) {
-        return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-    }
-    if (code >= 300 && code < 400) {
-        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-    }
-    if (code >= 400 && code < 500) {
-        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
-    }
-    if (code >= 500) {
-        return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
-    }
+    if (code >= 200 && code < 300) return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+    if (code >= 300 && code < 400) return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+    if (code >= 400 && code < 500) return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300'
+    if (code >= 500)               return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
     return 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-300'
 }
 
-function statusLabel(code: number): string {
-    if (code === 0) return 'default'
-    return String(code)
+function exampleKey(ex: SpecExample): string {
+    return `${ex.statusCode}-${ex.exampleName ?? '__default__'}`
 }
 
 export default function ExamplePickerModal({ operationId, onSelect, onClose }: ExamplePickerModalProps) {
-    const [expanded, setExpanded] = useState<number | null>(null)
+    const [expanded, setExpanded] = useState<string | null>(null)
 
     const { data: examples = [], isLoading } = useQuery({
         queryKey: ['spec-examples', operationId],
@@ -40,18 +31,25 @@ export default function ExamplePickerModal({ operationId, onSelect, onClose }: E
         staleTime: 60_000,
     })
 
-    const toggle = (code: number) => setExpanded(prev => prev === code ? null : code)
+    const toggle = (key: string) => setExpanded(prev => prev === key ? null : key)
+
+    // Group by status code for rendering a subtle divider between status groups
+    const grouped = examples.reduce<Record<number, SpecExample[]>>((acc, ex) => {
+        if (!acc[ex.statusCode]) acc[ex.statusCode] = []
+        acc[ex.statusCode].push(ex)
+        return acc
+    }, {})
+    const sortedCodes = Object.keys(grouped).map(Number).sort((a, b) => a - b)
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
             <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-gray-200 dark:border-slate-700">
+
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
                     <div className="flex items-center gap-2">
                         <BookOpen className="w-5 h-5 text-indigo-500" />
-                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">
-                            Spec Examples
-                        </h2>
+                        <h2 className="text-base font-semibold text-gray-900 dark:text-white">Spec Examples</h2>
                     </div>
                     <button
                         onClick={onClose}
@@ -82,68 +80,89 @@ export default function ExamplePickerModal({ operationId, onSelect, onClose }: E
 
                     {!isLoading && examples.length > 0 && (
                         <ul className="divide-y divide-gray-100 dark:divide-slate-700">
-                            {examples.map((ex) => (
-                                <li key={ex.statusCode} className="p-4">
-                                    <div className="flex items-start gap-3">
-                                        {/* Status + meta */}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${statusBadgeClass(ex.statusCode)}`}>
-                                                    {statusLabel(ex.statusCode)}
-                                                </span>
-                                                {ex.contentType && (
-                                                    <span className="text-xs text-gray-400 dark:text-slate-500 font-mono">
-                                                        {ex.contentType}
-                                                    </span>
-                                                )}
-                                                {ex.description && (
-                                                    <span className="text-xs text-gray-500 dark:text-slate-400 truncate">
-                                                        {ex.description}
-                                                    </span>
-                                                )}
-                                            </div>
+                            {sortedCodes.map((code) => (
+                                grouped[code].map((ex, idx) => {
+                                    const key = exampleKey(ex)
+                                    const isExpanded = expanded === key
 
-                                            {ex.schemaHint && !ex.bodyExample && (
-                                                <p className="text-xs text-gray-400 dark:text-slate-500 italic mb-1">
-                                                    Schema: {ex.schemaHint}
-                                                </p>
-                                            )}
+                                    return (
+                                        <li
+                                            key={key}
+                                            className={idx === 0 && code !== sortedCodes[0]
+                                                ? 'border-t-2 border-gray-200 dark:border-slate-600'
+                                                : undefined}
+                                        >
+                                            <div className="flex items-start gap-3 p-4">
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-mono font-semibold ${statusBadgeClass(code)}`}>
+                                                            {code === 0 ? 'default' : String(code)}
+                                                        </span>
 
-                                            {ex.bodyExample && (
-                                                <div className="mt-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => toggle(ex.statusCode)}
-                                                        className="flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
-                                                    >
-                                                        {expanded === ex.statusCode
-                                                            ? <ChevronDown className="w-3.5 h-3.5" />
-                                                            : <ChevronRight className="w-3.5 h-3.5" />}
-                                                        {expanded === ex.statusCode ? 'Hide body' : 'Preview body'}
-                                                    </button>
-                                                    {expanded === ex.statusCode && (
-                                                        <pre className="mt-2 text-xs font-mono bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded p-3 overflow-x-auto max-h-48 text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-all">
-                                                            {ex.bodyExample}
-                                                        </pre>
+                                                        {/* Named example pill */}
+                                                        {ex.exampleName && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700">
+                                                                <Tag className="w-3 h-3" />
+                                                                {ex.exampleName}
+                                                            </span>
+                                                        )}
+
+                                                        {ex.contentType && (
+                                                            <span className="text-xs text-gray-400 dark:text-slate-500 font-mono">
+                                                                {ex.contentType}
+                                                            </span>
+                                                        )}
+
+                                                        {/* Summary (named example) or description (plain) */}
+                                                        {(ex.exampleSummary || (!ex.exampleName && ex.description)) && (
+                                                            <span className="text-xs text-gray-500 dark:text-slate-400 truncate">
+                                                                {ex.exampleSummary || ex.description}
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    {ex.schemaHint && !ex.bodyExample && (
+                                                        <p className="text-xs text-gray-400 dark:text-slate-500 italic mb-1">
+                                                            Schema: {ex.schemaHint}
+                                                        </p>
+                                                    )}
+
+                                                    {ex.bodyExample && (
+                                                        <div className="mt-1">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => toggle(key)}
+                                                                className="flex items-center gap-1 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
+                                                            >
+                                                                {isExpanded
+                                                                    ? <ChevronDown className="w-3.5 h-3.5" />
+                                                                    : <ChevronRight className="w-3.5 h-3.5" />}
+                                                                {isExpanded ? 'Hide body' : 'Preview body'}
+                                                            </button>
+                                                            {isExpanded && (
+                                                                <pre className="mt-2 text-xs font-mono bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded p-3 overflow-x-auto max-h-48 text-gray-700 dark:text-slate-300 whitespace-pre-wrap break-all">
+                                                                    {ex.bodyExample}
+                                                                </pre>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {!ex.bodyExample && !ex.schemaHint && (
+                                                        <p className="text-xs text-gray-400 dark:text-slate-500 italic">No body</p>
                                                     )}
                                                 </div>
-                                            )}
 
-                                            {!ex.bodyExample && !ex.schemaHint && (
-                                                <p className="text-xs text-gray-400 dark:text-slate-500 italic">No body</p>
-                                            )}
-                                        </div>
-
-                                        {/* Action */}
-                                        <button
-                                            type="button"
-                                            onClick={() => { onSelect(ex); onClose(); }}
-                                            className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
-                                        >
-                                            Use this
-                                        </button>
-                                    </div>
-                                </li>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { onSelect(ex); onClose() }}
+                                                    className="flex-shrink-0 px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                                                >
+                                                    Use this
+                                                </button>
+                                            </div>
+                                        </li>
+                                    )
+                                })
                             ))}
                         </ul>
                     )}

@@ -128,6 +128,8 @@ export interface SpecExample {
     contentType: string;
     bodyExample: string;
     schemaHint: string;
+    exampleName?: string;
+    exampleSummary?: string;
 }
 
 export interface OperationSummary {
@@ -241,6 +243,8 @@ export interface Trace {
     scripts?: ScriptTrace[];
     // Phase 2: session trace
     session?: SessionTrace;
+    // Collection mapping traces
+    collections?: CollectionTrace[];
 }
 
 export interface TraceRequest {
@@ -411,6 +415,51 @@ export interface SessionTrace {
     id: string;
     isNew: boolean;
     storeAccess?: StoreAccessEvent[];
+}
+
+// ---- Collection Mappings ----
+
+export type CollectionOpType = 'insert' | 'find-one' | 'find-many' | 'update' | 'upsert' | 'delete'
+
+export interface FieldMappingRule {
+    targetField: string
+    sourceType: 'path' | 'query' | 'header' | 'body' | 'session' | 'store' | 'literal'
+    sourceKey: string
+}
+
+export interface CollectionMapping {
+    id: string
+    responseConfigId: string
+    collectionName: string
+    name?: string
+    operation: CollectionOpType
+    filterRules: FieldMappingRule[]
+    dataRules: FieldMappingRule[]
+    outputKey: string
+    order: number
+    enabled: boolean
+}
+
+export interface CollectionMappingInput {
+    collectionName: string
+    name?: string
+    operation: CollectionOpType
+    filterRules: FieldMappingRule[]
+    dataRules: FieldMappingRule[]
+    outputKey: string
+    order: number
+    enabled: boolean
+}
+
+export interface CollectionTrace {
+    mappingId: string
+    mappingName: string
+    collectionName: string
+    operation: CollectionOpType
+    outputKey: string
+    durationMs: number
+    recordCount: number
+    error?: string
 }
 
 // ---- Archives ----
