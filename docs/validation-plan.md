@@ -77,19 +77,19 @@ Example: a rule named `auth_check` with `onFailure: {error_code: "AUTH_MISSING",
 > The diagram below shows only the validation-relevant slice.
 
 ```
-  ├─ ③ Scripts (spec → operation level)  →  ScriptOutput
-  ├─ ④ Recorded response check           →  return if matched
-  ├─ ⑤ Proxy step                        →  return if triggered
-  ├─ ⑥ Validations (spec → operation)   →  ValidationOutput
-  ├─ ⑦ Configured response matching     →  (uses ScriptOutput + ValidationOutput)
-  ├─ ⑧ AI fallback
+  ├─ ③ Recorded response check           →  return if matched (signature-based, no scripts needed)
+  ├─ ④ Scripts (spec → operation level)  →  ScriptOutput (available to all steps below)
+  ├─ ⑤ Proxy step                        →  return if triggered (uses ScriptOutput)
+  ├─ ⑥ Validations (spec → operation)   →  ValidationOutput (uses ScriptOutput)
+  ├─ ⑦ Configured response matching     →  uses ScriptOutput + ValidationOutput
+  ├─ ⑧ AI fallback                       →  uses ScriptOutput + ValidationOutput
   ├─ ⑨ Spec example fallback
   └─ ⑩ 404
 ```
 
-Validations run at step ⑥ — after scripts (so `source=script` conditions work inside
-validation trees) and after proxy (so validation output is available for configured-response
-condition matching at step ⑦).
+Validations run at step ⑥ — after scripts (so `source=script` works in validation trees)
+and after proxy (so validation output is available for configured-response condition matching
+and AI condition matching at steps ⑦ and ⑧).
 
 ---
 

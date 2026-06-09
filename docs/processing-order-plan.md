@@ -21,17 +21,20 @@ The current engine conflates response source selection into a single `selectMode
                     Read request body, compute signature,
                     resolve or lazily create session.
                              │
-                    ③ SCRIPTS
+                    ③ RECORDED RESPONSE CHECK
+                    Signature-based lookup against stored
+                    ResponseConfigs with origin="proxy".
+                    No script or condition evaluation needed.
+                    → Match found: return recorded response,
+                      skip remaining steps.
+                             │
+                    ④ SCRIPTS
                     Run spec-level bindings, then
                     operation-level bindings (in order).
                     Populates ScriptOutput → available to
-                    all subsequent pipeline steps.
-                             │
-                    ④ RECORDED RESPONSE CHECK
-                    Signature-based lookup against stored
-                    ResponseConfigs with origin="proxy".
-                    → Match found: return recorded response,
-                      skip remaining steps.
+                    ALL subsequent steps (proxy conditions,
+                    validation trees, configured response
+                    conditions, and AI conditions).
                              │
                     ⑤ PROXY
                     Evaluate proxy conditions (can use
@@ -85,21 +88,21 @@ The current engine conflates response source selection into a single `selectMode
 
 ## 3. Step-by-Step Details
 
-### ③ Scripts
-
-No change to script execution logic. Spec-level bindings run first (shared base), then operation-level bindings (can override by key). The combined `scriptOutput` map is injected into `condition.RequestData.ScriptOutput` and used in all subsequent steps.
-
-**What changes**: Scripts now run before the recorded response check. Currently they run just before response config matching. Moving them earlier ensures their output is available to proxy condition evaluation.
-
-### ④ Recorded Response Check
+### ③ Recorded Response Check
 
 - Filter `ResponseConfig` by `operationId` + `recorded=true` (i.e. `origin="proxy"`)
-- Match by **signature equality** (same as today — `config.Signature == reqData.Signature`)
+- Match by **signature equality** (`config.Signature == reqData.Signature`)
 - Sort by `priority` ASC, return first match
-- If matched: return immediately; skip steps ⑤–⑩
-- **No condition evaluation** — recorded responses are signature-matched only
+- If matched: return immediately; skip steps ④–⑩
+- **No script or condition evaluation needed** — pure signature lookup
 
-This step is currently performed inside the general response config scan after scripts + mode selection. Moving it explicitly to step ④ makes it the highest-priority virtual response, checked before any proxy forwarding, validation, or configured matching.
+This is the highest-priority virtual response. It runs before scripts so that a cached proxy response is served with the absolute minimum work. Moving it to step ③ (before scripts) is the key change from the previous plan.
+
+### ④ Scripts
+
+No change to script execution logic. Spec-level bindings run first (shared base), then operation-level bindings (can override by key). The combined `scriptOutput` map is injected into `condition.RequestData.ScriptOutput`.
+
+ScriptOutput is available to **all subsequent pipeline steps**: proxy conditions (⑤), validation condition trees (⑥), configured response conditions (⑦), and AI conditions (⑧).
 
 ### ⑤ Proxy
 
@@ -148,7 +151,7 @@ See [validation-plan.md](validation-plan.md) for the full specification. Summary
 - New condition source `"validation"` is available here: `source=validation, key=<ruleName>.status` or `source=validation, key=<ruleName>.<property>`
 - First match wins; render and return
 
-**What changes**: Recorded responses are excluded from this scan (they were already matched in step ④ or not at all). The condition evaluator gains access to `ValidationOutput`.
+**What changes**: Recorded responses are excluded from this scan (they were already matched in step ③ or not at all). The condition evaluator gains access to `ValidationOutput`.
 
 ### ⑧ AI Fallback
 
@@ -251,16 +254,15 @@ The `Trace` model gains a step-level breakdown to reflect the new pipeline. The 
 
 | Trace field | Populated at step |
 |---|---|
-| `Scripts` | ③ |
-| `ResponseSource = "config"` | ④ (recorded) or ⑦ (configured) |
-| `ResponseTier = "recorded"` | ④ |
-| `ResponseTier = "configured"` | ⑦ |
+| `ResponseSource = "config"`, `ResponseTier = "recorded"` | ③ |
+| `Scripts` | ④ |
 | `ProxyMode`, `BackendURI` | ⑤ |
-| `Validations` (new) | ⑥ |
-| `ResponseSource = "ai"` | ⑧ |
-| `ResponseSource = "example"` | ⑨ |
 | `ProxySkippedReason` | ⑤ (when not triggered) |
+| `Validations` (new) | ⑥ |
+| `ResponseSource = "config"`, `ResponseTier = "configured"` | ⑦ |
+| `ResponseSource = "ai"` | ⑧ |
 | `AISkippedReason` | ⑧ (when not triggered) |
+| `ResponseSource = "example"` | ⑨ |
 
 ---
 
@@ -303,7 +305,7 @@ The old "Mode" radio/select is removed. The `Spec.Mode` and `Spec.ProxyMode` fie
 ### Phase 1 — Engine refactoring (no new features)
 
 1. Introduce `findRecordedResponse` helper; remove `recordedOnly` param from `findMatchingResponseConfig`
-2. Move script execution to before the recorded response check
+2. Move recorded response check to before script execution
 3. Replace `selectMode` with `proxyConditionsMet` and `aiConditionsMet`
 4. Restructure `ServeHTTP` handler into the explicit 10-step pipeline
 5. Update tracing to record proxy/AI skip reasons at the correct pipeline step
@@ -324,8 +326,8 @@ Redesign spec settings "Processing" section per §8 above.
 | Existing behaviour | New behaviour |
 |---|---|
 | Proxy mode is mutually exclusive with AI mode | Both are independent; both can be configured; proxy runs first |
-| Recorded responses are matched after configured responses in the same scan | Recorded responses are matched first, before configured responses |
-| Script output unavailable to proxy conditions | Script output available to proxy conditions (scripts run earlier) |
+| Recorded responses are matched after scripts + mode selection | Recorded responses are matched before scripts — pure signature lookup, minimum work |
+| Script output unavailable to proxy conditions | Script output available to proxy, validation, configured, and AI conditions |
 | `selectMode` returns a single active mode | No single mode; each stage evaluated independently |
 | `source=validation` not a valid condition source | Added in Phase 2 |
 
@@ -342,12 +344,12 @@ Request arrives
   │
   ├─ ① Operation matching
   ├─ ② Initialisation (body, signature, session)
-  ├─ ③ Scripts (spec → operation level)
-  ├─ ④ Recorded response check  ──► return if matched
-  ├─ ⑤ Proxy step               ──► return if triggered
-  ├─ ⑥ Validations (spec → operation level)
-  ├─ ⑦ Configured response matching  ──► return if matched
-  ├─ ⑧ AI fallback              ──► return if triggered
+  ├─ ③ Recorded response check  ──► return if matched (signature, no scripts)
+  ├─ ④ Scripts (spec → operation level)  →  ScriptOutput
+  ├─ ⑤ Proxy step               ──► return if triggered (uses ScriptOutput)
+  ├─ ⑥ Validations (spec → operation level)  →  ValidationOutput (uses ScriptOutput)
+  ├─ ⑦ Configured response matching  ──► return if matched (ScriptOutput + ValidationOutput)
+  ├─ ⑧ AI fallback              ──► return if triggered (ScriptOutput + ValidationOutput)
   ├─ ⑨ Spec example fallback    ──► return if found
   └─ ⑩ 404
 ```
