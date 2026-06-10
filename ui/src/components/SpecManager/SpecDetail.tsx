@@ -9,7 +9,6 @@ import {
     Sparkles,
     Radio,
     Save,
-    Globe,
     Fingerprint,
     Plus,
     Trash2,
@@ -279,15 +278,16 @@ export default function SpecDetail() {
 
             <ScriptBindingsPanel kind="spec" specId={spec.id} />
 
+            {/* Proxy Configuration */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
                 <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">
                     <div className="p-2 bg-violet-100 dark:bg-violet-900/30 rounded-lg">
-                        <Globe className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                        <Radio className="w-5 h-5 text-violet-600 dark:text-violet-400" />
                     </div>
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Spec Fallback Policy</h2>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Proxy Configuration</h2>
                         <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-                            Manual and pre-generated responses are always tried first, then recorded responses. This policy controls what happens only after all saved responses miss.
+                            Forward requests to a real backend. Add conditions to proxy only matching requests; leave conditions empty to proxy everything when enabled.
                         </p>
                     </div>
                 </div>
@@ -299,156 +299,96 @@ export default function SpecDetail() {
                         </div>
                     )}
 
-                    <div className="rounded-xl border border-gray-200 dark:border-slate-800 px-4 py-3 bg-gray-50 dark:bg-slate-950 text-sm text-gray-600 dark:text-slate-300">
-                        <span className="font-medium text-gray-900 dark:text-slate-100 mr-2">Standard fallback:</span>
-                        always available last, using the spec example/default response when enabled.
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5">
+                            Upstream URL
+                        </label>
+                        <div className="flex items-center gap-3">
+                            <input
+                                type="url"
+                                placeholder="https://api.example.com"
+                                value={backendURIInput !== null ? backendURIInput : (spec.backendUri || '')}
+                                onChange={e => setBackendURIInput(e.target.value)}
+                                className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:ring-violet-400"
+                            />
+                            <button
+                                onClick={() => setBackendMutation.mutate(backendURIInput ?? spec.backendUri ?? '')}
+                                disabled={backendURIInput === null || setBackendMutation.isPending}
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            >
+                                <Save className="w-4 h-4" />
+                                Save URL
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <input
-                            type="url"
-                            placeholder="https://api.example.com"
-                            value={backendURIInput !== null ? backendURIInput : (spec.backendUri || '')}
-                            onChange={e => setBackendURIInput(e.target.value)}
-                            className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-violet-500 dark:focus:ring-violet-400"
-                        />
+                    <div className="flex items-center justify-between py-3 border-t border-b border-gray-100 dark:border-slate-800">
+                        <div>
+                            <span className="text-sm font-medium text-gray-800 dark:text-slate-200">Proxy forwarding</span>
+                            {!spec.backendUri && (
+                                <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">
+                                    Set an upstream URL above before enabling.
+                                </p>
+                            )}
+                        </div>
                         <button
-                            onClick={() => setBackendMutation.mutate(backendURIInput ?? spec.backendUri ?? '')}
-                            disabled={backendURIInput === null || setBackendMutation.isPending}
-                            className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
+                            type="button"
+                            disabled={!spec.backendUri}
+                            onClick={() => updatePolicy((policy) => ({
+                                ...policy,
+                                proxy: { ...policy.proxy, enabled: !policy.proxy.enabled },
+                            }))}
+                            className={clsx(
+                                'px-3 py-1.5 rounded-lg text-sm border',
+                                currentPolicy.proxy.enabled
+                                    ? 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700'
+                                    : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+                                !spec.backendUri && 'opacity-50 cursor-not-allowed'
+                            )}
                         >
-                            <Save className="w-4 h-4" />
-                            Save Upstream
+                            {currentPolicy.proxy.enabled ? 'Enabled' : 'Disabled'}
                         </button>
                     </div>
 
-                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                        <div className="rounded-xl border border-fuchsia-200 dark:border-fuchsia-900/40 bg-white dark:bg-slate-900 p-4 space-y-4">
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
-                                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-                                        <Bot className="w-4 h-4 text-fuchsia-600 dark:text-fuchsia-400" />
-                                        AI fallback
-                                    </h3>
-                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                        Evaluated before proxy on every incoming request when enabled.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    disabled={aiConfigLoading || !aiConfigured}
-                                    onClick={() => updatePolicy((policy) => ({
-                                        ...policy,
-                                        ai: { ...policy.ai, enabled: !policy.ai.enabled },
-                                    }))}
-                                    className={clsx(
-                                        'px-3 py-1.5 rounded-lg text-sm border',
-                                        currentPolicy.ai.enabled
-                                            ? 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300 dark:bg-fuchsia-900/30 dark:text-fuchsia-300 dark:border-fuchsia-700'
-                                            : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-                                        (!aiConfigured || aiConfigLoading) && 'opacity-50 cursor-not-allowed'
-                                    )}
-                                >
-                                    {currentPolicy.ai.enabled ? 'Enabled' : 'Disabled'}
-                                </button>
-                            </div>
-                            {!aiConfigured && (
-                                <p className="text-xs text-fuchsia-600 dark:text-fuchsia-400">
-                                    Configure {aiProviderLabel} to enable AI fallback.
-                                </p>
-                            )}
-                            <ConditionEditor
-                                label="AI conditions"
-                                value={currentPolicy.ai.conditionTree}
-                                onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
-                                    ...policy,
-                                    ai: { ...policy.ai, conditions: [], conditionTree },
-                                }))}
-                                sources={BASIC_SOURCES}
-                                emptyHint="No conditions — AI handles all unmatched requests when enabled."
-                                compact
-                            />
+                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            checked={!currentPolicy.proxy.disableRecording}
+                            onChange={() => updatePolicy((policy) => ({
+                                ...policy,
+                                proxy: {
+                                    ...policy.proxy,
+                                    disableRecording: !policy.proxy.disableRecording,
+                                },
+                            }))}
+                            className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500"
+                        />
+                        <div>
+                            <span className="text-sm font-medium text-gray-800 dark:text-slate-200">
+                                Record proxied responses
+                            </span>
+                            <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                                Automatically save backend responses for replay. Uncheck for pure pass-through.
+                            </p>
                         </div>
+                    </label>
 
-                        <div className="rounded-xl border border-violet-200 dark:border-violet-900/40 bg-white dark:bg-slate-900 p-4 space-y-4">
-                            <div className="flex items-start justify-between gap-3">
-                                <div>
-                                    <h3 className="font-semibold text-gray-900 dark:text-slate-100 flex items-center gap-2">
-                                        <Radio className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                                        Proxy fallback
-                                    </h3>
-                                    <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                                        Evaluated after AI on every incoming request when enabled.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    disabled={!spec.backendUri}
-                                    onClick={() => updatePolicy((policy) => ({
-                                        ...policy,
-                                        proxy: { ...policy.proxy, enabled: !policy.proxy.enabled },
-                                    }))}
-                                    className={clsx(
-                                        'px-3 py-1.5 rounded-lg text-sm border',
-                                        currentPolicy.proxy.enabled
-                                            ? 'bg-violet-100 text-violet-700 border-violet-300 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-700'
-                                            : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
-                                        !spec.backendUri && 'opacity-50 cursor-not-allowed'
-                                    )}
-                                >
-                                    {currentPolicy.proxy.enabled ? 'Enabled' : 'Disabled'}
-                                </button>
-                            </div>
-                            {!spec.backendUri && (
-                                <p className="text-xs text-violet-600 dark:text-violet-400">
-                                    Save an upstream URL before enabling proxy fallback.
-                                </p>
-                            )}
-                            {currentPolicy.proxy.enabled && (
-                                <label className="flex items-start gap-3 cursor-pointer select-none">
-                                    <input
-                                        type="checkbox"
-                                        checked={!currentPolicy.proxy.disableRecording}
-                                        onChange={() => updatePolicy((policy) => ({
-                                            ...policy,
-                                            proxy: {
-                                                ...policy.proxy,
-                                                disableRecording: !policy.proxy.disableRecording,
-                                            },
-                                        }))}
-                                        className="mt-0.5 h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-violet-600 focus:ring-violet-500"
-                                    />
-                                    <div>
-                                        <span className="text-sm font-medium text-gray-800 dark:text-slate-200">
-                                            Record proxied responses
-                                        </span>
-                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
-                                            Automatically save backend responses for replay. Uncheck for pure pass-through.
-                                        </p>
-                                    </div>
-                                </label>
-                            )}
-                            <ConditionEditor
-                                label="Proxy conditions"
-                                value={currentPolicy.proxy.conditionTree}
-                                onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
-                                    ...policy,
-                                    proxy: { ...policy.proxy, conditions: [], conditionTree },
-                                }))}
-                                sources={BASIC_SOURCES}
-                                emptyHint="No conditions — proxy handles all unmatched requests when enabled."
-                                compact
-                            />
-                        </div>
-                    </div>
+                    <ConditionEditor
+                        label="Proxy conditions"
+                        value={currentPolicy.proxy.conditionTree}
+                        onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
+                            ...policy,
+                            proxy: { ...policy.proxy, conditions: [], conditionTree },
+                        }))}
+                        sources={BASIC_SOURCES}
+                        emptyHint="No conditions — proxy applies to all requests when enabled."
+                        compact
+                    />
 
-                    <div className="flex items-center justify-end gap-3">
+                    <div className="flex items-center justify-end gap-3 pt-1">
                         <button
                             type="button"
-                            onClick={() => {
-                                setDraftPolicy(null)
-                                setPolicyError('')
-                            }}
+                            onClick={() => { setDraftPolicy(null); setPolicyError('') }}
                             className="px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800"
                         >
                             Reset
@@ -460,7 +400,83 @@ export default function SpecDetail() {
                             className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                         >
                             <Save className="w-4 h-4" />
-                            Save Fallback Policy
+                            Save Proxy Config
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* AI Fallback */}
+            <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
+                <div className="p-6 border-b border-gray-200 dark:border-slate-800 flex items-center gap-3">
+                    <div className="p-2 bg-fuchsia-100 dark:bg-fuchsia-900/30 rounded-lg">
+                        <Bot className="w-5 h-5 text-fuchsia-600 dark:text-fuchsia-400" />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">AI Fallback</h2>
+                        <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
+                            Generate responses on-the-fly when no saved response matches. Add conditions to limit which requests are handled by AI.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="p-6 space-y-5">
+                    <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-slate-800">
+                        <div>
+                            <span className="text-sm font-medium text-gray-800 dark:text-slate-200">AI generation</span>
+                            {!aiConfigured && (
+                                <p className="text-xs text-fuchsia-600 dark:text-fuchsia-400 mt-0.5">
+                                    Configure {aiProviderLabel} to enable.
+                                </p>
+                            )}
+                        </div>
+                        <button
+                            type="button"
+                            disabled={aiConfigLoading || !aiConfigured}
+                            onClick={() => updatePolicy((policy) => ({
+                                ...policy,
+                                ai: { ...policy.ai, enabled: !policy.ai.enabled },
+                            }))}
+                            className={clsx(
+                                'px-3 py-1.5 rounded-lg text-sm border',
+                                currentPolicy.ai.enabled
+                                    ? 'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-300 dark:bg-fuchsia-900/30 dark:text-fuchsia-300 dark:border-fuchsia-700'
+                                    : 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+                                (!aiConfigured || aiConfigLoading) && 'opacity-50 cursor-not-allowed'
+                            )}
+                        >
+                            {currentPolicy.ai.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+                    </div>
+
+                    <ConditionEditor
+                        label="AI conditions"
+                        value={currentPolicy.ai.conditionTree}
+                        onChange={(conditionTree: ConditionNode | undefined) => updatePolicy((policy) => ({
+                            ...policy,
+                            ai: { ...policy.ai, conditions: [], conditionTree },
+                        }))}
+                        sources={BASIC_SOURCES}
+                        emptyHint="No conditions — AI handles all unmatched requests when enabled."
+                        compact
+                    />
+
+                    <div className="flex items-center justify-end gap-3 pt-1">
+                        <button
+                            type="button"
+                            onClick={() => { setDraftPolicy(null); setPolicyError('') }}
+                            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-700 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-800"
+                        >
+                            Reset
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => updateModePolicyMutation.mutate(currentPolicy)}
+                            disabled={updateModePolicyMutation.isPending}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                        >
+                            <Save className="w-4 h-4" />
+                            Save AI Config
                         </button>
                     </div>
                 </div>
