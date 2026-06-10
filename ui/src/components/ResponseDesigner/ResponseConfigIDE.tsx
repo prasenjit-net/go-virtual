@@ -163,6 +163,17 @@ const templateDocs = {
         { key: '{{numberFormat 1234567.89}}', desc: 'Thousands-separated number', example: '1,234,567.89' },
         { key: '{{currency 19.99 "$"}}', desc: 'Currency formatting', example: '$19.99' },
     ],
+    collection: [
+        { key: '{{.Collection.outputKey._id}}', desc: 'Document ID from find-one / insert / update / upsert', example: '64a1b2c3d4e5f6a7b8c9d0e1' },
+        { key: '{{.Collection.outputKey.fieldName}}', desc: 'Specific field from a single-document result', example: 'alice' },
+        { key: '{{range .Collection.outputKey}}{{._id}} {{.name}}{{end}}', desc: 'Iterate over find-many results (each doc is ".")', example: 'For each document' },
+        { key: '{{toJSON .Collection.outputKey}}', desc: 'Serialize entire collection result to JSON', example: '[{"_id":"..."}]' },
+    ],
+    validation: [
+        { key: '{{.Validation.ruleName.status}}', desc: 'Validation result — "pass" or "fail"', example: 'pass' },
+        { key: '{{.Validation.ruleName.propertyKey}}', desc: 'Custom property injected by onSuccess / onFailure dict', example: 'custom value' },
+        { key: '{{if eq .Validation.ruleName.status "pass"}}...{{end}}', desc: 'Conditional block on validation result', example: 'Show on pass' },
+    ],
 }
 
 const templateCategoryStyles = {
@@ -206,6 +217,16 @@ const templateCategoryStyles = {
         title: 'text-xs font-semibold text-teal-600 dark:text-teal-300 uppercase tracking-wide mb-2',
         code: 'font-mono text-teal-900 dark:text-teal-200 text-xs leading-tight',
     },
+    collection: {
+        card: 'bg-white dark:bg-slate-900 border border-amber-100 dark:border-amber-900/40 rounded-lg p-3',
+        title: 'text-xs font-semibold text-amber-600 dark:text-amber-300 uppercase tracking-wide mb-2',
+        code: 'font-mono text-amber-900 dark:text-amber-200 text-xs leading-tight',
+    },
+    validation: {
+        card: 'bg-white dark:bg-slate-900 border border-purple-100 dark:border-purple-900/40 rounded-lg p-3',
+        title: 'text-xs font-semibold text-purple-600 dark:text-purple-300 uppercase tracking-wide mb-2',
+        code: 'font-mono text-purple-900 dark:text-purple-200 text-xs leading-tight',
+    },
 } as const
 
 let _templateCompletionsRegistered = false
@@ -243,6 +264,8 @@ function registerTemplateCompletions(monaco: Monaco) {
         { label: '.URL', detail: 'Request URL', insertText: '.URL' },
         { label: '.RequestID', detail: 'Stable request ID', insertText: '.RequestID' },
         { label: '.RawBody', detail: 'Raw request body', insertText: '.RawBody' },
+        { label: '.Collection', detail: 'Collection mapping output', insertText: '.Collection.${1:outputKey}.${2:field}' },
+        { label: '.Validation', detail: 'Validation rule output', insertText: '.Validation.${1:ruleName}.${2:status}' },
     ]
 
     const dotMembers = [
@@ -255,6 +278,8 @@ function registerTemplateCompletions(monaco: Monaco) {
         { label: 'RequestID', detail: 'Stable request ID', insertText: 'RequestID' },
         { label: 'RawBody', detail: 'Raw request body', insertText: 'RawBody' },
         { label: 'Script.', detail: 'Script binding output', insertText: 'Script.${1:binding}.${2:field}' },
+        { label: 'Collection.', detail: 'Collection mapping output', insertText: 'Collection.${1:outputKey}.${2:field}' },
+        { label: 'Validation.', detail: 'Validation rule output', insertText: 'Validation.${1:ruleName}.${2:status}' },
     ]
 
     const functions = [
