@@ -876,22 +876,43 @@ func (e *Engine) serveMatchedConfig(
 	}
 
 	// Run collection mappings for the matched response config.
+	// Use the already-materialised session when available, or fall back to the
+	// lazy session so that collection ops can run even when no script has written
+	// to the store yet (the common case for requests with no session header).
 	var collectionOutput map[string]any
 	var collectionTraces []models.CollectionTrace
-	if sess != nil {
+	sessForCollection := sess
+	if sessForCollection == nil && lazySession != nil {
+		sessForCollection = lazySession
+	}
+	if sessForCollection != nil {
 		reqCtx := &collection.RequestContext{
 			PathParams:  pathParams,
 			QueryParams: r.URL.Query(),
 			Headers:     r.Header,
 			Body:        requestBody,
-			Session:     sess,
+			Session:     sessForCollection,
 		}
-		collectionOutput, collectionTraces, _ = e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sess)
+		collectionOutput, collectionTraces, _ = e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sessForCollection)
 		if len(collectionTraces) > 0 {
 			reqLogger.Debug("Executed collection mappings",
 				"event", "collection_mappings_executed",
 				"mapping_count", len(collectionTraces),
 			)
+		}
+		// If a collection write op (insert/upsert/update) materialised the lazy
+		// session, emit the session header so the client can reuse it.
+		if lazySession != nil && sess == nil {
+			if inner := lazySession.Materialized(); inner != nil {
+				info := inner.Info(false)
+				w.Header().Set(e.sessionHeaderName, info.ID)
+				sess = inner
+				sessionIsNew = true
+				reqLogger.Debug("Lazy session materialised by collection operation",
+					"event", "lazy_session_created_by_collection",
+					"session_id", info.ID,
+				)
+			}
 		}
 	}
 

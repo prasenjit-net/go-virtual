@@ -63,7 +63,11 @@ func (e *Executor) Run(
 		trace.RecordCount = count
 		if execErr != nil {
 			trace.Error = execErr.Error()
-		} else if m.OutputKey != "" {
+		} else if m.OutputKey != "" && result != nil {
+			// Only store non-nil results. A nil result (e.g. find-one with no
+			// matching document) means the key is absent from the output map,
+			// so template expressions like {{.Collection.key.field}} render as
+			// empty string (missingkey=zero) rather than <nil> or an error.
 			output[m.OutputKey] = result
 		}
 
