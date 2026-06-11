@@ -216,7 +216,7 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                     </div>
 
                     {/* OnSuccess / OnFailure */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-3">
                         <div className="border border-green-200 dark:border-green-800/50 rounded-lg p-3 bg-green-50 dark:bg-green-900/10">
                             <PropertyMapEditor
                                 label="On Pass — properties injected when condition is true"
