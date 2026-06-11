@@ -21,22 +21,14 @@ func NewExecutor(s storage.Storage) *Executor {
 	return &Executor{store: s}
 }
 
-// Run executes all enabled CollectionMappings for responseConfigID in Order
-// order. sess must be the same SessionState that is passed to the script
-// engine for this request so that mapper writes are visible to scripts and
-// vice versa. Returns a map of outputKey → result document(s), and a trace
-// slice.
-func (e *Executor) Run(
+// RunMappings executes a pre-loaded slice of CollectionMappings in Order order.
+// It is the shared core used by Run, RunForSpec, and RunForOperation.
+func (e *Executor) RunMappings(
 	_ context.Context,
-	responseConfigID string,
+	mappings []*models.CollectionMapping,
 	req *RequestContext,
 	sess store.SessionState,
 ) (map[string]any, []models.CollectionTrace, error) {
-	mappings, err := e.store.GetCollectionMappingsByResponse(responseConfigID)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	sort.Slice(mappings, func(i, j int) bool {
 		return mappings[i].Order < mappings[j].Order
 	})
@@ -75,6 +67,52 @@ func (e *Executor) Run(
 	}
 
 	return output, traces, nil
+}
+
+// Run executes all enabled CollectionMappings for responseConfigID in Order
+// order. sess must be the same SessionState that is passed to the script
+// engine for this request so that mapper writes are visible to scripts and
+// vice versa. Returns a map of outputKey → result document(s), and a trace
+// slice.
+func (e *Executor) Run(
+	ctx context.Context,
+	responseConfigID string,
+	req *RequestContext,
+	sess store.SessionState,
+) (map[string]any, []models.CollectionTrace, error) {
+	mappings, err := e.store.GetCollectionMappingsByResponse(responseConfigID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e.RunMappings(ctx, mappings, req, sess)
+}
+
+// RunForSpec executes all enabled spec-level CollectionMappings for specID.
+func (e *Executor) RunForSpec(
+	ctx context.Context,
+	specID string,
+	req *RequestContext,
+	sess store.SessionState,
+) (map[string]any, []models.CollectionTrace, error) {
+	mappings, err := e.store.GetCollectionMappingsBySpec(specID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e.RunMappings(ctx, mappings, req, sess)
+}
+
+// RunForOperation executes all enabled operation-level CollectionMappings for operationID.
+func (e *Executor) RunForOperation(
+	ctx context.Context,
+	operationID string,
+	req *RequestContext,
+	sess store.SessionState,
+) (map[string]any, []models.CollectionTrace, error) {
+	mappings, err := e.store.GetCollectionMappingsByOperation(operationID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return e.RunMappings(ctx, mappings, req, sess)
 }
 
 // execute runs a single mapping and returns its result, record count, and any error.

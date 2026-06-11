@@ -1079,6 +1079,7 @@ export default function ResponseConfigIDE({
                             <div className={ideActiveTab !== 'collections' ? 'hidden' : undefined}>
                                 <div className="p-3">
                                     <CollectionMappingsPanel
+                                        kind="response"
                                         operationId={operationId}
                                         responseConfigId={config?.id}
                                         pendingMappings={pendingCollectionMappings}

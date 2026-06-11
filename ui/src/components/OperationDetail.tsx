@@ -18,6 +18,7 @@ import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
 import type { AIStatus, Operation, ResponseConfig, ResponseConfigInput, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
 import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
 import ValidationRulesPanel from './ValidationManager/ValidationRulesPanel'
+import CollectionMappingsPanel from './CollectionMapper/CollectionMappingsPanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 import ResponseConfigList from './ResponseDesigner/ResponseConfigList'
 import ResponseImportModal from './ResponseDesigner/ResponseImportModal'
@@ -216,6 +217,9 @@ export default function OperationDetail() {
 
             {/* Validation Rules */}
             <ValidationRulesPanel scope="operation" operationId={operationId!} />
+
+            {/* Operation-level Collection Mappings */}
+            <CollectionMappingsPanel kind="operation" operationId={operationId!} />
 
             {/* Response Configurations */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">

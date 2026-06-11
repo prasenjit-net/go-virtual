@@ -27,16 +27,20 @@ type FieldMappingRule struct {
 	SourceKey string `json:"sourceKey"`
 }
 
-// CollectionMapping attaches collection read/write operations to a ResponseConfig.
-// Multiple mappings on one response config run in Order order and may each target
-// a different collection. Results are exposed in templates as
+// CollectionMapping attaches collection read/write operations to a Spec,
+// Operation, or ResponseConfig. Exactly one of SpecID, OperationID, or
+// ResponseConfigID is non-empty. Results are exposed in templates as
 // {{.Collection.<OutputKey>.<field>}}.
 type CollectionMapping struct {
-	ID               string             `json:"id"`
-	ResponseConfigID string             `json:"responseConfigId"`
-	CollectionName   string             `json:"collectionName"`
-	Name             string             `json:"name"`
-	Operation        CollectionOpType   `json:"operation"`
+	ID string `json:"id"`
+	// Scope — exactly one is set.
+	SpecID           string `json:"specId,omitempty"`
+	OperationID      string `json:"operationId,omitempty"`
+	ResponseConfigID string `json:"responseConfigId,omitempty"`
+
+	CollectionName string           `json:"collectionName"`
+	Name           string           `json:"name"`
+	Operation      CollectionOpType `json:"operation"`
 	// FilterRules locate the target record(s) — used by find-one, find-many,
 	// update, upsert, delete.
 	FilterRules []FieldMappingRule `json:"filterRules"`
@@ -46,6 +50,17 @@ type CollectionMapping struct {
 	OutputKey string `json:"outputKey"`
 	Order     int    `json:"order"`
 	Enabled   bool   `json:"enabled"`
+}
+
+// Scope returns a string identifying which scope this mapping is attached to.
+func (m *CollectionMapping) Scope() string {
+	if m.SpecID != "" {
+		return "spec"
+	}
+	if m.OperationID != "" {
+		return "operation"
+	}
+	return "response"
 }
 
 // CollectionMappingInput is used for create/update API calls.

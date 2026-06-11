@@ -476,7 +476,9 @@ export interface FieldMappingRule {
 
 export interface CollectionMapping {
     id: string
-    responseConfigId: string
+    specId?: string
+    operationId?: string
+    responseConfigId?: string
     collectionName: string
     name?: string
     operation: CollectionOpType
