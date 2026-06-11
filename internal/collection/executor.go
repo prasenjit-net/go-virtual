@@ -55,12 +55,9 @@ func (e *Executor) RunMappings(
 		trace.RecordCount = count
 		if execErr != nil {
 			trace.Error = execErr.Error()
-		} else if m.OutputKey != "" && result != nil {
-			// Only store non-nil results. A nil result (e.g. find-one with no
-			// matching document) means the key is absent from the output map,
-			// so template expressions like {{.Collection.key.field}} render as
-			// empty string (missingkey=zero) rather than <nil> or an error.
-			output[m.OutputKey] = result
+		}
+		if m.OutputKey != "" {
+			output[m.OutputKey] = injectStatus(result, execErr)
 		}
 
 		traces = append(traces, trace)
@@ -179,5 +176,35 @@ func (e *Executor) execute(
 
 	default:
 		return nil, 0, nil
+	}
+}
+
+// injectStatus enriches a collection operation result with a _status field.
+//
+// Rules:
+//   - error       → {"_status": "error", "_error": "<message>"}
+//   - nil result  → {"_status": "not_found"}
+//   - map result  → original map with "_status": "success" added
+//   - slice result → each element map gets "_status": "success"; slice returned as-is
+func injectStatus(result any, err error) any {
+	if err != nil {
+		return map[string]any{"_status": "error", "_error": err.Error()}
+	}
+	if result == nil {
+		return map[string]any{"_status": "not_found"}
+	}
+	switch v := result.(type) {
+	case map[string]any:
+		v["_status"] = "success"
+		return v
+	case []any:
+		for _, item := range v {
+			if m, ok := item.(map[string]any); ok {
+				m["_status"] = "success"
+			}
+		}
+		return v
+	default:
+		return result
 	}
 }

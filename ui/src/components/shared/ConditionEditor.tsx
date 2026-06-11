@@ -39,7 +39,7 @@ export const CONDITION_OPERATORS: { value: ConditionOperator; label: string; gro
 ]
 
 export const ALL_SOURCES = [
-    'path', 'query', 'header', 'body', 'signature', 'script', 'validation',
+    'path', 'query', 'header', 'body', 'signature', 'script', 'validation', 'collection',
 ] as const
 export type ConditionSource = (typeof ALL_SOURCES)[number]
 
@@ -106,6 +106,7 @@ export function ConditionLeafRow({ cond, onChange, onRemove, sources = ALL_SOURC
         signature:  'computed signature',
         script:     'outputKey.fieldName',
         validation: 'ruleName.status',
+        collection: 'outputKey.fieldName',
     }
     const sourcePlaceholder = sourcePlaceholders[cond.source] ?? 'key'
 
