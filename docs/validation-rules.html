@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validation Rules — go-virtual docs</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.ui-screen {
+  background: #0d1120;
+  border: 1px solid #252d42;
+  border-radius: 10px;
+  overflow: hidden;
+  margin: 16px 0 24px;
+}
+.ui-screen-bar {
+  background: #161b27;
+  border-bottom: 1px solid #252d42;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #4a5568;
+}
+.ui-screen-bar .dot { width: 10px; height: 10px; border-radius: 50%; }
+.ui-screen-bar .dot.r { background: #ef4444; }
+.ui-screen-bar .dot.y { background: #f59e0b; }
+.ui-screen-bar .dot.g { background: #10b981; }
+.ui-screen-bar .url { margin-left: 8px; flex: 1; background: #0d1120; border-radius: 4px; padding: 3px 10px; color: #7d8ea8; font-family: monospace; font-size: 11px; }
+.ui-body { padding: 20px 24px; }
+.form-mock { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 12px 0; }
+.form-mock-field { margin-bottom: 12px; }
+.form-mock-label { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+.form-mock-input { background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: 12.5px; color: var(--text-muted); font-family: inherit; width: 100%; }
+.form-mock-input.mono { font-family: monospace; }
+.form-mock-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-mock-select { background: var(--bg-code); border: 1px solid var(--border); border-radius: 5px; padding: 6px 10px; font-size: 12.5px; color: var(--text-muted); font-family: inherit; width: 100%; }
+.pill-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.pill { background: var(--bg-code); border: 1px solid var(--border); border-radius: 100px; padding: 3px 10px; font-size: 12px; color: var(--text-muted); }
+.pill.green { background: var(--green-dim); border-color: #0d3320; color: var(--green); }
+.pill.blue { background: #0d1e35; border-color: #1e3d5e; color: #60a5fa; }
+.pill.red { background: var(--red-dim); border-color: #3d1212; color: var(--red); }
+.vr-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; }
+.vr-name { font-weight: 600; font-size: 13px; flex: 1; }
+.scope-badge { font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+.scope-badge.spec { background: #0d1e35; color: #60a5fa; }
+.scope-badge.op { background: #1e1b35; color: #a78bfa; }
+.pass-badge { background: #0d2e20; color: #34d399; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-family: monospace; }
+.fail-badge { background: #2d1212; color: #f87171; font-size: 11px; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-family: monospace; }
+.condition-node { background: var(--bg-code); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin: 4px 0; font-size: 12px; }
+.condition-operator { display: inline-flex; align-items: center; gap: 4px; background: #1e1f47; color: #818cf8; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-family: monospace; margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<header class="topbar">
+  <button class="hamburger">&#9776;</button>
+  <a href="index.html" class="topbar-logo">
+    <div class="logo-mark">V</div>
+    <span class="logo-text">go-virtual</span>
+    <span class="logo-tag">docs</span>
+  </a>
+  <div class="topbar-spacer"></div>
+  <nav class="topbar-nav">
+    <a href="getting-started.html">Get Started</a>
+    <a href="admin-api.html">API Ref</a>
+    <a href="configuration.html">Config</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-label">Introduction</div>
+      <a href="index.html"><span class="nav-icon">🏠</span>Overview</a>
+      <a href="getting-started.html"><span class="nav-icon">🚀</span>Getting Started</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Admin UI</div>
+      <a href="admin-ui.html"><span class="nav-icon">🖥️</span>UI Guide</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Core Concepts</div>
+      <a href="specs-and-responses.html"><span class="nav-icon">📄</span>Specs &amp; Responses</a>
+      <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
+      <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
+      <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="collection-mappings.html"><span class="nav-icon">🗃️</span>Collection Mappings</a>
+      <a href="validation-rules.html" class="active"><span class="nav-icon">✅</span>Validation Rules</a>
+      <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
+      <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Deployment</div>
+      <a href="clustering.html"><span class="nav-icon">☁️</span>Clustering</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="admin-api.html"><span class="nav-icon">📖</span>Admin API</a>
+      <a href="configuration.html"><span class="nav-icon">⚙️</span>Configuration</a>
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="page-header">
+      <div class="breadcrumb"><a href="index.html">go-virtual</a> / Validation Rules</div>
+      <h1>Validation Rules</h1>
+      <p class="lead">Validation Rules let you evaluate complex conditions against incoming requests and attach named properties to pass or fail outcomes. Use them to classify requests — authenticated vs. anonymous, premium vs. free tier, valid vs. malformed — then branch your responses and templates based on the result.</p>
+    </div>
+
+    <div class="toc">
+      <div class="toc-title">On this page</div>
+      <ul>
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#scopes">Scopes: Spec &amp; Operation</a></li>
+        <li><a href="#condition-tree">Condition Trees</a></li>
+        <li><a href="#on-pass-fail">On Pass / On Fail Properties</a></li>
+        <li><a href="#output">Output &amp; Status Field</a></li>
+        <li><a href="#templates">Using Results in Templates</a></li>
+        <li><a href="#conditions">Using Results in Conditions</a></li>
+        <li><a href="#ui-walkthrough">UI Walkthrough</a></li>
+        <li><a href="#examples">End-to-End Examples</a></li>
+      </ul>
+    </div>
+
+    <!-- How it works -->
+    <div class="section" id="how-it-works">
+      <h2>How It Works</h2>
+      <p>A Validation Rule is a named check that runs against every incoming request. It has a condition tree that evaluates to either <strong>pass</strong> or <strong>fail</strong>, plus a set of properties to attach to the result for each outcome. All rules for a scope run in execution order, and their named results flow into the template context and condition evaluator.</p>
+
+      <p>Validation Rules are the flexible alternative to hard-coded conditions on individual response configs. Instead of repeating <em>"Authorization header exists AND has role=admin"</em> on every response, define it once as a validation rule called <code>isAdmin</code>, then reference <code>source=validation, key=isAdmin._status</code> in any condition.</p>
+
+      <h3>Pipeline position</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Step</th><th>What happens</th></tr></thead>
+          <tbody>
+            <tr><td>① Route</td><td>Path + method matched to an OpenAPI operation</td></tr>
+            <tr><td>② Session</td><td>Session resolved from header</td></tr>
+            <tr><td>③ Recorded responses</td><td>Signature-matched pre-recorded responses served</td></tr>
+            <tr><td>④ Scripts</td><td>Spec/operation-level Starlark scripts run</td></tr>
+            <tr><td>⑤ Proxy check</td><td>Proxy mode evaluated</td></tr>
+            <tr><td><strong>⑥ Validation</strong></td><td><strong>Spec-level then operation-level validation rules run. Results are named and available in the request context.</strong></td></tr>
+            <tr><td>⑥.5 Collections</td><td>Spec/operation collection mappings run</td></tr>
+            <tr><td>⑦ Response match</td><td>Response configs evaluated — can use validation results in conditions</td></tr>
+            <tr><td>⑧ Template render</td><td>Response body + headers rendered — can use validation results in templates</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>All rules run — there is no early exit</strong>
+          All enabled validation rules for a scope execute in order, regardless of whether earlier rules pass or fail. This lets multiple independent checks contribute their named results independently.
+        </div>
+      </div>
+    </div>
+
+    <!-- Scopes -->
+    <div class="section" id="scopes">
+      <h2>Scopes: Spec &amp; Operation</h2>
+      <p>Validation Rules exist at two scopes:</p>
+
+      <div class="card-grid">
+        <div class="card" style="text-decoration:none;cursor:default;border-color:#1e3d5e;">
+          <div class="card-icon">📄</div>
+          <div class="card-title">Spec Level</div>
+          <div class="card-desc">Runs for <em>every request</em> to any operation in this spec. Use for cross-cutting checks like authentication, tenant identification, or feature flags that apply to the whole API.</div>
+        </div>
+        <div class="card" style="text-decoration:none;cursor:default;border-color:#3a3465;">
+          <div class="card-icon">🔗</div>
+          <div class="card-title">Operation Level</div>
+          <div class="card-desc">Runs only for requests that match a specific operation. Use for operation-specific validation like "is this a valid order ID" or "does the user own this resource."</div>
+        </div>
+      </div>
+
+      <p>Spec-level rules run first, then operation-level rules. All results accumulate in the same named map — a spec-level rule named <code>auth</code> and an operation-level rule named <code>auth</code> would overwrite each other. Use distinct names to avoid conflicts.</p>
+    </div>
+
+    <!-- Condition Tree -->
+    <div class="section" id="condition-tree">
+      <h2>Condition Trees</h2>
+      <p>Each validation rule has a <strong>condition tree</strong> — a flexible nested structure of AND, OR, and NOT logic applied to request conditions. This is more expressive than the flat AND-only array used by response configs.</p>
+
+      <h3>Tree structure</h3>
+      <p>A tree node is either:</p>
+      <ul>
+        <li>A <strong>leaf</strong> — a single condition (source, key, operator, value)</li>
+        <li>A <strong>logical node</strong> — an operator (<code>AND</code>, <code>OR</code>, <code>NOT</code>) with child nodes</li>
+      </ul>
+
+      <pre><code><span class="cm">// AND: Authorization header exists AND role equals admin</span>
+{
+  <span class="key">"operator"</span>: <span class="str">"AND"</span>,
+  <span class="key">"children"</span>: [
+    {
+      <span class="key">"condition"</span>: {
+        <span class="key">"source"</span>: <span class="str">"header"</span>, <span class="key">"key"</span>: <span class="str">"Authorization"</span>,
+        <span class="key">"operator"</span>: <span class="str">"exists"</span>
+      }
+    },
+    {
+      <span class="key">"condition"</span>: {
+        <span class="key">"source"</span>: <span class="str">"body"</span>, <span class="key">"key"</span>: <span class="str">"user.role"</span>,
+        <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"admin"</span>
+      }
+    }
+  ]
+}
+</code></pre>
+
+      <h3>UI condition builder</h3>
+      <p>In the Admin UI, the condition tree is built visually using a drag-and-drop tree editor. You can add conditions, wrap groups in AND/OR, and toggle individual conditions without writing JSON manually.</p>
+
+      <div class="ui-screen">
+        <div class="ui-screen-bar">
+          <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+          <div class="url">Validation Rule: isAdmin</div>
+        </div>
+        <div class="ui-body">
+          <div class="condition-operator">AND</div>
+          <div style="padding-left:20px;">
+            <div class="condition-node">header <span style="color:#a78bfa;">Authorization</span> <span style="color:#fbbf24;">exists</span></div>
+            <div class="condition-operator">OR</div>
+            <div style="padding-left:20px;">
+              <div class="condition-node">body <span style="color:#a78bfa;">user.role</span> <span style="color:#fbbf24;">eq</span> <span style="color:#34d399;">"admin"</span></div>
+              <div class="condition-node">header <span style="color:#a78bfa;">X-Admin-Token</span> <span style="color:#fbbf24;">exists</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- On Pass / On Fail -->
+    <div class="section" id="on-pass-fail">
+      <h2>On Pass / On Fail Properties</h2>
+      <p>Each validation rule can attach key-value properties to the result depending on whether the condition tree passes or fails. These properties are merged into the named result and accessible in templates and conditions.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><strong>On Pass</strong> (onSuccess)</td><td>Properties to attach when the condition tree evaluates to <code>true</code></td></tr>
+            <tr><td><strong>On Fail</strong> (onFailure)</td><td>Properties to attach when the condition tree evaluates to <code>false</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Both are optional plain string-to-string maps. Example:</p>
+
+      <div class="form-mock">
+        <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">Rule: authCheck</div>
+        <div class="form-mock-row">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#34d399;text-transform:uppercase;margin-bottom:6px;">On Pass</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px;font-family:monospace;">
+              <span style="color:#60a5fa;">userRole</span><span>admin</span>
+              <span style="color:#60a5fa;">tier</span><span>premium</span>
+            </div>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#f87171;text-transform:uppercase;margin-bottom:6px;">On Fail</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:12px;font-family:monospace;">
+              <span style="color:#60a5fa;">userRole</span><span>guest</span>
+              <span style="color:#60a5fa;">reason</span><span>unauthorized</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p>With this setup, <code>{{.Validation.authCheck.userRole}}</code> is always safe to use in a template — it resolves to <code>"admin"</code> on pass or <code>"guest"</code> on fail.</p>
+    </div>
+
+    <!-- Output and Status -->
+    <div class="section" id="output">
+      <h2>Output &amp; Status Field</h2>
+      <p>The result of each rule is accessible under <code>.Validation.&lt;ruleName&gt;</code>. It always includes a <code>_status</code> field:</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Value</th><th>When</th></tr></thead>
+          <tbody>
+            <tr><td><code>_status</code></td><td><code>"pass"</code></td><td>Condition tree evaluated to <code>true</code></td></tr>
+            <tr><td><code>_status</code></td><td><code>"fail"</code></td><td>Condition tree evaluated to <code>false</code></td></tr>
+            <tr><td>On Pass properties</td><td>Your configured values</td><td>Only when <code>_status = "pass"</code></td></tr>
+            <tr><td>On Fail properties</td><td>Your configured values</td><td>Only when <code>_status = "fail"</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="cm">// Rule "authCheck" passes: condition tree is true</span>
+.Validation.authCheck = {
+  <span class="key">"_status"</span>: <span class="str">"pass"</span>,
+  <span class="key">"userRole"</span>: <span class="str">"admin"</span>,
+  <span class="key">"tier"</span>: <span class="str">"premium"</span>
+}
+
+<span class="cm">// Rule "authCheck" fails: condition tree is false</span>
+.Validation.authCheck = {
+  <span class="key">"_status"</span>: <span class="str">"fail"</span>,
+  <span class="key">"userRole"</span>: <span class="str">"guest"</span>,
+  <span class="key">"reason"</span>: <span class="str">"unauthorized"</span>
+}
+</code></pre>
+
+      <p>Rules with no On Pass / On Fail properties still produce a <code>_status</code> field, so <code>{{.Validation.myRule._status}}</code> is always safe to reference.</p>
+    </div>
+
+    <!-- Templates -->
+    <div class="section" id="templates">
+      <h2>Using Results in Templates</h2>
+      <p>Access validation results in response body and header templates using <code>.Validation.&lt;ruleName&gt;.&lt;field&gt;</code>:</p>
+
+      <pre><code><span class="cm">// Embed the user role from the authCheck rule:</span>
+{
+  <span class="key">"role"</span>:    <span class="str">"{{.Validation.authCheck.userRole}}"</span>,
+  <span class="key">"status"</span>: <span class="str">"{{.Validation.authCheck._status}}"</span>
+}
+</code></pre>
+
+      <h3>Conditional rendering based on pass/fail</h3>
+      <pre><code>{{if eq .Validation.authCheck._status <span class="str">"pass"</span>}}
+{
+  <span class="key">"message"</span>: <span class="str">"Welcome, {{.Validation.authCheck.userRole}}"</span>,
+  <span class="key">"data"</span>: { ... }
+}
+{{else}}
+{
+  <span class="key">"error"</span>: <span class="str">"Access denied: {{.Validation.authCheck.reason}}"</span>
+}
+{{end}}
+</code></pre>
+
+      <h3>Use validation properties in response headers</h3>
+      <p>You can also use validation results in response headers. For example, set a header based on the resolved role:</p>
+      <pre><code><span class="cm">// Header value (key: X-User-Role):</span>
+{{.Validation.authCheck.userRole}}
+</code></pre>
+    </div>
+
+    <!-- Conditions -->
+    <div class="section" id="conditions">
+      <h2>Using Results in Conditions</h2>
+      <p>Validation results are available as a condition source for response config selection. Use <code>source: "validation"</code> with a key of the form <code>ruleName.fieldPath</code>:</p>
+
+      <pre><code>{
+  <span class="key">"source"</span>: <span class="str">"validation"</span>,
+  <span class="key">"key"</span>: <span class="str">"authCheck._status"</span>,
+  <span class="key">"operator"</span>: <span class="str">"eq"</span>,
+  <span class="key">"value"</span>: <span class="str">"pass"</span>
+}
+</code></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What you want to check</th><th>source</th><th>key</th></tr></thead>
+          <tbody>
+            <tr><td>Auth check passed</td><td><code>validation</code></td><td><code>authCheck._status</code> = <code>pass</code></td></tr>
+            <tr><td>Auth check failed</td><td><code>validation</code></td><td><code>authCheck._status</code> = <code>fail</code></td></tr>
+            <tr><td>Resolved role is "admin"</td><td><code>validation</code></td><td><code>authCheck.userRole</code> = <code>admin</code></td></tr>
+            <tr><td>Tier is "premium"</td><td><code>validation</code></td><td><code>authCheck.tier</code> = <code>premium</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Combine validation and collection sources</strong>
+          A single response config can use both <code>source=validation</code> and <code>source=collection</code> conditions together. For example: match only when the user is authenticated (validation) AND their account exists in the users collection (collection).
+        </div>
+      </div>
+    </div>
+
+    <!-- UI Walkthrough -->
+    <div class="section" id="ui-walkthrough">
+      <h2>UI Walkthrough</h2>
+
+      <h3>Spec-level Validation Rules</h3>
+      <p>Open a spec from the <strong>API Specs</strong> sidebar page. The <strong>Validation Rules</strong> panel appears on the Spec Detail page, below the Script Bindings section.</p>
+
+      <div class="ui-screen">
+        <div class="ui-screen-bar">
+          <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+          <div class="url">/_ui/specs/abc123</div>
+        </div>
+        <div class="ui-body">
+          <div style="font-size:13px;font-weight:700;color:#e2e8f0;margin-bottom:12px;">Spec: Pets API</div>
+          <div style="font-size:11px;font-weight:700;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Validation Rules <span class="scope-badge spec">spec</span></div>
+          <p style="font-size:12px;color:#7d8ea8;margin:0 0 12px;">These rules run for every request to this spec. Results are available as <code style="color:#818cf8;">source=validation</code> in conditions and <code style="color:#818cf8;">{{.Validation.&lt;name&gt;}}</code> in templates.</p>
+          <div class="vr-row">
+            <div style="color:#7d8ea8;font-size:14px;">⇅</div>
+            <div style="width:20px;height:20px;border-radius:50%;background:#1e2a47;color:#60a5fa;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+            <div class="vr-name">isAdmin</div>
+            <span class="pass-badge">pass → userRole=admin</span>
+            <span class="fail-badge">fail → userRole=guest</span>
+            <div style="display:flex;gap:6px;">
+              <span class="pill green" style="cursor:pointer;">● on</span>
+              <span class="pill" style="cursor:pointer;">✏</span>
+              <span class="pill" style="cursor:pointer;">🗑</span>
+            </div>
+          </div>
+          <div style="margin-top:10px;">
+            <span class="pill blue" style="cursor:pointer;">+ Add Rule</span>
+          </div>
+        </div>
+      </div>
+
+      <h3>Add / Edit Rule form</h3>
+      <p>Click <strong>+ Add Rule</strong> (or the pencil to edit) to open the rule editor:</p>
+      <div class="form-mock">
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Name <span style="color:#f87171;">*</span></div>
+            <div class="form-mock-input mono">isAdmin</div>
+            <div style="font-size:11px;color:#4a5568;margin-top:3px;">Used as <code style="color:#818cf8;">{{.Validation.isAdmin._status}}</code></div>
+          </div>
+          <div class="form-mock-field">
+            <div class="form-mock-label">Description</div>
+            <div class="form-mock-input">Checks if the request has admin credentials</div>
+          </div>
+        </div>
+        <div class="form-mock-row">
+          <div class="form-mock-field">
+            <div class="form-mock-label">Execution Order</div>
+            <div class="form-mock-input">1</div>
+          </div>
+          <div class="form-mock-field" style="display:flex;align-items:center;gap:8px;padding-top:18px;">
+            <span class="pill green">● Enabled</span>
+          </div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:#4a5568;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 6px;">Condition Tree</div>
+        <div style="background:var(--bg-code);border:1px solid var(--border);border-radius:6px;padding:12px;">
+          <div class="condition-operator">AND</div>
+          <div style="padding-left:16px;margin-top:4px;">
+            <div class="condition-node">header <span style="color:#a78bfa;">Authorization</span> <span style="color:#fbbf24;">exists</span></div>
+            <div class="condition-node">header <span style="color:#a78bfa;">X-Role</span> <span style="color:#fbbf24;">eq</span> <span style="color:#34d399;">"admin"</span></div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;">
+            <span class="pill blue" style="cursor:pointer;font-size:11px;">+ Add Condition</span>
+            <span class="pill" style="cursor:pointer;font-size:11px;">Wrap in AND</span>
+            <span class="pill" style="cursor:pointer;font-size:11px;">Wrap in OR</span>
+          </div>
+        </div>
+        <div class="form-mock-row" style="margin-top:12px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#34d399;text-transform:uppercase;margin-bottom:6px;">On Pass Properties</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:4px;align-items:center;font-size:12px;margin-bottom:4px;">
+              <div class="form-mock-input mono">userRole</div>
+              <div class="form-mock-input mono">admin</div>
+              <span style="color:#f87171;cursor:pointer;text-align:center;">×</span>
+            </div>
+            <span class="pill blue" style="cursor:pointer;font-size:11px;">+ Add Property</span>
+          </div>
+          <div>
+            <div style="font-size:11px;font-weight:700;color:#f87171;text-transform:uppercase;margin-bottom:6px;">On Fail Properties</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 24px;gap:4px;align-items:center;font-size:12px;margin-bottom:4px;">
+              <div class="form-mock-input mono">userRole</div>
+              <div class="form-mock-input mono">guest</div>
+              <span style="color:#f87171;cursor:pointer;text-align:center;">×</span>
+            </div>
+            <span class="pill blue" style="cursor:pointer;font-size:11px;">+ Add Property</span>
+          </div>
+        </div>
+      </div>
+
+      <h3>Operation-level Validation Rules</h3>
+      <p>Open any operation from the spec detail. The <strong>Validation Rules</strong> panel appears below the Script Bindings section on the Operation Detail page. It works identically to the spec-level panel but scoped to this operation only.</p>
+
+      <h3>Trace viewer</h3>
+      <p>Validation rule results appear in the <strong>Traces</strong> page under each trace's detail panel. The <strong>Validations</strong> section shows each rule that ran: name, scope (spec/operation), pass/fail status, properties, and execution duration.</p>
+    </div>
+
+    <!-- Examples -->
+    <div class="section" id="examples">
+      <h2>End-to-End Examples</h2>
+
+      <h3>Example 1: Authentication gate</h3>
+      <p>Create a spec-level validation rule to check authentication, then use it to serve different responses.</p>
+
+      <p><strong>Step 1: Create the validation rule</strong> at spec level:</p>
+      <ul>
+        <li>Name: <code>auth</code></li>
+        <li>Condition: <code>header Authorization exists</code></li>
+        <li>On Pass: <code>status=authenticated</code></li>
+        <li>On Fail: <code>status=anonymous</code></li>
+      </ul>
+
+      <p><strong>Step 2: Create response configs</strong> for <code>GET /profile</code>:</p>
+      <ul>
+        <li><strong>Priority 0</strong> — condition: <code>source=validation, key=auth._status, op=eq, value=pass</code> → 200 OK</li>
+        <li><strong>Priority 10</strong> — no conditions → 401 Unauthorized</li>
+      </ul>
+
+      <pre><code><span class="cm">// 200 response body:</span>
+{
+  <span class="key">"message"</span>: <span class="str">"Authenticated user"</span>,
+  <span class="key">"status"</span>: <span class="str">"{{.Validation.auth.status}}"</span>
+}
+
+<span class="cm">// 401 response body:</span>
+{
+  <span class="key">"error"</span>: <span class="str">"Unauthorized"</span>,
+  <span class="key">"hint"</span>: <span class="str">"Include an Authorization header"</span>
+}
+</code></pre>
+
+      <h3>Example 2: Role-based responses</h3>
+      <p>Return different data depending on whether the caller is an admin or a regular user.</p>
+
+      <p><strong>Spec-level rule</strong> <code>isAdmin</code>:</p>
+      <ul>
+        <li>Condition: <code>header X-Role eq admin</code></li>
+        <li>On Pass: <code>role=admin</code>, <code>canDelete=true</code></li>
+        <li>On Fail: <code>role=user</code>, <code>canDelete=false</code></li>
+      </ul>
+
+      <p><strong>Response configs for <code>GET /resources</code></strong>:</p>
+      <ul>
+        <li><strong>Priority 0</strong> — condition: <code>source=validation, key=isAdmin.role, op=eq, value=admin</code> → returns all fields including sensitive data</li>
+        <li><strong>Priority 10</strong> — no conditions → returns limited public fields</li>
+      </ul>
+      <pre><code><span class="cm">// Admin response includes canDelete from validation properties:</span>
+{
+  <span class="key">"resources"</span>: [...],
+  <span class="key">"permissions"</span>: {
+    <span class="key">"canDelete"</span>: <span class="str">"{{.Validation.isAdmin.canDelete}}"</span>,
+    <span class="key">"role"</span>: <span class="str">"{{.Validation.isAdmin.role}}"</span>
+  }
+}
+</code></pre>
+
+      <h3>Example 3: Combining validation + collection</h3>
+      <p>Use both features together — validate the token header, then look up the user record only if the token is present.</p>
+
+      <p><strong>Spec-level validation rule</strong> <code>hasToken</code>: condition <code>header X-Auth-Token exists</code></p>
+      <p><strong>Operation-level collection mapping</strong> on <code>GET /users/{id}</code>: <code>find-one users, filter _id ← path:id, outputKey=found</code></p>
+
+      <p><strong>Response config conditions</strong> (priority 0 — success case):</p>
+      <pre><code>[
+  { <span class="key">"source"</span>: <span class="str">"validation"</span>, <span class="key">"key"</span>: <span class="str">"hasToken._status"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"pass"</span> },
+  { <span class="key">"source"</span>: <span class="str">"collection"</span>, <span class="key">"key"</span>: <span class="str">"found._status"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"success"</span> }
+]
+</code></pre>
+      <p>This responds with 200 only when the token is present AND the user exists. Any other combination falls through to a lower-priority response returning 401 or 404.</p>
+    </div>
+
+    <footer class="doc-footer">
+      <span>go-virtual — MIT License</span>
+      <div class="prev-next">
+        <a href="collection-mappings.html">&#8592; Collection Mappings</a>
+        <a href="tracing-and-metrics.html">Tracing &amp; Metrics &#8594;</a>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<script src="nav.js"></script>
+</body>
+</html>

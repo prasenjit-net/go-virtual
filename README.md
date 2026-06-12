@@ -54,7 +54,9 @@ In **all modes**, existing response configs are checked first. Recorded/generate
 - **Global AI scenarios** shared across specs and managed from a sidebar-linked admin page
 - **Proxy fallback mode** with upstream forwarding and response capture
 - **Tracing** with response source and mode awareness
-- **Starlark scripting** with per-operation ordered bindings
+- **Starlark scripting** with per-spec, per-operation, and per-response bindings
+- **Collection Mappings** — session-scoped document CRUD (insert/find/update/delete) without scripting, at spec, operation, or response level
+- **Validation Rules** — named condition trees (AND/OR/NOT) that run before response matching and expose pass/fail results to conditions and templates
 - **Session-aware store** with a global store and per-request session snapshots
 - **Prometheus metrics** and statistics dashboards
 - **Archive import/export** for instance state backup and restore
@@ -95,49 +97,53 @@ curl http://localhost:8080/pets
 
 ## Request Matching Model
 
-For a matched operation, Go-Virtual evaluates responses in this order:
+For a matched operation, Go-Virtual runs the following pipeline:
 
-1. enabled response configs by priority
-2. mode-specific fallback (`standard`, `ai`, or `proxy`)
+1. **Route** — match path + method to an operation
+2. **Session** — resolve per-client session from header
+3. **Recorded responses** — serve signature-matched pre-recorded responses
+4. **Scripts** — run spec/operation-level Starlark bindings
+5. **Validation Rules** — evaluate named condition trees (AND/OR/NOT); results available in conditions and templates
+6. **Collection Mappings (spec/op)** — run CRUD operations against session collections; results available in conditions and templates
+7. **Response config matching** — evaluate configs in priority order
+8. **Collection Mappings (response)** — run response-level collection operations
+9. **Template render** — render body and headers with full context
 
-Conditions are ANDed. Supported condition sources include:
+Conditions are ANDed (or use full AND/OR/NOT trees in validation rules). Supported condition sources:
 
-- `path`
-- `query`
-- `header`
-- `body`
-- `signature` for replayable recorded/generated responses
+- `path`, `query`, `header`, `body` — request fields
+- `signature` — request fingerprint for recorded/generated responses
+- `script` — Starlark script output (`outputKey.fieldPath`)
+- `collection` — spec/operation collection mapping output (`outputKey.fieldPath`)
+- `validation` — validation rule result (`ruleName._status` or `ruleName.propertyName`)
 
-Supported operators include:
-
-- `eq`, `ne`
-- `contains`, `notContains`
-- `startsWith`, `endsWith`
-- `regex`
-- `exists`, `notExists`
-- `gt`, `gte`, `lt`, `lte`
+Supported operators: `eq`, `ne`, `contains`, `notContains`, `startsWith`, `endsWith`, `regex`, `exists`, `notExists`, `gt`, `gte`, `lt`, `lte`, plus date operators (`dateEq`, `dateBefore`, `dateAfter`, `dateBetween`, etc.)
 
 ## Template and Scripting
 
-Response bodies use Go `text/template` helpers. Current template style supports helpers like:
+Response bodies use Go `text/template` helpers. Key template variables:
 
-- `{{path "id"}}`
-- `{{query "status"}}`
-- `{{header "authorization"}}`
-- `{{body "user.name"}}`
-- `{{random "uuid"}}`
-- `{{faker "email"}}`
-- `{{timestamp "iso"}}`
-- `{{script "binding.output"}}`
+- `{{.Path.id}}` / `{{path "id"}}` — URL path parameter
+- `{{.Query.status}}` / `{{query "status"}}` — query string
+- `{{.Header.authorization}}` / `{{header "authorization"}}` — HTTP header
+- `{{.Body.user.name}}` / `{{body "user.name"}}` — JSON request body field
+- `{{random "uuid"}}`, `{{faker "email"}}`, `{{timestamp "iso"}}` — generated values
+- `{{.Script.pricing.total}}` — Starlark script output (`outputKey.fieldPath`)
+- `{{.Collection.user.email}}` — Collection Mapping result (`outputKey.fieldPath`)
+- `{{.Collection.user._status}}` — Collection status: `"success"`, `"not_found"`, `"error"`
+- `{{.Validation.authCheck._status}}` — Validation Rule result: `"pass"` or `"fail"`
+- `{{.Validation.authCheck.userRole}}` — On-pass/on-fail property from a validation rule
 
-The editor also supports legacy token forms and rewrites them internally.
-
-Scripts are written in **Starlark** and attached to operations through ordered script bindings. A script:
+Scripts are written in **Starlark** and attached to specs, operations, or responses through ordered script bindings. A script:
 
 - must expose `def run(req):`
 - receives `path`, `query`, `header`, and `body`
 - can use `store` for session-scoped state
 - can use `log(...)` for trace-visible diagnostics
+
+**Collection Mappings** are a no-code alternative for common CRUD patterns. Attach them at the spec, operation, or response level; configure filter rules (which request field to match on) and data rules (which request fields to write), then reference the output in templates and conditions without writing any Starlark.
+
+**Validation Rules** evaluate nested AND/OR/NOT condition trees and expose named pass/fail results. Attach them at the spec or operation level; configure On Pass and On Fail property sets, then reference the result via `source=validation` in conditions or `{{.Validation.*}}` in templates.
 
 ## Session and Store Model
 

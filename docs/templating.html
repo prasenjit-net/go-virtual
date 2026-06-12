@@ -42,6 +42,8 @@
       <a href="templating.html" class="active"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
       <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
       <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="collection-mappings.html"><span class="nav-icon">🗃️</span>Collection Mappings</a>
+      <a href="validation-rules.html"><span class="nav-icon">✅</span>Validation Rules</a>
       <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
       <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
     </div>
@@ -76,6 +78,8 @@
         <li><a href="#timestamps">Timestamps</a></li>
         <li><a href="#json-format">JSON &amp; Formatting</a></li>
         <li><a href="#script-output">Script Output Variables</a></li>
+        <li><a href="#collection-output">Collection Output Variables</a></li>
+        <li><a href="#validation-output">Validation Output Variables</a></li>
         <li><a href="#conditions">Conditions</a></li>
         <li><a href="#condition-operators">Condition Operators</a></li>
         <li><a href="#condition-sources">Condition Sources</a></li>
@@ -479,6 +483,77 @@
       <p>See <a href="scripting.html">Starlark Scripting</a> for full details on creating and binding scripts.</p>
     </div>
 
+    <!-- Collection output -->
+    <div class="section" id="collection-output">
+      <h2>Collection Output Variables</h2>
+      <p>When a <a href="collection-mappings.html">Collection Mapping</a> runs, its result is stored under <code>{{.Collection.&lt;outputKey&gt;}}</code>. Results always include a <code>_status</code> field indicating whether the operation succeeded.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>{{.Collection.user._status}}</code></td><td>Status: <code>"success"</code>, <code>"not_found"</code>, or <code>"error"</code></td></tr>
+            <tr><td><code>{{.Collection.user._id}}</code></td><td>The document's auto-generated or matched <code>_id</code></td></tr>
+            <tr><td><code>{{.Collection.user.email}}</code></td><td>A field named <code>email</code> on the document</td></tr>
+            <tr><td><code>{{.Collection.user._error}}</code></td><td>Error message string (only when <code>_status</code> is <code>"error"</code>)</td></tr>
+            <tr><td><code>{{len .Collection.items}}</code></td><td>Number of results for a <code>find-many</code> mapping</td></tr>
+            <tr><td><code>{{toJSON .Collection.user}}</code></td><td>Serialize the full result document to JSON</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="cm">// Mapping outputKey = "user", find-one — user found:</span>
+{
+  <span class="key">"id"</span>:     <span class="str">"{{.Collection.user._id}}"</span>,
+  <span class="key">"email"</span>: <span class="str">"{{.Collection.user.email}}"</span>,
+  <span class="key">"status"</span>: <span class="str">"{{.Collection.user._status}}"</span>
+}
+
+<span class="cm">// Iterate find-many results (outputKey = "items"):</span>
+{
+  <span class="key">"items"</span>: [
+    {{range $i, $item := .Collection.items}}
+    {{if $i}},{{end}}
+    { <span class="key">"id"</span>: <span class="str">"{{$item._id}}"</span>, <span class="key">"name"</span>: <span class="str">"{{$item.name}}"</span> }
+    {{end}}
+  ]
+}
+</code></pre>
+      <p>See <a href="collection-mappings.html">Collection Mappings</a> for full details including scope, operations, and field mapping rules.</p>
+    </div>
+
+    <!-- Validation output -->
+    <div class="section" id="validation-output">
+      <h2>Validation Output Variables</h2>
+      <p>When a <a href="validation-rules.html">Validation Rule</a> runs, its result is stored under <code>{{.Validation.&lt;ruleName&gt;}}</code>. The result always includes <code>_status</code> (<code>"pass"</code> or <code>"fail"</code>) plus any properties you configured for the matching outcome.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Expression</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>{{.Validation.authCheck._status}}</code></td><td>Rule result: <code>"pass"</code> or <code>"fail"</code></td></tr>
+            <tr><td><code>{{.Validation.authCheck.userRole}}</code></td><td>An On Pass / On Fail property named <code>userRole</code></td></tr>
+            <tr><td><code>{{.Validation.authCheck.reason}}</code></td><td>An On Fail property named <code>reason</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <pre><code><span class="cm">// Rule "authCheck": On Pass sets userRole=admin, On Fail sets userRole=guest</span>
+{
+  <span class="key">"role"</span>:   <span class="str">"{{.Validation.authCheck.userRole}}"</span>,
+  <span class="key">"passed"</span>: <span class="str">"{{.Validation.authCheck._status}}"</span>
+}
+
+<span class="cm">// Conditional branch in body:</span>
+{{if eq .Validation.authCheck._status <span class="str">"pass"</span>}}
+{ <span class="key">"data"</span>: <span class="str">"private content"</span> }
+{{else}}
+{ <span class="key">"error"</span>: <span class="str">"unauthorized"</span> }
+{{end}}
+</code></pre>
+      <p>See <a href="validation-rules.html">Validation Rules</a> for full details on condition trees and pass/fail properties.</p>
+    </div>
+
         <!-- Conditions -->
     <div class="section" id="conditions">
       <h2>Conditions</h2>
@@ -572,14 +647,38 @@
         <table>
           <thead><tr><th>Source</th><th>Key interpretation</th><th>Example</th></tr></thead>
           <tbody>
-            <tr><td>path</td><td>URL path parameter name</td><td><code>"source": "path", "key": "id"</code></td></tr>
-            <tr><td>query</td><td>Query string parameter name</td><td><code>"source": "query", "key": "filter"</code></td></tr>
-            <tr><td>header</td><td>HTTP header name (case-insensitive)</td><td><code>"source": "header", "key": "Content-Type"</code></td></tr>
-            <tr><td>body</td><td>JSONPath expression into request body</td><td><code>"source": "body", "key": "user.role"</code></td></tr>
-            <tr><td>signature</td><td>A request fingerprint for deterministic matching</td><td>—</td></tr>
+            <tr><td><code>path</code></td><td>URL path parameter name</td><td><code>"source": "path", "key": "id"</code></td></tr>
+            <tr><td><code>query</code></td><td>Query string parameter name</td><td><code>"source": "query", "key": "filter"</code></td></tr>
+            <tr><td><code>header</code></td><td>HTTP header name (case-insensitive)</td><td><code>"source": "header", "key": "Content-Type"</code></td></tr>
+            <tr><td><code>body</code></td><td>gjson path into the JSON request body</td><td><code>"source": "body", "key": "user.role"</code></td></tr>
+            <tr><td><code>signature</code></td><td>Request fingerprint for signature-based matching</td><td>—</td></tr>
+            <tr><td><code>script</code></td><td><code>outputKey.fieldPath</code> — reads a field from script output</td><td><code>"source": "script", "key": "pricing.total"</code></td></tr>
+            <tr><td><code>collection</code></td><td><code>outputKey.fieldPath</code> — reads a field from spec/operation collection output</td><td><code>"source": "collection", "key": "user._status"</code></td></tr>
+            <tr><td><code>validation</code></td><td><code>ruleName.fieldPath</code> — reads a field from validation rule output</td><td><code>"source": "validation", "key": "authCheck._status"</code></td></tr>
           </tbody>
         </table>
       </div>
+
+      <h3>Script output in conditions</h3>
+      <pre><code><span class="cm">// Script bound with outputKey = "pricing" returns {total: 99.99}</span>
+{ <span class="key">"source"</span>: <span class="str">"script"</span>, <span class="key">"key"</span>: <span class="str">"pricing.total"</span>, <span class="key">"operator"</span>: <span class="str">"gt"</span>, <span class="key">"value"</span>: <span class="str">"50"</span> }
+</code></pre>
+
+      <h3>Collection output in conditions</h3>
+      <pre><code><span class="cm">// Spec/operation mapping outputKey = "user" — match only when user was found</span>
+{ <span class="key">"source"</span>: <span class="str">"collection"</span>, <span class="key">"key"</span>: <span class="str">"user._status"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"success"</span> }
+
+<span class="cm">// Match on a specific field in the found document</span>
+{ <span class="key">"source"</span>: <span class="str">"collection"</span>, <span class="key">"key"</span>: <span class="str">"user.role"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"admin"</span> }
+</code></pre>
+
+      <h3>Validation output in conditions</h3>
+      <pre><code><span class="cm">// Rule "authCheck" — match only when auth rule passed</span>
+{ <span class="key">"source"</span>: <span class="str">"validation"</span>, <span class="key">"key"</span>: <span class="str">"authCheck._status"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"pass"</span> }
+
+<span class="cm">// Match on a property set by the validation rule</span>
+{ <span class="key">"source"</span>: <span class="str">"validation"</span>, <span class="key">"key"</span>: <span class="str">"authCheck.userRole"</span>, <span class="key">"operator"</span>: <span class="str">"eq"</span>, <span class="key">"value"</span>: <span class="str">"admin"</span> }
+</code></pre>
 
       <h3>Body conditions with JSONPath</h3>
       <pre><code><span class="cm">// Request body: {"order": {"items": [{"sku": "ABC"}], "total": 150}}</span>
