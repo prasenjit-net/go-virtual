@@ -60,7 +60,7 @@ func TestOperatorConstants(t *testing.T) {
 func TestValidSources(t *testing.T) {
 	sources := ValidSources()
 
-	expected := []string{"path", "query", "header", "body", "signature", "script", "validation"}
+	expected := []string{"path", "query", "header", "body", "signature", "script", "validation", "collection"}
 	if len(sources) != len(expected) {
 		t.Errorf("Expected %d sources, got %d", len(expected), len(sources))
 	}

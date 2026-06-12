@@ -213,10 +213,14 @@ func (h *Handler) DeleteSpec(c *gin.Context) {
 	// Get operations first
 	ops, _ := h.store.GetOperationsBySpec(id)
 
-	// Delete response configs for each operation
+	// Delete response configs and operation-level collection mappings for each operation
 	for _, op := range ops {
 		h.store.DeleteResponseConfigsByOperation(op.ID)
+		h.store.DeleteCollectionMappingsByOperation(op.ID) //nolint:errcheck
 	}
+
+	// Delete spec-level collection mappings and script bindings
+	h.store.DeleteCollectionMappingsBySpec(id) //nolint:errcheck
 
 	// Delete operations
 	h.store.DeleteOperationsBySpec(id)

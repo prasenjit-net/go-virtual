@@ -16,6 +16,7 @@ import {
 import clsx from 'clsx'
 import { specsApi, operationsApi, tagsApi, aiApi } from '../../services/api'
 import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
+import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
 import ConditionEditor, { conditionsToTree, BASIC_SOURCES } from '../shared/ConditionEditor'
 import type {
     AIStatus,
@@ -277,6 +278,8 @@ export default function SpecDetail() {
             </div>
 
             <ScriptBindingsPanel kind="spec" specId={spec.id} />
+
+            <CollectionMappingsPanel kind="spec" specId={spec.id} />
 
             {/* Proxy Configuration */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">

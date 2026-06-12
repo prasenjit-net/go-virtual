@@ -919,6 +919,7 @@ export default function ResponseConfigEditor({
         {/* Collection mappings — shown below script bindings in page mode */}
         {!isModal && config?.id && !readOnly && (
             <CollectionMappingsPanel
+                kind="response"
                 operationId={operationId}
                 responseConfigId={config.id}
                 pendingMappings={pendingCollectionMappings}

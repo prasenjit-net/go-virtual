@@ -134,6 +134,8 @@ func (m *MongoStorage) EnsureIndexes(ctx context.Context) error {
 		{colBindings, "script_id"},
 		{colBindings, "spec_id"},
 		{colBindings, "response_config_id"},
+		{colCollectionMappings, "spec_id"},
+		{colCollectionMappings, "operation_id"},
 		{colCollectionMappings, "response_config_id"},
 		{colValidations, "spec_id"},
 		{colValidations, "operation_id"},
@@ -927,8 +929,54 @@ func (m *MongoStorage) GetCollectionMapping(id string) (*models.CollectionMappin
 	return &cm, nil
 }
 
+func (m *MongoStorage) GetCollectionMappingsBySpec(specID string) ([]*models.CollectionMapping, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colCollectionMappings).Find(ctx, bson.M{"spec_id": specID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var mappings []*models.CollectionMapping
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		var cm models.CollectionMapping
+		if err := unmarshalDoc(&doc, &cm); err != nil {
+			return nil, err
+		}
+		mappings = append(mappings, &cm)
+	}
+	return mappings, cursor.Err()
+}
+
+func (m *MongoStorage) GetCollectionMappingsByOperation(operationID string) ([]*models.CollectionMapping, error) {
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	cursor, err := m.col(colCollectionMappings).Find(ctx, bson.M{"operation_id": operationID})
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+	var mappings []*models.CollectionMapping
+	for cursor.Next(ctx) {
+		var doc genericDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, err
+		}
+		var cm models.CollectionMapping
+		if err := unmarshalDoc(&doc, &cm); err != nil {
+			return nil, err
+		}
+		mappings = append(mappings, &cm)
+	}
+	return mappings, cursor.Err()
+}
+
 func (m *MongoStorage) CreateCollectionMapping(cm *models.CollectionMapping) error {
-	doc, err := marshalDoc(cm.ID, "", "", "", cm)
+	doc, err := marshalDoc(cm.ID, cm.SpecID, cm.OperationID, "", cm)
 	if err != nil {
 		return err
 	}
@@ -940,7 +988,7 @@ func (m *MongoStorage) CreateCollectionMapping(cm *models.CollectionMapping) err
 }
 
 func (m *MongoStorage) UpdateCollectionMapping(cm *models.CollectionMapping) error {
-	doc, err := marshalDoc(cm.ID, "", "", "", cm)
+	doc, err := marshalDoc(cm.ID, cm.SpecID, cm.OperationID, "", cm)
 	if err != nil {
 		return err
 	}
@@ -956,6 +1004,26 @@ func (m *MongoStorage) DeleteCollectionMapping(id string) error {
 	ctx, cancel := ctxTimeout()
 	defer cancel()
 	_, err := m.col(colCollectionMappings).DeleteOne(ctx, bson.M{"_id": id})
+	return err
+}
+
+func (m *MongoStorage) DeleteCollectionMappingsBySpec(specID string) error {
+	if specID == "" {
+		return nil
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colCollectionMappings).DeleteMany(ctx, bson.M{"spec_id": specID})
+	return err
+}
+
+func (m *MongoStorage) DeleteCollectionMappingsByOperation(operationID string) error {
+	if operationID == "" {
+		return nil
+	}
+	ctx, cancel := ctxTimeout()
+	defer cancel()
+	_, err := m.col(colCollectionMappings).DeleteMany(ctx, bson.M{"operation_id": operationID})
 	return err
 }
 

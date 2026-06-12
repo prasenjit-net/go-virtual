@@ -229,7 +229,7 @@ export interface ValidationTrace {
 
 // Condition types
 export interface Condition {
-    source: 'path' | 'query' | 'header' | 'body' | 'signature' | 'script' | 'validation';
+    source: 'path' | 'query' | 'header' | 'body' | 'signature' | 'script' | 'validation' | 'collection';
     key: string;
     operator: ConditionOperator;
     value: string;
@@ -476,7 +476,9 @@ export interface FieldMappingRule {
 
 export interface CollectionMapping {
     id: string
-    responseConfigId: string
+    specId?: string
+    operationId?: string
+    responseConfigId?: string
     collectionName: string
     name?: string
     operation: CollectionOpType

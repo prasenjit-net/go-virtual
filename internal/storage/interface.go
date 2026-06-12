@@ -64,11 +64,15 @@ type Storage interface {
 	DeleteScriptBindingsByResponse(responseConfigID string) error
 
 	// CollectionMapping operations
+	GetCollectionMappingsBySpec(specID string) ([]*models.CollectionMapping, error)
+	GetCollectionMappingsByOperation(operationID string) ([]*models.CollectionMapping, error)
 	GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error)
 	GetCollectionMapping(id string) (*models.CollectionMapping, error)
 	CreateCollectionMapping(m *models.CollectionMapping) error
 	UpdateCollectionMapping(m *models.CollectionMapping) error
 	DeleteCollectionMapping(id string) error
+	DeleteCollectionMappingsBySpec(specID string) error
+	DeleteCollectionMappingsByOperation(operationID string) error
 	DeleteCollectionMappingsByResponse(responseConfigID string) error
 
 	// ValidationRule operations

@@ -908,31 +908,33 @@ func (f *FileStorage) loadScripts() error {
 	return nil
 }
 
-// loadCollectionMappings loads all collection mappings from responses/<id>.mappings.json files
+// loadCollectionMappings loads all collection mappings from specs/, operations/, and responses/ dirs.
 func (f *FileStorage) loadCollectionMappings() error {
-	respDir := filepath.Join(f.basePath, "responses")
-	entries, err := os.ReadDir(respDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mappings.json") {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join(respDir, entry.Name()))
+	for _, subdir := range []string{"specs", "operations", "responses"} {
+		dir := filepath.Join(f.basePath, subdir)
+		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
 		}
-		var mappings []*models.CollectionMapping
-		if err := json.Unmarshal(data, &mappings); err != nil {
-			continue
-		}
-		for _, m := range mappings {
-			if m != nil {
-				f.memory.collectionMappings[m.ID] = m
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".mappings.json") {
+				continue
+			}
+			data, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+			if err != nil {
+				continue
+			}
+			var mappings []*models.CollectionMapping
+			if err := json.Unmarshal(data, &mappings); err != nil {
+				continue
+			}
+			for _, m := range mappings {
+				if m != nil {
+					f.memory.collectionMappings[m.ID] = m
+				}
 			}
 		}
 	}
@@ -1246,16 +1248,19 @@ func (f *FileStorage) DeleteScriptBindingsByResponse(responseConfigID string) er
 
 // ---- CollectionMapping operations ----
 
+func (f *FileStorage) specCollectionMappingsPath(specID string) string {
+	return filepath.Join(f.basePath, "specs", specID+".mappings.json")
+}
+
+func (f *FileStorage) operationCollectionMappingsPath(operationID string) string {
+	return filepath.Join(f.basePath, "operations", operationID+".mappings.json")
+}
+
 func (f *FileStorage) collectionMappingsPath(responseConfigID string) string {
 	return filepath.Join(f.basePath, "responses", responseConfigID+".mappings.json")
 }
 
-func (f *FileStorage) saveCollectionMappings(responseConfigID string) error {
-	mappings, err := f.memory.GetCollectionMappingsByResponse(responseConfigID)
-	if err != nil {
-		return err
-	}
-	path := f.collectionMappingsPath(responseConfigID)
+func (f *FileStorage) saveMappingSlice(path string, mappings []*models.CollectionMapping) error {
 	if len(mappings) == 0 {
 		os.Remove(path)
 		return nil
@@ -1265,6 +1270,38 @@ func (f *FileStorage) saveCollectionMappings(responseConfigID string) error {
 		return err
 	}
 	return os.WriteFile(path, data, 0644)
+}
+
+func (f *FileStorage) saveSpecCollectionMappings(specID string) error {
+	mappings, err := f.memory.GetCollectionMappingsBySpec(specID)
+	if err != nil {
+		return err
+	}
+	return f.saveMappingSlice(f.specCollectionMappingsPath(specID), mappings)
+}
+
+func (f *FileStorage) saveOperationCollectionMappings(operationID string) error {
+	mappings, err := f.memory.GetCollectionMappingsByOperation(operationID)
+	if err != nil {
+		return err
+	}
+	return f.saveMappingSlice(f.operationCollectionMappingsPath(operationID), mappings)
+}
+
+func (f *FileStorage) saveCollectionMappings(responseConfigID string) error {
+	mappings, err := f.memory.GetCollectionMappingsByResponse(responseConfigID)
+	if err != nil {
+		return err
+	}
+	return f.saveMappingSlice(f.collectionMappingsPath(responseConfigID), mappings)
+}
+
+func (f *FileStorage) GetCollectionMappingsBySpec(specID string) ([]*models.CollectionMapping, error) {
+	return f.memory.GetCollectionMappingsBySpec(specID)
+}
+
+func (f *FileStorage) GetCollectionMappingsByOperation(operationID string) ([]*models.CollectionMapping, error) {
+	return f.memory.GetCollectionMappingsByOperation(operationID)
 }
 
 func (f *FileStorage) GetCollectionMappingsByResponse(responseConfigID string) ([]*models.CollectionMapping, error) {
@@ -1282,7 +1319,14 @@ func (f *FileStorage) CreateCollectionMapping(cm *models.CollectionMapping) erro
 	if err := f.memory.CreateCollectionMapping(cm); err != nil {
 		return err
 	}
-	return f.saveCollectionMappings(cm.ResponseConfigID)
+	switch cm.Scope() {
+	case "spec":
+		return f.saveSpecCollectionMappings(cm.SpecID)
+	case "operation":
+		return f.saveOperationCollectionMappings(cm.OperationID)
+	default:
+		return f.saveCollectionMappings(cm.ResponseConfigID)
+	}
 }
 
 func (f *FileStorage) UpdateCollectionMapping(cm *models.CollectionMapping) error {
@@ -1292,7 +1336,14 @@ func (f *FileStorage) UpdateCollectionMapping(cm *models.CollectionMapping) erro
 	if err := f.memory.UpdateCollectionMapping(cm); err != nil {
 		return err
 	}
-	return f.saveCollectionMappings(cm.ResponseConfigID)
+	switch cm.Scope() {
+	case "spec":
+		return f.saveSpecCollectionMappings(cm.SpecID)
+	case "operation":
+		return f.saveOperationCollectionMappings(cm.OperationID)
+	default:
+		return f.saveCollectionMappings(cm.ResponseConfigID)
+	}
 }
 
 func (f *FileStorage) DeleteCollectionMapping(id string) error {
@@ -1305,12 +1356,40 @@ func (f *FileStorage) DeleteCollectionMapping(id string) error {
 	if !exists {
 		return fmt.Errorf("collection mapping not found: %s", id)
 	}
-	responseConfigID := cm.ResponseConfigID
+	scope := cm.Scope()
+	specID, operationID, responseConfigID := cm.SpecID, cm.OperationID, cm.ResponseConfigID
 
 	if err := f.memory.DeleteCollectionMapping(id); err != nil {
 		return err
 	}
-	return f.saveCollectionMappings(responseConfigID)
+	switch scope {
+	case "spec":
+		return f.saveSpecCollectionMappings(specID)
+	case "operation":
+		return f.saveOperationCollectionMappings(operationID)
+	default:
+		return f.saveCollectionMappings(responseConfigID)
+	}
+}
+
+func (f *FileStorage) DeleteCollectionMappingsBySpec(specID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteCollectionMappingsBySpec(specID); err != nil {
+		return err
+	}
+	return f.saveSpecCollectionMappings(specID)
+}
+
+func (f *FileStorage) DeleteCollectionMappingsByOperation(operationID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if err := f.memory.DeleteCollectionMappingsByOperation(operationID); err != nil {
+		return err
+	}
+	return f.saveOperationCollectionMappings(operationID)
 }
 
 func (f *FileStorage) DeleteCollectionMappingsByResponse(responseConfigID string) error {

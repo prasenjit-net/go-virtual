@@ -605,6 +605,34 @@ export const responseScriptBindingsApi = {
 
 // Collection Mappings API
 export const collectionMappingsApi = {
+    listBySpec: async (specId: string) => {
+        const response = await fetch(`${API_BASE}/specs/${specId}/mappings`);
+        return handleResponse<import('../types').CollectionMapping[]>(response);
+    },
+
+    createForSpec: async (specId: string, data: import('../types').CollectionMappingInput) => {
+        const response = await fetch(`${API_BASE}/specs/${specId}/mappings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').CollectionMapping>(response);
+    },
+
+    listByOperation: async (operationId: string) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/mappings`);
+        return handleResponse<import('../types').CollectionMapping[]>(response);
+    },
+
+    createForOperation: async (operationId: string, data: import('../types').CollectionMappingInput) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/mappings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').CollectionMapping>(response);
+    },
+
     listByResponse: async (operationId: string, responseConfigId: string) => {
         const response = await fetch(`${API_BASE}/operations/${operationId}/responses/${responseConfigId}/mappings`);
         return handleResponse<import('../types').CollectionMapping[]>(response);

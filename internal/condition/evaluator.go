@@ -27,8 +27,9 @@ type RequestData struct {
 	Headers          map[string][]string
 	Body             string
 	Signature        string                          // Pre-computed request signature for signature conditions
-	ScriptOutput     map[string]any                  // Operation-level script output, available as source=script conditions
+	ScriptOutput     map[string]any                      // Operation-level script output, available as source=script conditions
 	ValidationOutput map[string]*models.ValidationResult // Populated at step ⑥ after validation rules run
+	CollectionOutput map[string]any                      // Spec/operation-level collection output, populated at step ⑥.5
 }
 
 // EvaluateAll evaluates all conditions against request data
@@ -118,6 +119,20 @@ func (e *Evaluator) extractValue(source, key string, data *RequestData) string {
 			return result.Status
 		}
 		return result.Properties[parts[1]]
+	case models.SourceCollectionOutput:
+		// key format: "<outputKey>.<fieldPath>" — mirrors SourceScriptOutput
+		if len(data.CollectionOutput) == 0 {
+			return ""
+		}
+		collJSON, err := json.Marshal(data.CollectionOutput)
+		if err != nil {
+			return ""
+		}
+		result := gjson.GetBytes(collJSON, key)
+		if result.Exists() {
+			return result.String()
+		}
+		return ""
 	default:
 		return ""
 	}

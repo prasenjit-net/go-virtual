@@ -400,6 +400,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e.serveMatchedConfig(w, r, recorded, pathParams, requestBody, signature, startTime,
 				matchedRoute, sess, lazySession, &sessionIsNew,
 				nil, nil, nil, nil, nil, // no scripts, no validations at this stage
+				nil, nil, // no early collections at this stage
 				models.TraceResponseTierRecorded,
 				"", "", "", "")
 			return
@@ -538,7 +539,58 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"rule_count", len(validationTraces),
 	)
 
-	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput
+	// ⑥.5 Spec + operation collection mappings — run before response matching so
+	// their output is available to response config condition evaluation.
+	var earlyCollectionOutput map[string]any
+	var earlyCollectionTraces []models.CollectionTrace
+	if e.sessionManager != nil || lazySession != nil {
+		collSess := sess
+		if collSess == nil && lazySession != nil {
+			collSess = lazySession
+		}
+		if collSess != nil {
+			collReqCtx := &collection.RequestContext{
+				PathParams:  pathParams,
+				QueryParams: r.URL.Query(),
+				Headers:     r.Header,
+				Body:        requestBody,
+				Session:     collSess,
+			}
+			specCollOut, specCollTraces, _ := e.collectionExecutor.RunForSpec(r.Context(), matchedRoute.spec.ID, collReqCtx, collSess)
+			opCollOut, opCollTraces, _ := e.collectionExecutor.RunForOperation(r.Context(), matchedRoute.operation.ID, collReqCtx, collSess)
+			earlyCollectionOutput = make(map[string]any)
+			for k, v := range specCollOut {
+				earlyCollectionOutput[k] = v
+			}
+			for k, v := range opCollOut {
+				earlyCollectionOutput[k] = v
+			}
+			earlyCollectionTraces = append(earlyCollectionTraces, specCollTraces...)
+			earlyCollectionTraces = append(earlyCollectionTraces, opCollTraces...)
+			// Materialise lazy session if a collection write triggered it
+			if lazySession != nil && sess == nil {
+				if inner := lazySession.Materialized(); inner != nil {
+					info := inner.Info(false)
+					w.Header().Set(e.sessionHeaderName, info.ID)
+					sess = inner
+					sessionIsNew = true
+					reqLogger.Debug("Lazy session materialised by early collection operation",
+						"event", "lazy_session_created_by_early_collection",
+						"session_id", info.ID,
+					)
+				}
+			}
+			if len(earlyCollectionTraces) > 0 {
+				reqLogger.Debug("Executed early collection mappings",
+					"event", "early_collection_mappings_executed",
+					"mapping_count", len(earlyCollectionTraces),
+				)
+			}
+		}
+	}
+	reqData.CollectionOutput = earlyCollectionOutput
+
+	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput + CollectionOutput
 	var matchedConfig *models.ResponseConfig
 	responseTier := ""
 	if respErr == nil && len(responseConfigs) > 0 {
@@ -801,6 +853,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		matchedRoute, sess, lazySession, &sessionIsNew,
 		scriptInput, scriptOutput, scriptTraces,
 		validationOutput, validationTraces,
+		earlyCollectionOutput, earlyCollectionTraces,
 		responseTier,
 		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario))
 }
@@ -824,6 +877,8 @@ func (e *Engine) serveMatchedConfig(
 	scriptTraces []models.ScriptTrace,
 	validationOutput map[string]*models.ValidationResult,
 	validationTraces []models.ValidationTrace,
+	earlyCollectionOutput map[string]any,
+	earlyCollectionTraces []models.CollectionTrace,
 	responseTier string,
 	aiSkippedReason string,
 	proxySkippedReason string,
@@ -875,12 +930,14 @@ func (e *Engine) serveMatchedConfig(
 		}
 	}
 
-	// Run collection mappings for the matched response config.
-	// Use the already-materialised session when available, or fall back to the
-	// lazy session so that collection ops can run even when no script has written
-	// to the store yet (the common case for requests with no session header).
-	var collectionOutput map[string]any
-	var collectionTraces []models.CollectionTrace
+	// Run response-level collection mappings and merge with earlyCollectionOutput.
+	// earlyCollectionOutput holds spec/operation-level results from step ⑥.5.
+	// Response-level results are merged on top (response keys win on conflict).
+	collectionOutput := make(map[string]any)
+	for k, v := range earlyCollectionOutput {
+		collectionOutput[k] = v
+	}
+	collectionTraces := append([]models.CollectionTrace(nil), earlyCollectionTraces...)
 	sessForCollection := sess
 	if sessForCollection == nil && lazySession != nil {
 		sessForCollection = lazySession
@@ -893,15 +950,18 @@ func (e *Engine) serveMatchedConfig(
 			Body:        requestBody,
 			Session:     sessForCollection,
 		}
-		collectionOutput, collectionTraces, _ = e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sessForCollection)
-		if len(collectionTraces) > 0 {
-			reqLogger.Debug("Executed collection mappings",
+		respCollOut, respCollTraces, _ := e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sessForCollection)
+		for k, v := range respCollOut {
+			collectionOutput[k] = v // response-level wins
+		}
+		collectionTraces = append(collectionTraces, respCollTraces...)
+		if len(respCollTraces) > 0 {
+			reqLogger.Debug("Executed response collection mappings",
 				"event", "collection_mappings_executed",
-				"mapping_count", len(collectionTraces),
+				"mapping_count", len(respCollTraces),
 			)
 		}
-		// If a collection write op (insert/upsert/update) materialised the lazy
-		// session, emit the session header so the client can reuse it.
+		// If a collection write op materialised the lazy session, emit the session header.
 		if lazySession != nil && sess == nil {
 			if inner := lazySession.Materialized(); inner != nil {
 				info := inner.Info(false)

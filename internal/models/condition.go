@@ -16,9 +16,10 @@ const (
 	SourceQuery        = "query"
 	SourceHeader       = "header"
 	SourceBody         = "body"
-	SourceSignature    = "signature"    // Matches against a pre-computed request signature hash
-	SourceScriptOutput = "script"       // Matches against operation-level script output (dot-path key)
-	SourceValidation   = "validation"   // Matches against validation rule output (key: "<ruleName>.status" or "<ruleName>.<property>")
+	SourceSignature        = "signature"   // Matches against a pre-computed request signature hash
+	SourceScriptOutput     = "script"      // Matches against operation-level script output (dot-path key)
+	SourceValidation       = "validation"  // Matches against validation rule output (key: "<ruleName>.status" or "<ruleName>.<property>")
+	SourceCollectionOutput = "collection"  // Matches against spec/operation-level collection output (key: "<outputKey>.<field>")
 )
 
 // Supported condition operators
@@ -64,7 +65,7 @@ const (
 
 // ValidSources returns all valid condition sources
 func ValidSources() []string {
-	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody, SourceSignature, SourceScriptOutput, SourceValidation}
+	return []string{SourcePath, SourceQuery, SourceHeader, SourceBody, SourceSignature, SourceScriptOutput, SourceValidation, SourceCollectionOutput}
 }
 
 // ValidOperators returns all current (non-deprecated) condition operators.
