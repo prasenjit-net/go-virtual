@@ -153,14 +153,17 @@ func collectInitConfig(p *prompter) initConfigFile {
 		// In interactive mode the user explicitly said no → clear the provider.
 		cfg.AI.Provider = ""
 	} else if aiEnabled {
-		cfg.AI.Provider = p.PromptSelect("AI provider", []string{"openai", "claude"}, "openai")
+		cfg.AI.Provider = p.PromptSelect("AI provider", []string{"openai", "claude", "copilot"}, "openai")
 		switch cfg.AI.Provider {
 		case "openai":
 			cfg.AI.OpenAI.APIKey = p.PromptSecret("OpenAI API key")
-			cfg.AI.OpenAI.Model = p.Prompt("OpenAI model", "gpt-4o-mini")
+			cfg.AI.OpenAI.Model = p.Prompt("OpenAI model", config.DefaultOpenAIModel)
 		case "claude":
 			cfg.AI.Claude.APIKey = p.PromptSecret("Claude API key")
-			cfg.AI.Claude.Model = p.Prompt("Claude model", "claude-3-5-sonnet-latest")
+			cfg.AI.Claude.Model = p.Prompt("Claude model", config.DefaultClaudeModel)
+		case "copilot":
+			cfg.AI.Copilot.OAuthToken = p.PromptSecret("GitHub OAuth token (from ~/.config/github-copilot/apps.json)")
+			cfg.AI.Copilot.Model = p.Prompt("Copilot model", config.DefaultCopilotModel)
 		}
 	}
 
@@ -217,6 +220,14 @@ func defaultInitConfig() initConfigFile {
 		Storage: initStorageConfig{
 			Type: cfg.Storage.Type,
 			Path: "./data",
+			Mongo: initMongoConfig{
+				Database:            config.DefaultMongoDB,
+				StartupRetrySeconds: config.DefaultMongoStartupRetrySeconds,
+				Sync: initMongoSyncConfig{
+					Mode:                string(config.MongoSyncModeAuto),
+					PollIntervalSeconds: config.DefaultMongoSyncPollIntervalSeconds,
+				},
+			},
 		},
 		Tracing: initTracingConfig{
 			MaxTraces: cfg.Tracing.MaxTraces,
@@ -268,6 +279,13 @@ func defaultInitConfig() initConfigFile {
 				BaseURL:    cfg.AI.Claude.BaseURL,
 				APIVersion: cfg.AI.Claude.APIVersion,
 			},
+			Copilot: initCopilotConfig{
+				Model:               config.DefaultCopilotModel,
+				EditorVersion:       config.DefaultCopilotEditorVersion,
+				EditorPluginVersion: config.DefaultCopilotPluginVersion,
+				IntegrationID:       config.DefaultCopilotIntegrationID,
+				OpenAIIntent:        config.DefaultCopilotOpenAIIntent,
+			},
 		},
 	}
 }
@@ -311,12 +329,18 @@ cfg.Storage.Type, cfg.Storage.Path)
 
 if cfg.Storage.Type == "mongo" {
 fmt.Fprintf(&b, `  mongo:
-    uri: %q           # MongoDB connection URI.
-    database: %q      # Database name.
-    collectionPrefix: "gv_"            # Prefix for all collection names.
-    connectTimeoutSeconds: 10          # Connection timeout in seconds.
+    uri: %q                   # MongoDB connection URI.
+    database: %q              # Database name.
+    collectionPrefix: "gv_"  # Prefix for all collection names.
+    connectTimeoutSeconds: 10 # Connection timeout in seconds.
+    startupRetrySeconds: %d   # Total time to retry initial ping (useful in Swarm/k8s). Set to -1 to disable.
+    sync:
+      mode: %q                # Cross-instance sync strategy: "auto" | "change_stream" | "polling" | "off".
+      pollIntervalSeconds: %d # Polling interval in seconds (used in "polling" and "auto" fallback modes).
 `,
-cfg.Storage.Mongo.URI, cfg.Storage.Mongo.Database)
+cfg.Storage.Mongo.URI, cfg.Storage.Mongo.Database,
+cfg.Storage.Mongo.StartupRetrySeconds,
+cfg.Storage.Mongo.Sync.Mode, cfg.Storage.Mongo.Sync.PollIntervalSeconds)
 } else {
 b.WriteString(`  # MongoDB settings — used only when type is "mongo":
   # mongo:
@@ -324,6 +348,13 @@ b.WriteString(`  # MongoDB settings — used only when type is "mongo":
   #   database: "go-virtual"             # Database name.
   #   collectionPrefix: "gv_"            # Prefix for all collection names.
   #   connectTimeoutSeconds: 10          # Connection timeout in seconds.
+  #   startupRetrySeconds: 60            # Total time to keep retrying the
+  #                                      # initial ping (useful in Swarm/k8s
+  #                                      # where the replica set may elect a
+  #                                      # primary after this container starts).
+  #   sync:
+  #     mode: "auto"                     # Cross-instance sync strategy: "auto" | "change_stream" | "polling" | "off"
+  #     pollIntervalSeconds: 10          # Polling interval in seconds (used in "polling" and "auto" fallback modes).
 `)
 }
 b.WriteString("\n")
@@ -400,7 +431,10 @@ cfg.Proxy.MTLS.CertFile, cfg.Proxy.MTLS.KeyFile, cfg.Proxy.MTLS.CACertFile,
 )
 
 fmt.Fprintf(&b, `ai:
-  provider: %q             # Which provider powers AI features: "openai" or "claude".
+  provider: %q             # Which provider powers AI features: "openai", "claude", or "copilot".
+  # httpProxy: ""                # Optional HTTP/HTTPS/SOCKS5 proxy for all AI provider requests.
+                                 # Credentials can be embedded: "http://user:pass@proxy.corp:8080".
+                                 # Applies to OpenAI, Claude, and Copilot.
   openai:
     apiKey: %q             # OpenAI API key. You can also set GOVIRTUAL_AI_OPENAI_APIKEY env var.
     model: %q              # OpenAI chat model used for AI response/script generation.
@@ -410,6 +444,18 @@ fmt.Fprintf(&b, `ai:
     model: %q              # Claude model used for AI response/script generation.
     baseUrl: %q            # Optional override for the Claude Messages API endpoint base URL.
     apiVersion: %q         # Anthropic API version header sent with Claude requests.
+  # GitHub Copilot provider — uses your existing VS Code Copilot credentials.
+  # WARNING: This uses an undocumented GitHub API that may change without notice.
+  # To find your token: open ~/.config/github-copilot/apps.json and copy the
+  # "oauth_token" value (starts with "gho_").
+  copilot:
+    oauthToken: %q         # GitHub OAuth token (gho_...) from ~/.config/github-copilot/apps.json.
+                           # Also: GOVIRTUAL_AI_COPILOT_OAUTHTOKEN env var.
+    model: %q              # Model used for AI response/script generation.
+    editorVersion: %q      # Defaults to "vscode/1.96.0"
+    editorPluginVersion: %q # Defaults to "copilot/1.155.0"
+    integrationId: %q      # Defaults to "vscode-chat"
+    openaiIntent: %q       # Defaults to "conversation-panel"
 
 # Legacy OpenAI aliases are still supported for backward compatibility:
 # ai.openaiApiKey
@@ -419,6 +465,9 @@ fmt.Fprintf(&b, `ai:
 cfg.AI.Provider,
 cfg.AI.OpenAI.APIKey, cfg.AI.OpenAI.Model, cfg.AI.OpenAI.BaseURL,
 cfg.AI.Claude.APIKey, cfg.AI.Claude.Model, cfg.AI.Claude.BaseURL, cfg.AI.Claude.APIVersion,
+cfg.AI.Copilot.OAuthToken, cfg.AI.Copilot.Model,
+cfg.AI.Copilot.EditorVersion, cfg.AI.Copilot.EditorPluginVersion,
+cfg.AI.Copilot.IntegrationID, cfg.AI.Copilot.OpenAIIntent,
 )
 
 return b.String()
@@ -472,8 +521,15 @@ type initStorageConfig struct {
 }
 
 type initMongoConfig struct {
-	URI      string `yaml:"uri"`
-	Database string `yaml:"database"`
+	URI                 string              `yaml:"uri"`
+	Database            string              `yaml:"database"`
+	StartupRetrySeconds int                 `yaml:"startupRetrySeconds"`
+	Sync                initMongoSyncConfig `yaml:"sync"`
+}
+
+type initMongoSyncConfig struct {
+	Mode                string `yaml:"mode"`
+	PollIntervalSeconds int    `yaml:"pollIntervalSeconds"`
 }
 
 type initTracingConfig struct {
@@ -524,9 +580,20 @@ type initMTLSConfig struct {
 }
 
 type initAIConfig struct {
-	Provider string           `yaml:"provider"`
-	OpenAI   initOpenAIConfig `yaml:"openai"`
-	Claude   initClaudeConfig `yaml:"claude"`
+	Provider  string            `yaml:"provider"`
+	HTTPProxy string            `yaml:"httpProxy"`
+	OpenAI    initOpenAIConfig  `yaml:"openai"`
+	Claude    initClaudeConfig  `yaml:"claude"`
+	Copilot   initCopilotConfig `yaml:"copilot"`
+}
+
+type initCopilotConfig struct {
+	OAuthToken          string `yaml:"oauthToken"`
+	Model               string `yaml:"model"`
+	EditorVersion       string `yaml:"editorVersion"`
+	EditorPluginVersion string `yaml:"editorPluginVersion"`
+	IntegrationID       string `yaml:"integrationId"`
+	OpenAIIntent        string `yaml:"openaiIntent"`
 }
 
 type initOpenAIConfig struct {
