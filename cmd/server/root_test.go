@@ -121,7 +121,7 @@ func TestRunInit(t *testing.T) {
 		`provider: "openai"`,
 		`model: "gpt-4o-mini"`,
 		`model: "claude-sonnet-4-6"`,
-		`# Which provider powers AI features: "openai" or "claude".`,
+		`# Which provider powers AI features: "openai", "claude", or "copilot".`,
 		`path: "./data"`,
 	} {
 		if !strings.Contains(generated, want) {

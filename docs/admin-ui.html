@@ -147,6 +147,8 @@
       <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
       <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
       <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="collection-mappings.html"><span class="nav-icon">🗃️</span>Collection Mappings</a>
+      <a href="validation-rules.html"><span class="nav-icon">✅</span>Validation Rules</a>
       <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
       <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
     </div>
@@ -181,6 +183,8 @@
         <li><a href="#signature-ui">Signature Configuration</a></li>
         <li><a href="#scripts-ui">Scripts</a></li>
         <li><a href="#script-bindings">Script Bindings</a></li>
+        <li><a href="#collection-mappings-ui">Collection Mappings</a></li>
+        <li><a href="#validation-rules-ui">Validation Rules</a></li>
         <li><a href="#traces-ui">Trace Viewer</a></li>
         <li><a href="#store-ui">Global Store</a></li>
         <li><a href="#sessions-ui">Sessions</a></li>
@@ -730,6 +734,99 @@
       </ul>
     </div>
 
+    <!-- Collection Mappings UI -->
+    <div class="section" id="collection-mappings-ui">
+      <h2>Collection Mappings</h2>
+      <p>Collection Mappings let you read and write structured documents inside the session store using database-style operations — no Starlark required. They appear in three places in the UI.</p>
+
+      <h3>Where to find them</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Location</th><th>Scope</th><th>When they run</th></tr></thead>
+          <tbody>
+            <tr><td>Spec Detail page</td><td>Spec-level</td><td>Every request to any operation in the spec</td></tr>
+            <tr><td>Operation Detail page</td><td>Operation-level</td><td>Every request to that specific operation</td></tr>
+            <tr><td>Response Config editor</td><td>Response-level</td><td>Only when this response config is matched</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Collection Mappings panel</h3>
+      <p>Each panel shows the list of mappings for that scope. Each row displays the execution order, name, collection operation, collection name, and output key. You can toggle enabled/disabled, reorder, edit, or delete individual mappings.</p>
+
+      <div class="script-binding">
+        <div style="color:#7d8ea8;font-size:14px;">⇅</div>
+        <div class="binding-num" style="background:#1e2a47;color:#60a5fa;">1</div>
+        <div class="binding-name">Load Current User</div>
+        <span style="background:#1e1b35;color:#a78bfa;font-family:monospace;font-size:11px;padding:2px 6px;border-radius:4px;">find-one</span>
+        <span style="font-size:12px;color:#7d8ea8;font-family:monospace;">users</span>
+        <div class="binding-key">user</div>
+        <div style="display:flex;gap:6px;">
+          <span class="pill green" style="cursor:pointer;">● on</span>
+          <span class="pill red" style="cursor:pointer;">🗑</span>
+        </div>
+      </div>
+
+      <h3>Add Mapping form</h3>
+      <p>Click <strong>+ Add Mapping</strong> to open the form. Fill in:</p>
+      <ul>
+        <li><strong>Name</strong> — a human-readable label</li>
+        <li><strong>Collection Name</strong> — the collection inside the session to operate on</li>
+        <li><strong>Operation</strong> — find-one, find-many, insert, update, upsert, or delete</li>
+        <li><strong>Output Key</strong> — the name used in templates (<code>{{.Collection.&lt;outputKey&gt;}}</code>) and conditions (<code>source=collection, key=&lt;outputKey&gt;.field</code>)</li>
+        <li><strong>Filter Rules</strong> — for find/update/upsert/delete: which fields to match on, and where to read the values</li>
+        <li><strong>Data Rules</strong> — for insert/update/upsert: which fields to write, and where to read the values</li>
+        <li><strong>Execution Order</strong> — lower numbers run first</li>
+      </ul>
+
+      <p>See <a href="collection-mappings.html">Collection Mappings</a> for full details on operations, field source types, and the <code>_status</code> field.</p>
+    </div>
+
+    <!-- Validation Rules UI -->
+    <div class="section" id="validation-rules-ui">
+      <h2>Validation Rules</h2>
+      <p>Validation Rules evaluate flexible condition trees against incoming requests and attach named properties to the pass or fail outcome. They appear on the Spec Detail and Operation Detail pages.</p>
+
+      <h3>Where to find them</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Location</th><th>Scope</th><th>When they run</th></tr></thead>
+          <tbody>
+            <tr><td>Spec Detail page</td><td>Spec-level</td><td>Every request to any operation in the spec</td></tr>
+            <tr><td>Operation Detail page</td><td>Operation-level</td><td>Every request to that specific operation</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Validation Rules panel</h3>
+      <p>Each panel shows rules in execution order. Each row displays the name, a preview of the pass properties, and a preview of the fail properties. You can toggle, reorder, edit, and delete rules.</p>
+
+      <div class="script-binding">
+        <div style="color:#7d8ea8;font-size:14px;">⇅</div>
+        <div class="binding-num">1</div>
+        <div class="binding-name">isAdmin</div>
+        <span style="background:#0d2e20;color:#34d399;font-size:11px;padding:2px 6px;border-radius:4px;font-family:monospace;">pass → userRole=admin</span>
+        <span style="background:#2d1212;color:#f87171;font-size:11px;padding:2px 6px;border-radius:4px;font-family:monospace;">fail → userRole=guest</span>
+        <div style="display:flex;gap:6px;">
+          <span class="pill green" style="cursor:pointer;">● on</span>
+          <span class="pill" style="cursor:pointer;">✏</span>
+          <span class="pill red" style="cursor:pointer;">🗑</span>
+        </div>
+      </div>
+
+      <h3>Add/Edit Rule form</h3>
+      <p>Click <strong>+ Add Rule</strong> to open the rule editor. Fill in:</p>
+      <ul>
+        <li><strong>Name</strong> — used as the key in templates (<code>{{.Validation.&lt;name&gt;._status}}</code>) and conditions (<code>source=validation, key=&lt;name&gt;.field</code>)</li>
+        <li><strong>Condition Tree</strong> — build a nested AND/OR/NOT tree of request conditions using the visual editor</li>
+        <li><strong>On Pass Properties</strong> — key-value pairs attached to the result when the tree evaluates to <code>true</code></li>
+        <li><strong>On Fail Properties</strong> — key-value pairs attached to the result when the tree evaluates to <code>false</code></li>
+        <li><strong>Execution Order</strong> — lower numbers run first (spec-level rules run before operation-level)</li>
+      </ul>
+
+      <p>See <a href="validation-rules.html">Validation Rules</a> for full details on condition trees, pass/fail properties, and example patterns.</p>
+    </div>
+
     <!-- Traces UI -->
     <div class="section" id="traces-ui">
       <h2>Trace Viewer</h2>
@@ -765,6 +862,8 @@
             <tr><td><strong>Response</strong></td><td>Status code (color-coded), response headers, body (pretty-printed JSON)</td></tr>
             <tr><td><strong>Metadata</strong></td><td>Total latency, timestamp, which response config matched (name + ID), "Recorded" badge if captured via proxy</td></tr>
             <tr><td><strong>Script Execution</strong></td><td>For each bound script: script name, output key, execution time (ms), output dict, error (if any), expandable log lines from <code>log()</code></td></tr>
+            <tr><td><strong>Validation Rules</strong></td><td>For each rule that ran: rule name, scope (spec/operation), pass/fail status, attached properties, and execution duration</td></tr>
+            <tr><td><strong>Collection Mappings</strong></td><td>For each mapping that ran: name, collection, operation, output key, record count, duration, and any error</td></tr>
             <tr><td><strong>Session</strong></td><td>Session ID, whether this was a new session, list of store operations (get/set/has/delete/keys) with keys and timestamps</td></tr>
           </tbody>
         </table>

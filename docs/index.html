@@ -42,6 +42,8 @@
       <a href="templating.html"><span class="nav-icon">✏️</span>Templating &amp; Conditions</a>
       <a href="scripting.html"><span class="nav-icon">⚡</span>Starlark Scripting</a>
       <a href="sessions-and-store.html"><span class="nav-icon">🗄️</span>Sessions &amp; Store</a>
+      <a href="collection-mappings.html"><span class="nav-icon">🗃️</span>Collection Mappings</a>
+      <a href="validation-rules.html"><span class="nav-icon">✅</span>Validation Rules</a>
       <a href="tracing-and-metrics.html"><span class="nav-icon">📡</span>Tracing &amp; Metrics</a>
       <a href="proxy-mode.html"><span class="nav-icon">🔀</span>Proxy Mode</a>
     </div>
@@ -86,6 +88,8 @@
         <span class="feature-pill"><span class="dot"></span>Request condition evaluation</span>
         <span class="feature-pill"><span class="dot"></span>Response templating</span>
         <span class="feature-pill"><span class="dot"></span>Starlark scripting engine</span>
+        <span class="feature-pill"><span class="dot"></span>Collection Mappings (stateful CRUD)</span>
+        <span class="feature-pill"><span class="dot"></span>Validation Rules with condition trees</span>
         <span class="feature-pill"><span class="dot"></span>Session &amp; global key-value store</span>
         <span class="feature-pill"><span class="dot"></span>WebSocket live tracing</span>
         <span class="feature-pill"><span class="dot"></span>Prometheus metrics</span>
@@ -115,7 +119,12 @@
         </li>
         <li>
           <div>
-            <p><strong>Condition Evaluation</strong> — Saved response configurations are evaluated in priority order. The first config whose conditions match is selected.</p>
+            <p><strong>Scripts, Validation &amp; Collections</strong> — Starlark scripts run first. Then validation rules evaluate their condition trees and attach named pass/fail properties. Spec/operation collection mappings run next, performing database-style CRUD against the session store. All results are available in conditions and templates.</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p><strong>Condition Evaluation</strong> — Saved response configurations are evaluated in priority order. Conditions can inspect request fields, script output, validation results, and collection output. The first matching config is selected.</p>
           </div>
         </li>
         <li>
@@ -168,6 +177,16 @@
           <div class="card-icon">🗄️</div>
           <div class="card-title">Sessions &amp; Store</div>
           <div class="card-desc">Maintain stateful per-client sessions and a global key-value store accessible from scripts.</div>
+        </a>
+        <a href="collection-mappings.html" class="card" style="border-color: #1e3d5e;">
+          <div class="card-icon">🗃️</div>
+          <div class="card-title">Collection Mappings</div>
+          <div class="card-desc">Read and write session-scoped document collections with insert, find, update, and delete operations — no scripting required.</div>
+        </a>
+        <a href="validation-rules.html" class="card" style="border-color: #3a3465;">
+          <div class="card-icon">✅</div>
+          <div class="card-title">Validation Rules</div>
+          <div class="card-desc">Define named condition trees that classify requests as pass or fail, then branch your responses and templates on the result.</div>
         </a>
         <a href="tracing-and-metrics.html" class="card">
           <div class="card-icon">📡</div>

@@ -8,6 +8,8 @@ go-virtual is an OpenAPI 3 API virtualisation server. It lets developers load Op
 - **Proxy mode** — forward to a real backend and optionally record responses
 - **AI mode** — generate responses on-the-fly via OpenAI, Claude, or Copilot
 - **Scripting** — Starlark scripts attached to specs, operations, or responses for dynamic logic
+- **Collection Mappings** — no-code CRUD (insert/find-one/find-many/update/upsert/delete) against session-backed document collections; available at spec, operation, or response scope
+- **Validation Rules** — named condition trees (AND/OR/NOT) that run before response matching; expose pass/fail + configurable properties to templates and conditions
 - **Sessions** — per-client session state via a header, backed by memory or Redis
 - **Global store** — shared key/value store accessible from scripts and templates
 - **Tracing** — full request/response capture, streamed live over WebSocket
@@ -23,11 +25,12 @@ internal/
   api/                — Admin REST API handlers + Gin router (all routes at /_api/*)
   archive/            — Snapshot export/import (backup/restore)
   ai/                 — AI provider abstraction (OpenAI, Claude, Copilot)
+  collection/         — Collection Mapping executor (RunForSpec, RunForOperation, Run, RunMappings)
   condition/          — Condition evaluator (eq, contains, regex, exists, gt, lt, AND/OR/NOT)
   config/             — Config struct + loader (YAML + env vars via Viper)
   logging/            — Structured logger setup (slog)
   metrics/            — Prometheus metrics
-  models/             — All data models (Spec, Operation, ResponseConfig, Script, …)
+  models/             — All data models (Spec, Operation, ResponseConfig, Script, CollectionMapping, ValidationRule, …)
   parser/             — OpenAPI 3 parser (extracts operations, params, examples)
   proxy/              — Core proxy engine: request routing, response matching, recording
   scripting/          — Starlark script engine
@@ -53,6 +56,8 @@ ui/                   — React + Vite frontend (TypeScript, Tailwind, Zustand, 
 | `ResponseConfig` | `ID`, `OperationID`, `Priority`, `Conditions`, `StatusCode`, `Body`, `Headers` | Lower `Priority` = matched first. Body/headers are Go templates. |
 | `Script` | `ID`, `Name`, `Source`, `Enabled` | `Source` is excluded from JSON (`json:"-"`) — see storage note below. |
 | `ScriptBinding` | `ID`, `SpecID`/`OperationID`/`ResponseConfigID`, `ScriptID`, `OutputKey`, `Order` | Exactly one of the three target IDs is set. |
+| `CollectionMapping` | `ID`, `SpecID`/`OperationID`/`ResponseConfigID`, `CollectionName`, `Operation`, `FilterRules`, `DataRules`, `OutputKey`, `Order` | Exactly one scope ID is set. `Scope()` returns `"spec"/"operation"/"response"`. Result always has `_status`. |
+| `ValidationRule` | `ID`, `SpecID`/`OperationID`, `Name`, `ConditionTree`, `OnSuccess`, `OnFailure`, `Order` | Exactly one scope ID. `ConditionTree` is `ConditionNode` (AND/OR/NOT). Result always has `_status: "pass"/"fail"`. |
 | `AIScenario` | `ID`, `Name`, `Instructions`, `StatusCode`, `Enabled` | Global (not per-spec). Selected via `X-Virtual-AI-Scenario` request header. |
 | `Tag` | `Name` | Simple label applied to ResponseConfigs for filtering. |
 
@@ -87,10 +92,10 @@ Current promoted fields in `genericDoc`:
 
 | BSON field | Populated from | Used by |
 |---|---|---|
-| `spec_id` | `op.SpecID` / `binding.SpecID` | operations, bindings |
-| `operation_id` | `cfg.OperationID` / `binding.OperationID` | responses, bindings |
+| `spec_id` | `op.SpecID` / `binding.SpecID` / `cm.SpecID` / `vr.SpecID` | operations, bindings, collection mappings, validation rules |
+| `operation_id` | `cfg.OperationID` / `binding.OperationID` / `cm.OperationID` / `vr.OperationID` | responses, bindings, collection mappings, validation rules |
 | `script_id` | `binding.ScriptID` | bindings |
-| `response_config_id` | `binding.ResponseConfigID` | bindings |
+| `response_config_id` | `binding.ResponseConfigID` / `cm.ResponseConfigID` | bindings, collection mappings |
 | `source` | `script.Source` | scripts (`json:"-"` excludes it from the data blob) |
 
 ### Index management
@@ -158,6 +163,13 @@ Session stores: `memory` (default), `redis`.
 | GET/POST | `/specs/:id/scripts` | list / create spec-level script bindings |
 | GET/POST | `/operations/:id/scripts` | list / create operation-level script bindings |
 | GET/POST | `/operations/:id/responses/:respId/scripts` | response-level script bindings |
+| GET/POST | `/specs/:id/mappings` | list / create spec-level collection mappings |
+| GET/POST | `/operations/:id/mappings` | list / create operation-level collection mappings |
+| GET/POST | `/operations/:id/responses/:respId/mappings` | response-level collection mappings |
+| GET/PUT/DELETE | `/mappings/:id` | get / update / delete collection mapping |
+| GET/POST | `/specs/:id/validations` | list / create spec-level validation rules |
+| GET/POST | `/operations/:id/validations` | list / create operation-level validation rules |
+| GET/PUT/DELETE | `/validations/:id` | get / update / delete validation rule |
 | GET/POST | `/scripts` | list / create scripts |
 | GET/PUT/DELETE | `/scripts/:id` | get / update / delete script |
 | GET/POST | `/ai-scenarios` | list / create AI scenarios |
@@ -173,9 +185,19 @@ Proxy/mock traffic is served on all other paths (non-`/_api/`, non-`/_ui/`).
 
 ---
 
+## Request pipeline (ServeHTTP)
+
+① Route match → ② Session resolve → ③ Recorded-response check → ④ Scripts (spec/op/response) → ⑤ Proxy mode check → ⑥ Validation rules (spec then op) → ⑥.5 Collection mappings (spec then op) → ⑦ Response config matching (conditions can use script/validation/collection output) → ⑦.5 Response-level collection mappings → ⑧ Template render.
+
+Condition sources available at step ⑦: `path`, `query`, `header`, `body`, `signature`, `script` (outputKey.field), `collection` (outputKey.field), `validation` (ruleName.field or ruleName._status).
+
+Template variables: `.Script.<outputKey>.*`, `.Collection.<outputKey>.*` (always has `_status`), `.Validation.<ruleName>.*` (always has `_status`).
+
+---
+
 ## Scripting
 
-Scripts are written in Starlark (a deterministic Python subset). A `ScriptBinding` attaches a script to a spec, operation, or response config with an `outputKey`. The script result is available in templates as `{{.script.<outputKey>.*}}`.
+Scripts are written in Starlark (a deterministic Python subset). A `ScriptBinding` attaches a script to a spec, operation, or response config with an `outputKey`. The script result is available in templates as `{{.Script.<outputKey>.*}}`.
 
 `Script.Source` has `json:"-"` — intentional for the file backend which stores source in a companion `.star` file. The MongoDB backend stores it in a top-level `source` BSON field instead.
 
@@ -197,3 +219,6 @@ React SPA (TypeScript, Vite, Tailwind CSS, Zustand for state, React Query for se
 Source in `ui/src/`. Built output embedded in the binary via `go:embed`. In `--dev` mode the binary serves from `ui/dist` on disk (no rebuild needed for UI changes during Go development).
 
 Main UI sections: Specs, Operations, Responses, Scripts, AI Scenarios, Store, Sessions, Archives, Traces.
+
+Collection Mappings panels appear on Spec Detail, Operation Detail, and inside the Response Config editor.
+Validation Rules panels appear on Spec Detail and Operation Detail pages.
