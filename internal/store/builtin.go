@@ -17,15 +17,18 @@ import (
 //	store.has("key")           → bool
 //	store.delete("key")        → None
 //	store.keys()               → list of strings
+//	store.collection("name")   → CollectionBuiltin
 type StoreBuiltin struct {
-	session   SessionState
-	accessLog *[]models.StoreAccessEvent
+	session         SessionState
+	collectionStore CollectionBackend
+	accessLog       *[]models.StoreAccessEvent
 }
 
 // NewStoreBuiltin wraps a session for Starlark access.
+// collectionStore backs store.collection("name") calls.
 // accessLog is appended to for each operation (used for trace recording).
-func NewStoreBuiltin(sess SessionState, accessLog *[]models.StoreAccessEvent) *StoreBuiltin {
-	return &StoreBuiltin{session: sess, accessLog: accessLog}
+func NewStoreBuiltin(sess SessionState, collectionStore CollectionBackend, accessLog *[]models.StoreAccessEvent) *StoreBuiltin {
+	return &StoreBuiltin{session: sess, collectionStore: collectionStore, accessLog: accessLog}
 }
 
 // Starlark interface implementation ─────────────────────────────────────────
@@ -170,7 +173,7 @@ func (sb *StoreBuiltin) builtinCollection(_ *starlark.Thread, _ *starlark.Builti
 	if name == "" {
 		return nil, fmt.Errorf("store.collection: name must not be empty")
 	}
-	return newCollectionBuiltin(name, sb.session, sb.accessLog), nil
+	return newCollectionBuiltin(name, sb.collectionStore, sb.session, sb.accessLog), nil
 }
 
 func goToStar(v any) starlark.Value {

@@ -11,7 +11,7 @@ import (
 
 func TestExecutorInsertAndFind(t *testing.T) {
 	st := storage.NewMemoryStorage()
-	exec := NewExecutor(st)
+	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
 
 	// Create a response config and mapping
 	resp := &models.ResponseConfig{ID: "r1", OperationID: "op1", Enabled: true}
@@ -93,7 +93,7 @@ func TestExecutorInsertAndFind(t *testing.T) {
 
 func TestExecutorSkipsDisabledMappings(t *testing.T) {
 	st := storage.NewMemoryStorage()
-	exec := NewExecutor(st)
+	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
 
 	resp := &models.ResponseConfig{ID: "r1", OperationID: "op1"}
 	st.CreateResponseConfig(resp)

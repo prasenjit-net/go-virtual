@@ -12,7 +12,7 @@ func makeCollection(t *testing.T, name string) (starlark.Value, starlark.HasAttr
 	t.Helper()
 	sess := store.NewEphemeralSession(nil)
 	var accessLog []models.StoreAccessEvent
-	sb := store.NewStoreBuiltin(sess, &accessLog)
+	sb := store.NewStoreBuiltin(sess, store.NewMemoryCollectionBackend(), &accessLog)
 	attr, err := sb.Attr("collection")
 	if err != nil || attr == nil {
 		t.Fatalf("Attr(collection): %v / %v", attr, err)
@@ -142,13 +142,20 @@ func TestCollectionBuiltin_CRUDAndFilters(t *testing.T) {
 		t.Fatalf("expected empty collection after clear, got %d", got)
 	}
 
-	raw, ok := sess.Get(models.CollectionKeyPrefix + "users")
+	// After clear, session must have at least one event under __cevt__users
+	raw, ok := sess.Get(store.CollectionEventKeyPrefix + "users")
 	if !ok {
-		t.Fatal("expected persisted collection key")
+		t.Fatal("expected event log key in session after mutations")
 	}
-	docs, ok := raw.([]any)
-	if !ok || len(docs) != 0 {
-		t.Fatalf("expected empty []any after clear, got %#v", raw)
+	events := store.LoadEvents(sess, "users")
+	hasClear := false
+	for _, ev := range events {
+		if ev.Op == "clear" {
+			hasClear = true
+		}
+	}
+	if !hasClear {
+		t.Fatalf("expected a clear event in session log, got %#v", raw)
 	}
 
 	seenOps := map[string]bool{}
@@ -184,7 +191,7 @@ func TestCollectionBuiltin_ErrorPaths(t *testing.T) {
 		t.Fatal("expected count to reject non-dict filter")
 	}
 
-	sb := store.NewStoreBuiltin(store.NewEphemeralSession(nil), nil)
+	sb := store.NewStoreBuiltin(store.NewEphemeralSession(nil), nil, nil)
 	attr, err := sb.Attr("collection")
 	if err != nil || attr == nil {
 		t.Fatalf("Attr(collection): %v / %v", attr, err)

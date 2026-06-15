@@ -20,6 +20,10 @@ func newMongoGlobalStoreBackend(cfg config.MongoConfig) (gvstore.GlobalStoreBack
 	return gvstore.NewMongoGlobalStoreFromConfig(cfg)
 }
 
+func newMongoCollectionBackend(cfg config.MongoConfig) (gvstore.CollectionBackend, error) {
+	return gvstore.NewMongoCollectionBackendFromConfig(cfg)
+}
+
 func runMongoSetup(store storage.Storage, log *slog.Logger) {
 	ms, ok := store.(*storage.MongoStorage)
 	if !ok {

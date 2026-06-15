@@ -14,7 +14,8 @@ const defaultTimeoutMs = 100
 // ScriptEngine manages script compilation, caching, and execution for the proxy pipeline.
 type ScriptEngine struct {
 	store            storage.Storage
-	globalStore      store.GlobalStoreBackend // optional; seeded into ephemeral sessions for test execution
+	globalStore      store.GlobalStoreBackend    // optional; seeded into ephemeral sessions for test execution
+	collBackend      store.CollectionBackend     // optional; wired to store.collection() in scripts
 	runner           *StarlarkRunner
 	cache            *compiledCache
 	defaultTimeoutMs int
@@ -39,6 +40,12 @@ func NewScriptEngine(store storage.Storage, defaultTimeout int) *ScriptEngine {
 // seed its ephemeral session with the current store snapshot.
 func (e *ScriptEngine) SetGlobalStore(gs store.GlobalStoreBackend) {
 	e.globalStore = gs
+}
+
+// SetCollectionBackend wires the CollectionBackend into the engine so that
+// store.collection("name") works inside scripts.
+func (e *ScriptEngine) SetCollectionBackend(cb store.CollectionBackend) {
+	e.collBackend = cb
 }
 
 // RunBindings executes all enabled script bindings for an operation in Order sequence.
@@ -103,7 +110,7 @@ func (e *ScriptEngine) RunBindings(
 		var logBuf []string
 
 		start := time.Now()
-		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf)
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf, e.collBackend)
 		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
 
 		if execErr != nil {
@@ -178,7 +185,7 @@ func (e *ScriptEngine) RunSpecBindings(
 		var logBuf []string
 
 		start := time.Now()
-		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf)
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf, e.collBackend)
 		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
 
 		if execErr != nil {
@@ -253,7 +260,7 @@ func (e *ScriptEngine) RunResponseBindings(
 		var logBuf []string
 
 		start := time.Now()
-		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf)
+		result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf, e.collBackend)
 		st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
 
 		if execErr != nil {
@@ -304,7 +311,7 @@ func (e *ScriptEngine) RunSource(
 	var accessLog []models.StoreAccessEvent
 	var logBuf []string
 	start := time.Now()
-	result, execErr := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf)
+	result, execErr := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf, e.collBackend)
 	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 
 	return result, logBuf, durationMs, execErr
@@ -345,7 +352,7 @@ func (e *ScriptEngine) TestScript(
 	var accessLog []models.StoreAccessEvent
 	var logBuf []string
 	start := time.Now()
-	result, err := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf)
+	result, err := compiled.Execute(ctx, input, timeoutMs, ephemeral, &accessLog, &logBuf, e.collBackend)
 	durationMs := float64(time.Since(start).Microseconds()) / 1000.0
 
 	return result, logBuf, durationMs, err

@@ -9,10 +9,8 @@ import (
 )
 
 // CollectionBuiltin is the Starlark object returned by store.collection("name").
-// Documents are stored as a JSON array under the key "__col__<name>" in the
-// underlying SessionState, so session-creation rules remain unchanged.
-//
-// Available methods:
+// Reads merge the global CollectionBackend base with the session's event log.
+// Writes append events to the session log without touching the global base.
 //
 //	col.insert(doc)                → None
 //	col.findAll()                  → list
@@ -25,18 +23,13 @@ import (
 //	col.clear()                    → None
 type CollectionBuiltin struct {
 	name      string
-	key       string // models.CollectionKeyPrefix + name
+	backend   CollectionBackend
 	session   SessionState
 	accessLog *[]models.StoreAccessEvent
 }
 
-func newCollectionBuiltin(name string, sess SessionState, log *[]models.StoreAccessEvent) *CollectionBuiltin {
-	return &CollectionBuiltin{
-		name:      name,
-		key:       models.CollectionKeyPrefix + name,
-		session:   sess,
-		accessLog: log,
-	}
+func newCollectionBuiltin(name string, backend CollectionBackend, sess SessionState, log *[]models.StoreAccessEvent) *CollectionBuiltin {
+	return &CollectionBuiltin{name: name, backend: backend, session: sess, accessLog: log}
 }
 
 // ── Starlark value interface ─────────────────────────────────────────────────
@@ -73,29 +66,16 @@ func (cb *CollectionBuiltin) AttrNames() []string {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func (cb *CollectionBuiltin) load() []map[string]any {
-	raw, ok := cb.session.Get(cb.key)
-	if !ok || raw == nil {
-		return nil
+func (cb *CollectionBuiltin) load() ([]map[string]any, error) {
+	base, err := cb.backend.GetAll(cb.name)
+	if err != nil {
+		return nil, err
 	}
-	if docs, ok := raw.([]any); ok {
-		result := make([]map[string]any, 0, len(docs))
-		for _, d := range docs {
-			if m, ok := d.(map[string]any); ok {
-				result = append(result, m)
-			}
-		}
-		return result
-	}
-	return nil
+	return ReplayEvents(base, LoadEvents(cb.session, cb.name)), nil
 }
 
-func (cb *CollectionBuiltin) save(docs []map[string]any) error {
-	raw := make([]any, len(docs))
-	for i, d := range docs {
-		raw[i] = d
-	}
-	return cb.session.Set(cb.key, raw)
+func (cb *CollectionBuiltin) appendEvent(evt CollectionEvent) error {
+	return AppendEvent(cb.session, cb.name, evt)
 }
 
 func (cb *CollectionBuiltin) logOp(op string) {
@@ -104,9 +84,185 @@ func (cb *CollectionBuiltin) logOp(op string) {
 	}
 }
 
-// matchesFilter reports whether doc satisfies all fields in filter (equality).
-// A nil or empty filter matches everything.
-func matchesFilter(doc, filter map[string]any) bool {
+// ── method implementations ───────────────────────────────────────────────────
+
+// col.insert(doc) → None
+func (cb *CollectionBuiltin) builtinInsert(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var docVal starlark.Value
+	if err := starlark.UnpackPositionalArgs("collection.insert", args, kwargs, 1, &docVal); err != nil {
+		return nil, err
+	}
+	doc, err := starToDoc(docVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.insert: %w", err)
+	}
+	if err := cb.appendEvent(CollectionEvent{Op: "insert", Data: doc}); err != nil {
+		return nil, err
+	}
+	cb.logOp("insert")
+	return starlark.None, nil
+}
+
+// col.findAll() or col.findAll(filter) → list
+func (cb *CollectionBuiltin) builtinFindAll(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var filterVal starlark.Value = starlark.None
+	if err := starlark.UnpackPositionalArgs("collection.findAll", args, kwargs, 0, &filterVal); err != nil {
+		return nil, err
+	}
+	cb.logOp("findAll")
+
+	docs, err := cb.load()
+	if err != nil {
+		return nil, err
+	}
+	if filterVal == starlark.None || filterVal == nil {
+		return docsToStar(docs), nil
+	}
+	filter, err := starToDoc(filterVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.findAll filter: %w", err)
+	}
+	var out []map[string]any
+	for _, doc := range docs {
+		if matchesBuiltinFilter(doc, filter) {
+			out = append(out, doc)
+		}
+	}
+	return docsToStar(out), nil
+}
+
+// col.findOne(filter) → dict or None
+func (cb *CollectionBuiltin) builtinFindOne(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var filterVal starlark.Value
+	if err := starlark.UnpackPositionalArgs("collection.findOne", args, kwargs, 1, &filterVal); err != nil {
+		return nil, err
+	}
+	filter, err := starToDoc(filterVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.findOne filter: %w", err)
+	}
+	cb.logOp("findOne")
+
+	docs, err := cb.load()
+	if err != nil {
+		return nil, err
+	}
+	for _, doc := range docs {
+		if matchesBuiltinFilter(doc, filter) {
+			d := new(starlark.Dict)
+			for k, v := range doc {
+				_ = d.SetKey(starlark.String(k), goToStar(v))
+			}
+			return d, nil
+		}
+	}
+	return starlark.None, nil
+}
+
+// col.update(filter, changes) → int (number of docs updated)
+func (cb *CollectionBuiltin) builtinUpdate(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var filterVal, changesVal starlark.Value
+	if err := starlark.UnpackPositionalArgs("collection.update", args, kwargs, 2, &filterVal, &changesVal); err != nil {
+		return nil, err
+	}
+	filter, err := starToDoc(filterVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.update filter: %w", err)
+	}
+	changes, err := starToDoc(changesVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.update changes: %w", err)
+	}
+	cb.logOp("update")
+
+	docs, err := cb.load()
+	if err != nil {
+		return nil, err
+	}
+	count := 0
+	for _, doc := range docs {
+		if matchesBuiltinFilter(doc, filter) {
+			count++
+		}
+	}
+	if count > 0 {
+		if err := cb.appendEvent(CollectionEvent{Op: "update", Filter: filter, Data: changes}); err != nil {
+			return nil, err
+		}
+	}
+	return starlark.MakeInt(count), nil
+}
+
+// col.remove(filter) → int (number of docs removed)
+func (cb *CollectionBuiltin) builtinRemove(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var filterVal starlark.Value
+	if err := starlark.UnpackPositionalArgs("collection.remove", args, kwargs, 1, &filterVal); err != nil {
+		return nil, err
+	}
+	filter, err := starToDoc(filterVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.remove filter: %w", err)
+	}
+	cb.logOp("remove")
+
+	docs, err := cb.load()
+	if err != nil {
+		return nil, err
+	}
+	removed := 0
+	for _, doc := range docs {
+		if matchesBuiltinFilter(doc, filter) {
+			removed++
+		}
+	}
+	if removed > 0 {
+		if err := cb.appendEvent(CollectionEvent{Op: "delete", Filter: filter}); err != nil {
+			return nil, err
+		}
+	}
+	return starlark.MakeInt(removed), nil
+}
+
+// col.count() or col.count(filter) → int
+func (cb *CollectionBuiltin) builtinCount(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	var filterVal starlark.Value = starlark.None
+	if err := starlark.UnpackPositionalArgs("collection.count", args, kwargs, 0, &filterVal); err != nil {
+		return nil, err
+	}
+	cb.logOp("count")
+
+	docs, err := cb.load()
+	if err != nil {
+		return nil, err
+	}
+	if filterVal == starlark.None || filterVal == nil {
+		return starlark.MakeInt(len(docs)), nil
+	}
+	filter, err := starToDoc(filterVal)
+	if err != nil {
+		return nil, fmt.Errorf("collection.count filter: %w", err)
+	}
+	n := 0
+	for _, doc := range docs {
+		if matchesBuiltinFilter(doc, filter) {
+			n++
+		}
+	}
+	return starlark.MakeInt(n), nil
+}
+
+// col.clear() → None
+func (cb *CollectionBuiltin) builtinClear(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+	if err := starlark.UnpackPositionalArgs("collection.clear", args, kwargs, 0); err != nil {
+		return nil, err
+	}
+	cb.logOp("clear")
+	return starlark.None, cb.appendEvent(CollectionEvent{Op: "clear"})
+}
+
+// ── filter helper ─────────────────────────────────────────────────────────────
+
+func matchesBuiltinFilter(doc, filter map[string]any) bool {
 	for k, fv := range filter {
 		dv, ok := doc[k]
 		if !ok {
@@ -118,6 +274,8 @@ func matchesFilter(doc, filter map[string]any) bool {
 	}
 	return true
 }
+
+// ── Starlark ↔ Go conversion helpers ─────────────────────────────────────────
 
 // starToDoc converts a Starlark dict to a Go map.
 func starToDoc(v starlark.Value) (map[string]any, error) {
@@ -147,172 +305,4 @@ func docsToStar(docs []map[string]any) *starlark.List {
 		elems[i] = d
 	}
 	return starlark.NewList(elems)
-}
-
-// ── method implementations ───────────────────────────────────────────────────
-
-// col.insert(doc) → None
-func (cb *CollectionBuiltin) builtinInsert(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var docVal starlark.Value
-	if err := starlark.UnpackPositionalArgs("collection.insert", args, kwargs, 1, &docVal); err != nil {
-		return nil, err
-	}
-	doc, err := starToDoc(docVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.insert: %w", err)
-	}
-	docs := cb.load()
-	docs = append(docs, doc)
-	if err := cb.save(docs); err != nil {
-		return nil, err
-	}
-	cb.logOp("insert")
-	return starlark.None, nil
-}
-
-// col.findAll() or col.findAll(filter) → list
-func (cb *CollectionBuiltin) builtinFindAll(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var filterVal starlark.Value = starlark.None
-	if err := starlark.UnpackPositionalArgs("collection.findAll", args, kwargs, 0, &filterVal); err != nil {
-		return nil, err
-	}
-	cb.logOp("findAll")
-
-	docs := cb.load()
-	if filterVal == starlark.None || filterVal == nil {
-		return docsToStar(docs), nil
-	}
-	filter, err := starToDoc(filterVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.findAll filter: %w", err)
-	}
-	var out []map[string]any
-	for _, doc := range docs {
-		if matchesFilter(doc, filter) {
-			out = append(out, doc)
-		}
-	}
-	return docsToStar(out), nil
-}
-
-// col.findOne(filter) → dict or None
-func (cb *CollectionBuiltin) builtinFindOne(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var filterVal starlark.Value
-	if err := starlark.UnpackPositionalArgs("collection.findOne", args, kwargs, 1, &filterVal); err != nil {
-		return nil, err
-	}
-	filter, err := starToDoc(filterVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.findOne filter: %w", err)
-	}
-	cb.logOp("findOne")
-
-	for _, doc := range cb.load() {
-		if matchesFilter(doc, filter) {
-			d := new(starlark.Dict)
-			for k, v := range doc {
-				_ = d.SetKey(starlark.String(k), goToStar(v))
-			}
-			return d, nil
-		}
-	}
-	return starlark.None, nil
-}
-
-// col.update(filter, changes) → int (number of docs updated)
-func (cb *CollectionBuiltin) builtinUpdate(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var filterVal, changesVal starlark.Value
-	if err := starlark.UnpackPositionalArgs("collection.update", args, kwargs, 2, &filterVal, &changesVal); err != nil {
-		return nil, err
-	}
-	filter, err := starToDoc(filterVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.update filter: %w", err)
-	}
-	changes, err := starToDoc(changesVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.update changes: %w", err)
-	}
-	cb.logOp("update")
-
-	docs := cb.load()
-	count := 0
-	for i, doc := range docs {
-		if matchesFilter(doc, filter) {
-			for k, v := range changes {
-				docs[i][k] = v
-			}
-			count++
-		}
-	}
-	if count > 0 {
-		if err := cb.save(docs); err != nil {
-			return nil, err
-		}
-	}
-	return starlark.MakeInt(count), nil
-}
-
-// col.remove(filter) → int (number of docs removed)
-func (cb *CollectionBuiltin) builtinRemove(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var filterVal starlark.Value
-	if err := starlark.UnpackPositionalArgs("collection.remove", args, kwargs, 1, &filterVal); err != nil {
-		return nil, err
-	}
-	filter, err := starToDoc(filterVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.remove filter: %w", err)
-	}
-	cb.logOp("remove")
-
-	docs := cb.load()
-	remaining := docs[:0]
-	removed := 0
-	for _, doc := range docs {
-		if matchesFilter(doc, filter) {
-			removed++
-		} else {
-			remaining = append(remaining, doc)
-		}
-	}
-	if removed > 0 {
-		if err := cb.save(remaining); err != nil {
-			return nil, err
-		}
-	}
-	return starlark.MakeInt(removed), nil
-}
-
-// col.count() or col.count(filter) → int
-func (cb *CollectionBuiltin) builtinCount(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	var filterVal starlark.Value = starlark.None
-	if err := starlark.UnpackPositionalArgs("collection.count", args, kwargs, 0, &filterVal); err != nil {
-		return nil, err
-	}
-	cb.logOp("count")
-
-	docs := cb.load()
-	if filterVal == starlark.None || filterVal == nil {
-		return starlark.MakeInt(len(docs)), nil
-	}
-	filter, err := starToDoc(filterVal)
-	if err != nil {
-		return nil, fmt.Errorf("collection.count filter: %w", err)
-	}
-	n := 0
-	for _, doc := range docs {
-		if matchesFilter(doc, filter) {
-			n++
-		}
-	}
-	return starlark.MakeInt(n), nil
-}
-
-// col.clear() → None
-func (cb *CollectionBuiltin) builtinClear(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
-	if err := starlark.UnpackPositionalArgs("collection.clear", args, kwargs, 0); err != nil {
-		return nil, err
-	}
-	cb.logOp("clear")
-	return starlark.None, cb.save(nil)
 }

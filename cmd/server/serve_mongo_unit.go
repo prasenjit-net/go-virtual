@@ -19,4 +19,8 @@ func newMongoGlobalStoreBackend(_ config.MongoConfig) (gvstore.GlobalStoreBacken
 	return nil, errors.New("MongoDB global store not available in unit build")
 }
 
+func newMongoCollectionBackend(_ config.MongoConfig) (gvstore.CollectionBackend, error) {
+	return nil, errors.New("MongoDB collection backend not available in unit build")
+}
+
 func runMongoSetup(_ storage.Storage, _ *slog.Logger) {}

@@ -8,7 +8,8 @@ import (
 
 func newTestOps(name string) *Ops {
 	sess := store.NewEphemeralSession(nil)
-	return NewOps(name, sess)
+	backend := store.NewMemoryCollectionBackend()
+	return NewOps(name, backend, sess)
 }
 
 func TestInsertAssignsID(t *testing.T) {
@@ -175,27 +176,41 @@ func TestDeleteNoMatch(t *testing.T) {
 	}
 }
 
-func TestSharedSessionWithStarlarkFormat(t *testing.T) {
-	// Verify that Ops reads the same format that store.CollectionBuiltin writes.
-	// CollectionBuiltin stores as []any, Ops.load() must handle that.
-	sess := store.NewEphemeralSession(nil)
-	key := "__col__shared"
-
-	// Simulate what CollectionBuiltin.save does
-	rawDocs := []any{
-		map[string]any{"_id": "x1", "val": "hello"},
+func TestSessionEventsIsolation(t *testing.T) {
+	// Each session gets its own event log on top of the shared global base.
+	backend := store.NewMemoryCollectionBackend()
+	if _, err := backend.SeedInsert("shared", map[string]any{"_id": "base1", "val": "base"}); err != nil {
+		t.Fatal(err)
 	}
-	_ = sess.Set(key, rawDocs)
 
-	ops := NewOps("shared", sess)
-	found, err := ops.FindOne(map[string]any{"_id": "x1"})
+	sess1 := store.NewEphemeralSession(nil)
+	sess2 := store.NewEphemeralSession(nil)
+
+	ops1 := NewOps("shared", backend, sess1)
+	ops2 := NewOps("shared", backend, sess2)
+
+	// sess1 inserts a doc
+	if _, err := ops1.Insert(map[string]any{"val": "session1-only"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// sess2 should NOT see sess1's insert
+	docs2, err := ops2.FindMany(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found == nil {
-		t.Fatal("expected to find document written by CollectionBuiltin-style save")
+	for _, d := range docs2 {
+		if d["val"] == "session1-only" {
+			t.Error("sess2 should not see sess1's insert")
+		}
 	}
-	if found["val"] != "hello" {
-		t.Errorf("expected val=hello, got %v", found["val"])
+
+	// sess1 should see its own insert plus the base doc
+	docs1, err := ops1.FindMany(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs1) != 2 {
+		t.Errorf("sess1 expected 2 docs (base + insert), got %d", len(docs1))
 	}
 }

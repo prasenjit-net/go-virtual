@@ -448,7 +448,7 @@ func makeBuiltin(t *testing.T) (*store.StoreBuiltin, store.SessionState) {
 
 	var log []interface{}
 	_ = log
-	return store.NewStoreBuiltin(sess, nil), sess
+	return store.NewStoreBuiltin(sess, nil, nil), sess
 }
 
 func callMethod(t *testing.T, sb *store.StoreBuiltin, name string, args ...starlark.Value) starlark.Value {
@@ -549,7 +549,7 @@ func TestStoreBuiltin_AccessLog(t *testing.T) {
 	sess, _ := mustGetOrCreate(t, sm, "")
 
 	// NewStoreBuiltin with nil accessLog must not panic on any operation
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 	callMethod(t, sb, "get", starlark.String("x"))
 	callMethod(t, sb, "set", starlark.String("y"), starlark.MakeInt(1))
 	callMethod(t, sb, "has", starlark.String("x"))
@@ -649,7 +649,7 @@ func TestStoreBuiltin_TypeConversions(t *testing.T) {
 		"list": []any{"a", "b"},
 		"dict": map[string]any{"x": 1.0},
 	})
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 
 	// Execute Starlark that reads complex types (goToStar) and writes them back (starToGo).
 	src := `
@@ -760,7 +760,7 @@ func TestSessionManager_NilGlobalStore(t *testing.T) {
 func TestStoreBuiltin_AccessLog_NonNil(t *testing.T) {
 	sess := store.NewEphemeralSession(map[string]any{"k": "v"})
 	var log []models.StoreAccessEvent
-	sb := store.NewStoreBuiltin(sess, &log)
+	sb := store.NewStoreBuiltin(sess, nil, &log)
 
 	callMethod(t, sb, "get", starlark.String("k"))
 	callMethod(t, sb, "set", starlark.String("k2"), starlark.String("v2"))
@@ -786,7 +786,7 @@ func TestStoreBuiltin_AccessLog_NonNil(t *testing.T) {
 
 func TestStoreBuiltin_UnpackErrors(t *testing.T) {
 	sess := store.NewEphemeralSession(nil)
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 
 	if err := callMethodErr(t, sb, "get"); err == nil {
 		t.Error("get() with no args: expected unpack error")
@@ -808,14 +808,14 @@ func TestStoreBuiltin_UnpackErrors(t *testing.T) {
 // ── session.Set / session.Delete error propagation ───────────────────────────
 
 func TestStoreBuiltin_SessionError_Set(t *testing.T) {
-	sb := store.NewStoreBuiltin(&errSessionState{}, nil)
+	sb := store.NewStoreBuiltin(&errSessionState{}, nil, nil)
 	if err := callMethodErr(t, sb, "set", starlark.String("k"), starlark.String("v")); err == nil {
 		t.Error("expected error from set when session.Set returns error")
 	}
 }
 
 func TestStoreBuiltin_SessionError_Delete(t *testing.T) {
-	sb := store.NewStoreBuiltin(&errSessionState{}, nil)
+	sb := store.NewStoreBuiltin(&errSessionState{}, nil, nil)
 	if err := callMethodErr(t, sb, "delete", starlark.String("k")); err == nil {
 		t.Error("expected error from delete when session.Delete returns error")
 	}
@@ -828,7 +828,7 @@ func TestStoreBuiltin_GoToStar_IntTypes(t *testing.T) {
 	_ = sess.Set("nil_val", nil)
 	_ = sess.Set("int_val", int(5))
 	_ = sess.Set("int64_val", int64(10))
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 
 	if v := callMethod(t, sb, "get", starlark.String("nil_val")); v != starlark.None {
 		t.Errorf("nil → expected None, got %v", v)
@@ -845,7 +845,7 @@ func TestStoreBuiltin_GoToStar_Default(t *testing.T) {
 	type customType struct{ X int }
 	sess := store.NewEphemeralSession(nil)
 	_ = sess.Set("custom", customType{X: 1})
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 
 	if v := callMethod(t, sb, "get", starlark.String("custom")); v != starlark.None {
 		t.Errorf("unknown type → expected None, got %v", v)
@@ -856,7 +856,7 @@ func TestStoreBuiltin_GoToStar_Default(t *testing.T) {
 
 func TestStoreBuiltin_StarToGo_FloatAndDefault(t *testing.T) {
 	sess := store.NewEphemeralSession(nil)
-	sb := store.NewStoreBuiltin(sess, nil)
+	sb := store.NewStoreBuiltin(sess, nil, nil)
 
 	src := `store.set("float_val", 1.5)
 store.set("set_val", set([1, 2]))`
@@ -1271,7 +1271,7 @@ func TestRedisSessionManager_InvalidateAll(t *testing.T) {
 }
 
 func TestStoreBuiltin_Freeze(t *testing.T) {
-	sb := store.NewStoreBuiltin(store.NewEphemeralSession(nil), nil)
+	sb := store.NewStoreBuiltin(store.NewEphemeralSession(nil), nil, nil)
 	sb.Freeze()
 }
 

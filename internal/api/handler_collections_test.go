@@ -30,7 +30,8 @@ func TestCollectionGuard_NoStore(t *testing.T) {
 }
 
 func TestCollectionGuard_EmptyName(t *testing.T) {
-	handler, _, _, _ := setupTestHandlerWithStore(t)
+	handler, _, _, _, r := setupTestHandlerWithCollections(t)
+	_ = r
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = gin.Params{{Key: "name", Value: "   "}}
@@ -91,23 +92,17 @@ func TestListCollections_NoStore(t *testing.T) {
 }
 
 func TestListCollections_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.GET("/store/collections", handler.ListCollections)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{
-		map[string]any{"name": "alice"},
-		map[string]any{"name": "bob"},
-	}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert users/alice: %v", err)
 	}
-	if err := gs.Set(models.CollectionKeyPrefix+"logs", []any{map[string]any{"id": 1}}); err != nil {
-		t.Fatalf("Set logs: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "bob"}); err != nil {
+		t.Fatalf("SeedInsert users/bob: %v", err)
 	}
-	if err := gs.Set(models.CollectionKeyPrefix+"weird", "not-an-array"); err != nil {
-		t.Fatalf("Set weird: %v", err)
-	}
-	if err := gs.Set("plain-key", "value"); err != nil {
-		t.Fatalf("Set plain-key: %v", err)
+	if _, err := cb.SeedInsert("logs", map[string]any{"id": 1}); err != nil {
+		t.Fatalf("SeedInsert logs: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/store/collections", nil)
@@ -122,25 +117,25 @@ func TestListCollections_Success(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &infos); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	if len(infos) != 3 {
-		t.Fatalf("expected 3 collections, got %d", len(infos))
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 collections, got %d", len(infos))
 	}
 
 	counts := map[string]int{}
 	for _, info := range infos {
 		counts[info.Name] = info.Count
 	}
-	if counts["users"] != 2 || counts["logs"] != 1 || counts["weird"] != 0 {
+	if counts["users"] != 2 || counts["logs"] != 1 {
 		t.Fatalf("unexpected counts: %#v", counts)
 	}
 }
 
 func TestGetCollection_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.GET("/store/collections/:name", handler.GetCollection)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{map[string]any{"name": "alice"}}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/store/collections/users", nil)
@@ -161,7 +156,7 @@ func TestGetCollection_Success(t *testing.T) {
 }
 
 func TestInsertCollectionDoc_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.POST("/store/collections/:name", handler.InsertCollectionDoc)
 
 	req := httptest.NewRequest(http.MethodPost, "/store/collections/users", bytes.NewBufferString(`{"name":"alice","age":30}`))
@@ -173,18 +168,14 @@ func TestInsertCollectionDoc_Success(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	raw, ok := gs.Get(models.CollectionKeyPrefix + "users")
-	if !ok {
-		t.Fatal("expected users collection to be stored")
-	}
-	docs, ok := raw.([]any)
-	if !ok || len(docs) != 1 {
-		t.Fatalf("unexpected stored docs: %#v", raw)
+	docs, err := cb.GetAll("users")
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("expected 1 doc stored, got %v / %v", len(docs), err)
 	}
 }
 
 func TestInsertCollectionDoc_InvalidBody(t *testing.T) {
-	handler, _, _, r := setupTestHandlerWithStore(t)
+	handler, _, _, _, r := setupTestHandlerWithCollections(t)
 	r.POST("/store/collections/:name", handler.InsertCollectionDoc)
 
 	t.Run("invalid-json", func(t *testing.T) {
@@ -211,11 +202,11 @@ func TestInsertCollectionDoc_InvalidBody(t *testing.T) {
 }
 
 func TestUpdateCollectionDoc_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.PUT("/store/collections/:name/:index", handler.UpdateCollectionDoc)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{map[string]any{"name": "alice", "age": 30.0}}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice", "age": 30.0}); err != nil {
+		t.Fatalf("SeedInsert: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodPut, "/store/collections/users/0", bytes.NewBufferString(`{"age":31,"city":"Paris"}`))
@@ -237,11 +228,11 @@ func TestUpdateCollectionDoc_Success(t *testing.T) {
 }
 
 func TestUpdateCollectionDoc_BadIndex(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.PUT("/store/collections/:name/:index", handler.UpdateCollectionDoc)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{map[string]any{"name": "alice"}}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert: %v", err)
 	}
 
 	t.Run("not-integer", func(t *testing.T) {
@@ -266,14 +257,14 @@ func TestUpdateCollectionDoc_BadIndex(t *testing.T) {
 }
 
 func TestDeleteCollectionDoc_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.DELETE("/store/collections/:name/:index", handler.DeleteCollectionDoc)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{
-		map[string]any{"name": "alice"},
-		map[string]any{"name": "bob"},
-	}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert alice: %v", err)
+	}
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "bob"}); err != nil {
+		t.Fatalf("SeedInsert bob: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/store/collections/users/0", nil)
@@ -284,22 +275,21 @@ func TestDeleteCollectionDoc_Success(t *testing.T) {
 		t.Fatalf("expected 204, got %d", w.Code)
 	}
 
-	raw, _ := gs.Get(models.CollectionKeyPrefix + "users")
-	docs := raw.([]any)
-	if len(docs) != 1 {
-		t.Fatalf("expected 1 remaining doc, got %d", len(docs))
+	docs, err := cb.GetAll("users")
+	if err != nil || len(docs) != 1 {
+		t.Fatalf("expected 1 remaining doc, got %v / %v", len(docs), err)
 	}
-	if docs[0].(map[string]any)["name"] != "bob" {
+	if docs[0]["name"] != "bob" {
 		t.Fatalf("unexpected remaining doc: %#v", docs[0])
 	}
 }
 
 func TestDeleteCollectionDoc_OutOfRange(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.DELETE("/store/collections/:name/:index", handler.DeleteCollectionDoc)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{map[string]any{"name": "alice"}}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/store/collections/users/2", nil)
@@ -312,14 +302,14 @@ func TestDeleteCollectionDoc_OutOfRange(t *testing.T) {
 }
 
 func TestClearCollection_Success(t *testing.T) {
-	handler, gs, _, r := setupTestHandlerWithStore(t)
+	handler, _, cb, _, r := setupTestHandlerWithCollections(t)
 	r.DELETE("/store/collections/:name", handler.ClearCollection)
 
-	if err := gs.Set(models.CollectionKeyPrefix+"users", []any{
-		map[string]any{"name": "alice"},
-		map[string]any{"name": "bob"},
-	}); err != nil {
-		t.Fatalf("Set users: %v", err)
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "alice"}); err != nil {
+		t.Fatalf("SeedInsert alice: %v", err)
+	}
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "bob"}); err != nil {
+		t.Fatalf("SeedInsert bob: %v", err)
 	}
 
 	req := httptest.NewRequest(http.MethodDelete, "/store/collections/users", nil)
@@ -330,12 +320,11 @@ func TestClearCollection_Success(t *testing.T) {
 		t.Fatalf("expected 204, got %d", w.Code)
 	}
 
-	raw, ok := gs.Get(models.CollectionKeyPrefix + "users")
-	if !ok {
-		t.Fatal("expected cleared collection key to remain present")
+	docs, err := cb.GetAll("users")
+	if err != nil {
+		t.Fatalf("GetAll after clear: %v", err)
 	}
-	docs, ok := raw.([]any)
-	if !ok || len(docs) != 0 {
-		t.Fatalf("expected empty collection, got %#v", raw)
+	if len(docs) != 0 {
+		t.Fatalf("expected empty collection after clear, got %d docs", len(docs))
 	}
 }

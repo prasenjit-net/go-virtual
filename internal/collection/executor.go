@@ -13,12 +13,13 @@ import (
 // Executor runs CollectionMappings for a ResponseConfig against the active
 // session state and returns the output map and execution traces.
 type Executor struct {
-	store storage.Storage
+	store   storage.Storage
+	backend store.CollectionBackend
 }
 
-// NewExecutor creates an Executor backed by the given storage.
-func NewExecutor(s storage.Storage) *Executor {
-	return &Executor{store: s}
+// NewExecutor creates an Executor backed by the given storage and collection backend.
+func NewExecutor(s storage.Storage, backend store.CollectionBackend) *Executor {
+	return &Executor{store: s, backend: backend}
 }
 
 // RunMappings executes a pre-loaded slice of CollectionMappings in Order order.
@@ -118,7 +119,7 @@ func (e *Executor) execute(
 	req *RequestContext,
 	sess store.SessionState,
 ) (any, int, error) {
-	ops := NewOps(m.CollectionName, sess)
+	ops := NewOps(m.CollectionName, e.backend, sess)
 	filter := ResolveMap(m.FilterRules, req)
 	data := ResolveMap(m.DataRules, req)
 
