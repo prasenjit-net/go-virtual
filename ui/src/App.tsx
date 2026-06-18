@@ -13,7 +13,8 @@ import TagManager from './components/TagManager'
 import ScriptList from './components/ScriptManager/ScriptList'
 import ScriptEditor from './components/ScriptManager/ScriptEditor'
 import StoreManager from './components/StoreManager/StoreManager'
-import SessionManager from './components/SessionManager/SessionManager'
+import SessionList from './components/SessionManager/SessionList'
+import SessionDetail from './components/SessionManager/SessionDetail'
 import ArchiveManager from './components/ArchiveManager/ArchiveManager'
 
 function App() {
@@ -39,7 +40,8 @@ function App() {
                 <Route path="scripts/:scriptId" element={<Navigate to="edit" replace />} />
                 <Route path="scripts/:scriptId/edit" element={<ScriptEditor />} />
                 <Route path="store" element={<StoreManager />} />
-                <Route path="sessions" element={<SessionManager />} />
+                <Route path="sessions" element={<SessionList />} />
+                <Route path="sessions/:sessionId" element={<SessionDetail />} />
                 <Route path="archives" element={<ArchiveManager />} />
             </Route>
         </Routes>

@@ -447,6 +447,12 @@ export interface SessionInfo {
     storeSnapshot?: Record<string, unknown>;
 }
 
+export interface CollectionEvent {
+    op: 'insert' | 'update' | 'upsert' | 'delete' | 'clear';
+    filter?: Record<string, unknown>;
+    data?: Record<string, unknown>;
+}
+
 export interface SessionListResponse {
     sessions: SessionInfo[];
     count: number;
