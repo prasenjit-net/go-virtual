@@ -176,6 +176,73 @@ func TestDeleteNoMatch(t *testing.T) {
 	}
 }
 
+func TestUpsertFound(t *testing.T) {
+	backend := store.NewMemoryCollectionBackend()
+	backend.SeedInsert("products", map[string]any{"_id": "p1", "sku": "A1", "qty": 5})
+	sess := store.NewEphemeralSession(nil)
+	ops := NewOps("products", backend, sess)
+
+	doc, err := ops.Upsert(map[string]any{"sku": "A1"}, map[string]any{"qty": 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc == nil {
+		t.Fatal("expected upsert to return document")
+	}
+	if doc["qty"] != 10 {
+		t.Errorf("expected qty=10, got %v", doc["qty"])
+	}
+
+	all, _ := ops.FindMany(nil)
+	if len(all) != 1 {
+		t.Errorf("upsert on existing should not create new doc, got %d", len(all))
+	}
+}
+
+func TestUpsertNotFound(t *testing.T) {
+	backend := store.NewMemoryCollectionBackend()
+	sess := store.NewEphemeralSession(nil)
+	ops := NewOps("products", backend, sess)
+
+	doc, err := ops.Upsert(map[string]any{"sku": "NEW"}, map[string]any{"qty": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc == nil {
+		t.Fatal("expected upsert to return new document")
+	}
+	if doc["sku"] != "NEW" || doc["qty"] != 3 {
+		t.Errorf("unexpected upserted doc: %v", doc)
+	}
+	if doc["_id"] == nil || doc["_id"] == "" {
+		t.Error("upserted doc should have _id")
+	}
+}
+
+func TestFindOneNilFilter(t *testing.T) {
+	ops := newTestOps("users")
+	ops.Insert(map[string]any{"name": "alice"})
+	// nil filter matches first doc
+	found, err := ops.FindOne(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == nil {
+		t.Error("expected to find a doc with nil filter")
+	}
+}
+
+func TestFindManyEmptyCollection(t *testing.T) {
+	ops := newTestOps("empty")
+	docs, err := ops.FindMany(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 0 {
+		t.Errorf("expected 0 docs, got %d", len(docs))
+	}
+}
+
 func TestSessionEventsIsolation(t *testing.T) {
 	// Each session gets its own event log on top of the shared global base.
 	backend := store.NewMemoryCollectionBackend()

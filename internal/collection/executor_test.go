@@ -91,6 +91,77 @@ func TestExecutorInsertAndFind(t *testing.T) {
 	}
 }
 
+func TestExecutorRunForSpec(t *testing.T) {
+	st := storage.NewMemoryStorage()
+	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
+
+	mapping := &models.CollectionMapping{
+		ID:             "m1",
+		SpecID:         "spec1",
+		CollectionName: "items",
+		Name:           "Spec Insert",
+		Operation:      models.ColOpInsert,
+		DataRules:      []models.FieldMappingRule{{TargetField: "src", SourceType: "literal", SourceKey: "spec"}},
+		OutputKey:      "specItem",
+		Order:          1,
+		Enabled:        true,
+	}
+	st.CreateCollectionMapping(mapping)
+
+	sess := store.NewEphemeralSession(nil)
+	output, traces, err := exec.RunForSpec(context.Background(), "spec1", &RequestContext{}, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(traces) != 1 {
+		t.Fatalf("expected 1 trace, got %d", len(traces))
+	}
+	if traces[0].Error != "" {
+		t.Errorf("unexpected error: %s", traces[0].Error)
+	}
+	doc, ok := output["specItem"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected specItem map, got %T", output["specItem"])
+	}
+	if doc["src"] != "spec" {
+		t.Errorf("expected src=spec, got %v", doc["src"])
+	}
+}
+
+func TestExecutorRunForOperation(t *testing.T) {
+	st := storage.NewMemoryStorage()
+	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
+
+	mapping := &models.CollectionMapping{
+		ID:             "m1",
+		OperationID:    "op1",
+		CollectionName: "items",
+		Name:           "Op Insert",
+		Operation:      models.ColOpInsert,
+		DataRules:      []models.FieldMappingRule{{TargetField: "src", SourceType: "literal", SourceKey: "op"}},
+		OutputKey:      "opItem",
+		Order:          1,
+		Enabled:        true,
+	}
+	st.CreateCollectionMapping(mapping)
+
+	sess := store.NewEphemeralSession(nil)
+	output, traces, err := exec.RunForOperation(context.Background(), "op1", &RequestContext{}, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(traces) != 1 {
+		t.Fatalf("expected 1 trace, got %d", len(traces))
+	}
+	doc, ok := output["opItem"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected opItem map, got %T", output["opItem"])
+	}
+	if doc["src"] != "op" {
+		t.Errorf("expected src=op, got %v", doc["src"])
+	}
+}
+
 func TestExecutorSkipsDisabledMappings(t *testing.T) {
 	st := storage.NewMemoryStorage()
 	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
