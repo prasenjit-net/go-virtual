@@ -21,9 +21,10 @@ type storeFileFormat struct {
 	Entries   map[string]any `json:"entries"`
 }
 
-// BuildZIP creates an archive ZIP from the current state of the storage and
-// global store. Returns the raw ZIP bytes and the manifest embedded in it.
-func BuildZIP(label string, stor storage.Storage, gs store.GlobalStoreBackend) ([]byte, *Manifest, error) {
+// BuildZIP creates an archive ZIP from the current state of the storage,
+// global store, and collection backend. Returns the raw ZIP bytes and the
+// manifest embedded in it. cb may be nil (collections skipped).
+func BuildZIP(label string, stor storage.Storage, gs store.GlobalStoreBackend, cb store.CollectionBackend) ([]byte, *Manifest, error) {
 	id := shortID()
 	checksums := make(map[string]string)
 	counts := Counts{}
@@ -72,6 +73,31 @@ func BuildZIP(label string, stor storage.Storage, gs store.GlobalStoreBackend) (
 		return nil, nil, err
 	}
 	counts.StoreEntries = len(snapshot)
+
+	// ── Collections ─────────────────────────────────────────────────────────
+	if cb != nil {
+		names, err := cb.ListCollections()
+		if err != nil {
+			return nil, nil, fmt.Errorf("archive: list collections: %w", err)
+		}
+		for _, name := range names {
+			docs, err := cb.GetAll(name)
+			if err != nil {
+				return nil, nil, fmt.Errorf("archive: read collection %s: %w", name, err)
+			}
+			if docs == nil {
+				docs = []map[string]any{}
+			}
+			data, err := json.MarshalIndent(docs, "", "  ")
+			if err != nil {
+				return nil, nil, fmt.Errorf("archive: marshal collection %s: %w", name, err)
+			}
+			if err := addFile("collections/"+name+".json", data); err != nil {
+				return nil, nil, err
+			}
+		}
+		counts.Collections = len(names)
+	}
 
 	// ── Specs ───────────────────────────────────────────────────────────────
 	specs, err := stor.GetAllSpecs()

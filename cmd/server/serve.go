@@ -301,11 +301,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	var archiveService archive.ArchiveService
 	switch storageType {
 	case config.StorageTypeMongo, config.StorageTypeMemory:
-		archiveService = archive.NewSnapshotArchiveManager(store, globalStore)
+		archiveService = archive.NewSnapshotArchiveManager(store, globalStore, collBackend)
 		serverLog.Info("Archive mode: snapshot (no persistent history)", "event", "archive_mode", "mode", "snapshot", "storage_type", storageType)
 	default: // file
 		archivesDir := filepath.Join(storePath, "archives")
-		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
+		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore, collBackend); err != nil {
 			serverLog.Warn("Failed to initialize archive manager", "event", "archive_manager_init_failed", "path", archivesDir, "error", err)
 		} else {
 			archiveService = am

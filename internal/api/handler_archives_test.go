@@ -53,7 +53,7 @@ func setupTestHandlerWithArchives(t *testing.T) (*Handler, storage.Storage, *gin
 	if err != nil {
 		t.Fatalf("NewGlobalStore: %v", err)
 	}
-	am, err := archive.NewArchiveManager(t.TempDir(), stor, gs)
+	am, err := archive.NewArchiveManager(t.TempDir(), stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -316,7 +316,7 @@ gs, err := store.NewGlobalStore(filepath.Join(t.TempDir(), "store.json"))
 if err != nil {
 t.Fatalf("NewGlobalStore: %v", err)
 }
-sam := archive.NewSnapshotArchiveManager(stor, gs)
+sam := archive.NewSnapshotArchiveManager(stor, gs, nil)
 
 handler := NewHandler(HandlerConfig{
 Store:          stor,
@@ -465,7 +465,7 @@ func TestRestoreSnapshot_SnapshotMode(t *testing.T) {
 _, srcStor, _ := setupTestHandlerWithSnapshot(t)
 
 gs1, _ := store.NewGlobalStore(filepath.Join(t.TempDir(), "s1.json"))
-sam1 := archive.NewSnapshotArchiveManager(srcStor, gs1)
+sam1 := archive.NewSnapshotArchiveManager(srcStor, gs1, nil)
 zipBytes, _, err := sam1.DownloadSnapshot()
 if err != nil {
 t.Fatalf("DownloadSnapshot: %v", err)
@@ -553,7 +553,7 @@ gs1, err := store.NewGlobalStore(filepath.Join(t.TempDir(), "s1.json"))
 if err != nil {
 t.Fatalf("NewGlobalStore: %v", err)
 }
-am1, err := archive.NewArchiveManager(t.TempDir(), srcStor, gs1)
+am1, err := archive.NewArchiveManager(t.TempDir(), srcStor, gs1, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }

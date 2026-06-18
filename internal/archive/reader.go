@@ -34,10 +34,11 @@ type RestoreError struct {
 	Message string `json:"message"`
 }
 
-// ApplyZIP applies an archive ZIP to the given storage and global store.
-// It verifies SHA-256 checksums before touching any data. If any checksum
-// fails the operation is aborted immediately and no writes are made.
-func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.GlobalStoreBackend) (*RestoreResult, error) {
+// ApplyZIP applies an archive ZIP to the given storage, global store, and
+// collection backend. It verifies SHA-256 checksums before touching any data.
+// If any checksum fails the operation is aborted immediately and no writes are
+// made. cb may be nil (collections are skipped).
+func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.GlobalStoreBackend, cb store.CollectionBackend) (*RestoreResult, error) {
 	r, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("archive: open zip: %w", err)
@@ -98,13 +99,13 @@ func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.G
 
 	// ── Optional wipe ────────────────────────────────────────────────────────
 	if opts.WipeFirst {
-		if err := wipeAll(stor, gs); err != nil {
+		if err := wipeAll(stor, gs, cb); err != nil {
 			return nil, fmt.Errorf("archive: wipe failed: %w", err)
 		}
 	}
 
 	result := &RestoreResult{
-		Created:    map[string]int{"specs": 0, "scripts": 0, "responses": 0, "tags": 0, "storeEntries": 0, "bindings": 0},
+		Created:    map[string]int{"specs": 0, "scripts": 0, "responses": 0, "tags": 0, "storeEntries": 0, "bindings": 0, "collections": 0},
 		Updated:    map[string]int{"specs": 0, "scripts": 0, "responses": 0, "tags": 0, "storeEntries": 0, "bindings": 0},
 		WipedFirst: opts.WipeFirst,
 	}
@@ -148,6 +149,35 @@ func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.G
 					errs = append(errs, RestoreError{Path: "store.json", Message: fmt.Sprintf("set key %s: %v", k, e)})
 				} else {
 					result.Created["storeEntries"]++
+				}
+			}
+		}
+	}
+
+	// ── Collections ─────────────────────────────────────────────────────────
+	if cb != nil {
+		for name, content := range files {
+			if !strings.HasPrefix(name, "collections/") || !strings.HasSuffix(name, ".json") {
+				continue
+			}
+			colName := strings.TrimSuffix(strings.TrimPrefix(name, "collections/"), ".json")
+			if colName == "" {
+				continue
+			}
+			var docs []map[string]any
+			if err := json.Unmarshal(content, &docs); err != nil {
+				errs = append(errs, RestoreError{Path: name, Message: err.Error()})
+				continue
+			}
+			if err := cb.SeedClear(colName); err != nil {
+				errs = append(errs, RestoreError{Path: name, Message: fmt.Sprintf("clear collection %s: %v", colName, err)})
+				continue
+			}
+			for _, doc := range docs {
+				if _, err := cb.SeedInsert(colName, doc); err != nil {
+					errs = append(errs, RestoreError{Path: name, Message: fmt.Sprintf("seed insert into %s: %v", colName, err)})
+				} else {
+					result.Created["collections"]++
 				}
 			}
 		}
@@ -310,9 +340,9 @@ func ApplyZIP(data []byte, opts RestoreOptions, stor storage.Storage, gs store.G
 	return result, nil
 }
 
-// wipeAll removes all user data from storage and clears the global store.
-// The default tag is preserved.
-func wipeAll(stor storage.Storage, gs store.GlobalStoreBackend) error {
+// wipeAll removes all user data from storage, clears the global store, and
+// drops all collections. The default tag is preserved. cb may be nil.
+func wipeAll(stor storage.Storage, gs store.GlobalStoreBackend, cb store.CollectionBackend) error {
 	// Wipe specs (cascade to operations and responses).
 	specs, err := stor.GetAllSpecs()
 	if err != nil {
@@ -345,5 +375,21 @@ func wipeAll(stor storage.Storage, gs store.GlobalStoreBackend) error {
 	}
 
 	// Clear global store.
-	return gs.Clear()
+	if err := gs.Clear(); err != nil {
+		return err
+	}
+
+	// Drop all collections.
+	if cb != nil {
+		names, err := cb.ListCollections()
+		if err != nil {
+			return fmt.Errorf("archive: list collections for wipe: %w", err)
+		}
+		for _, name := range names {
+			if err := cb.DropCollection(name); err != nil {
+				return fmt.Errorf("archive: drop collection %s: %w", name, err)
+			}
+		}
+	}
+	return nil
 }

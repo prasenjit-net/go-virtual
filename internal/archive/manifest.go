@@ -13,11 +13,12 @@ const ManifestVersion = "1"
 
 // Counts summarises the number of items of each type in an archive.
 type Counts struct {
-	Specs        int `json:"specs"`
-	Responses    int `json:"responses"`
-	Scripts      int `json:"scripts"`
-	Tags         int `json:"tags"`
+	Specs       int `json:"specs"`
+	Responses   int `json:"responses"`
+	Scripts     int `json:"scripts"`
+	Tags        int `json:"tags"`
 	StoreEntries int `json:"storeEntries"`
+	Collections int `json:"collections"`
 }
 
 // Manifest is written as manifest.json inside every archive ZIP.

@@ -52,17 +52,19 @@ type ArchiveManager struct {
 	dir   string
 	stor  storage.Storage
 	gs    store.GlobalStoreBackend
+	cb    store.CollectionBackend
 	mu    sync.Mutex
 	index []*ArchiveMeta
 }
 
 // NewArchiveManager creates (or opens) the archives directory and loads the index.
-func NewArchiveManager(dir string, stor storage.Storage, gs store.GlobalStoreBackend) (*ArchiveManager, error) {
+// cb may be nil (collections are skipped in exports/imports).
+func NewArchiveManager(dir string, stor storage.Storage, gs store.GlobalStoreBackend, cb store.CollectionBackend) (*ArchiveManager, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("archive: create dir %s: %w", dir, err)
 	}
 
-	m := &ArchiveManager{dir: dir, stor: stor, gs: gs}
+	m := &ArchiveManager{dir: dir, stor: stor, gs: gs, cb: cb}
 	if err := m.loadIndex(); err != nil {
 		return nil, err
 	}
@@ -130,7 +132,7 @@ func sortIndex(idx []*ArchiveMeta) {
 
 // Create builds a new archive from the current live state and saves it to disk.
 func (m *ArchiveManager) Create(label string) (*ArchiveMeta, error) {
-	zipBytes, manifest, err := BuildZIP(label, m.stor, m.gs)
+	zipBytes, manifest, err := BuildZIP(label, m.stor, m.gs, m.cb)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +271,7 @@ func (m *ArchiveManager) Restore(id string, input RestoreInput) (*RestoreRespons
 		return nil, fmt.Errorf("archive: read zip for restore: %w", err)
 	}
 
-	result, err := ApplyZIP(zipBytes, RestoreOptions{WipeFirst: input.WipeFirst}, m.stor, m.gs)
+	result, err := ApplyZIP(zipBytes, RestoreOptions{WipeFirst: input.WipeFirst}, m.stor, m.gs, m.cb)
 	if err != nil {
 		logger.Error("Archive restore failed",
 			"event", "archive_restore_failed",

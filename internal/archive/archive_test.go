@@ -103,7 +103,7 @@ func TestBuildAndParseManifest(t *testing.T) {
 	}
 	seedStorage(t, stor)
 
-	zipBytes, manifest, err := archive.BuildZIP("test-label", stor, gs)
+	zipBytes, manifest, err := archive.BuildZIP("test-label", stor, gs, nil)
 	if err != nil {
 		t.Fatalf("BuildZIP: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestRoundTrip(t *testing.T) {
 	}
 	seedStorage(t, src)
 
-	zipBytes, _, err := archive.BuildZIP("rt", src, gs)
+	zipBytes, _, err := archive.BuildZIP("rt", src, gs, nil)
 	if err != nil {
 		t.Fatalf("BuildZIP: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestRoundTrip(t *testing.T) {
 	dst := storage.NewMemoryStorage()
 	dstGS := newTestStore(t)
 
-	result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{}, dst, dstGS)
+	result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{}, dst, dstGS, nil)
 	if err != nil {
 		t.Fatalf("ApplyZIP: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestChecksumFailure(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, src)
 
-	zipBytes, _, err := archive.BuildZIP("tamper", src, gs)
+	zipBytes, _, err := archive.BuildZIP("tamper", src, gs, nil)
 	if err != nil {
 		t.Fatalf("BuildZIP: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestChecksumFailure(t *testing.T) {
 
 	dst := storage.NewMemoryStorage()
 	dstGS := newTestStore(t)
-	_, err = archive.ApplyZIP(tampered, archive.RestoreOptions{}, dst, dstGS)
+	_, err = archive.ApplyZIP(tampered, archive.RestoreOptions{}, dst, dstGS, nil)
 	// Tampered ZIPs will likely fail to open — we just need *some* error.
 	if err == nil {
 		t.Error("expected error for tampered zip, got nil")
@@ -214,7 +214,7 @@ func TestWipeFirst(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, src)
 
-	zipBytes, _, err := archive.BuildZIP("wipe-test", src, gs)
+	zipBytes, _, err := archive.BuildZIP("wipe-test", src, gs, nil)
 	if err != nil {
 		t.Fatalf("BuildZIP: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestWipeFirst(t *testing.T) {
 	dstGS := newTestStore(t)
 	_ = dstGS.Set("extra-key", "should-be-gone")
 
-	_, err = archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, dst, dstGS)
+	_, err = archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, dst, dstGS, nil)
 	if err != nil {
 		t.Fatalf("ApplyZIP wipe: %v", err)
 	}
@@ -256,7 +256,7 @@ func TestManagerCreate_List_Delete(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestManagerRestore(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -347,13 +347,13 @@ func TestManagerSave(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
 
 	// Build a valid ZIP to use as the upload payload.
-	zipBytes, _, err := archive.BuildZIP("external", stor, gs)
+	zipBytes, _, err := archive.BuildZIP("external", stor, gs, nil)
 	if err != nil {
 		t.Fatalf("BuildZIP: %v", err)
 	}
@@ -376,7 +376,7 @@ func TestManagerSave_TooLarge(t *testing.T) {
 	stor := storage.NewMemoryStorage()
 	gs := newTestStore(t)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestManagerSave_InvalidZIP(t *testing.T) {
 	stor := storage.NewMemoryStorage()
 	gs := newTestStore(t)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestManagerRebuildIndex(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestManagerRebuildIndex(t *testing.T) {
 		t.Fatalf("remove index: %v", err)
 	}
 
-	mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr2, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager after index removal: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestManagerLoadIndex_Corrupt(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestManagerLoadIndex_Corrupt(t *testing.T) {
 		t.Fatalf("write corrupt index: %v", err)
 	}
 
-	mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr2, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager with corrupt index: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestManagerGet_NotFound(t *testing.T) {
 	stor := storage.NewMemoryStorage()
 	gs := newTestStore(t)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestManagerDelete_NotFound(t *testing.T) {
 	stor := storage.NewMemoryStorage()
 	gs := newTestStore(t)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestManagerFilePath_NotFound(t *testing.T) {
 	stor := storage.NewMemoryStorage()
 	gs := newTestStore(t)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -514,7 +514,7 @@ func TestManagerSortOrder(t *testing.T) {
 	gs := newTestStore(t)
 	seedStorage(t, stor)
 
-	mgr, err := archive.NewArchiveManager(dir, stor, gs)
+	mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 	if err != nil {
 		t.Fatalf("NewArchiveManager: %v", err)
 	}
@@ -544,7 +544,7 @@ stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, stor)
 
-mgr := archive.NewSnapshotArchiveManager(stor, gs)
+mgr := archive.NewSnapshotArchiveManager(stor, gs, nil)
 
 if mgr.Mode() != archive.ModeSnapshot {
 t.Fatalf("expected ModeSnapshot, got %q", mgr.Mode())
@@ -556,7 +556,7 @@ stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, stor)
 
-mgr := archive.NewSnapshotArchiveManager(stor, gs)
+mgr := archive.NewSnapshotArchiveManager(stor, gs, nil)
 
 // Download
 zipBytes, meta, err := mgr.DownloadSnapshot()
@@ -579,7 +579,7 @@ t.Errorf("meta.SizeBytes=%d, len(zipBytes)=%d", meta.SizeBytes, len(zipBytes))
 // Wipe destination and restore
 dest := storage.NewMemoryStorage()
 gsDest := newTestStore(t)
-mgr2 := archive.NewSnapshotArchiveManager(dest, gsDest)
+mgr2 := archive.NewSnapshotArchiveManager(dest, gsDest, nil)
 
 resp, err := mgr2.RestoreSnapshot(zipBytes)
 if err != nil {
@@ -604,7 +604,7 @@ t.Error("expected at least one spec after restore")
 func TestSnapshotFullModeStubsReturnError(t *testing.T) {
 stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
-mgr := archive.NewSnapshotArchiveManager(stor, gs)
+mgr := archive.NewSnapshotArchiveManager(stor, gs, nil)
 
 if list := mgr.List(); list != nil {
 t.Errorf("expected nil list in snapshot mode, got %v", list)
@@ -634,7 +634,7 @@ func TestArchiveManagerSnapshotStubsReturnError(t *testing.T) {
 dir := t.TempDir()
 stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
-mgr, err := archive.NewArchiveManager(dir, stor, gs)
+mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -652,9 +652,9 @@ t.Errorf("RestoreSnapshot: expected ErrFullMode, got %v", err)
 
 func TestArchiveServiceInterface(t *testing.T) {
 // Both implementations must satisfy the interface at compile time.
-var _ archive.ArchiveService = archive.NewSnapshotArchiveManager(storage.NewMemoryStorage(), newTestStore(t))
+var _ archive.ArchiveService = archive.NewSnapshotArchiveManager(storage.NewMemoryStorage(), newTestStore(t), nil)
 dir := t.TempDir()
-mgr, err := archive.NewArchiveManager(dir, storage.NewMemoryStorage(), newTestStore(t))
+mgr, err := archive.NewArchiveManager(dir, storage.NewMemoryStorage(), newTestStore(t), nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -674,7 +674,7 @@ t.Error("ErrFullMode.Error() should be non-empty")
 func TestSnapshotRestoreCorruptZIP(t *testing.T) {
 stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
-mgr := archive.NewSnapshotArchiveManager(stor, gs)
+mgr := archive.NewSnapshotArchiveManager(stor, gs, nil)
 
 // Corrupt data should produce an error
 _, err := mgr.RestoreSnapshot([]byte("not a zip"))
@@ -689,7 +689,7 @@ stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, stor)
 
-mgr, err := archive.NewArchiveManager(dir, stor, gs)
+mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -706,7 +706,7 @@ if err := os.Remove(filepath.Join(dir, "index.json")); err != nil {
 t.Fatalf("remove index: %v", err)
 }
 
-mgr2, err := archive.NewArchiveManager(dir, stor, gs)
+mgr2, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager after index removal: %v", err)
 }
@@ -725,7 +725,7 @@ stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, stor)
 
-mgr, err := archive.NewArchiveManager(dir, stor, gs)
+mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -751,7 +751,7 @@ src := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, src)
 
-zipBytes, _, err := archive.BuildZIP("rich-wipe-test", src, gs)
+zipBytes, _, err := archive.BuildZIP("rich-wipe-test", src, gs, nil)
 if err != nil {
 t.Fatalf("BuildZIP: %v", err)
 }
@@ -763,7 +763,7 @@ dstGS := newTestStore(t)
 seedStorage(t, dst)
 _ = dstGS.Set("extra-key", "should-be-gone")
 
-_, err = archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, dst, dstGS)
+_, err = archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, dst, dstGS, nil)
 if err != nil {
 t.Fatalf("ApplyZIP wipe with rich store: %v", err)
 }
@@ -783,7 +783,7 @@ dir := t.TempDir()
 stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 
-mgr, err := archive.NewArchiveManager(dir, stor, gs)
+mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -800,7 +800,7 @@ stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
 seedStorage(t, stor)
 
-mgr, err := archive.NewArchiveManager(dir, stor, gs)
+mgr, err := archive.NewArchiveManager(dir, stor, gs, nil)
 if err != nil {
 t.Fatalf("NewArchiveManager: %v", err)
 }
@@ -836,13 +836,13 @@ Content: jsonSpec,
 t.Fatalf("CreateSpec: %v", err)
 }
 
-zipBytes, _, err := archive.BuildZIP("json-spec-test", stor, gs)
+zipBytes, _, err := archive.BuildZIP("json-spec-test", stor, gs, nil)
 if err != nil {
 t.Fatalf("BuildZIP: %v", err)
 }
 
 // Verify we can read it back.
-result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, storage.NewMemoryStorage(), newTestStore(t))
+result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, storage.NewMemoryStorage(), newTestStore(t), nil)
 if err != nil {
 t.Fatalf("ApplyZIP: %v", err)
 }
@@ -855,7 +855,7 @@ func TestApplyZIP_UnsupportedVersion(t *testing.T) {
 // Build a valid ZIP, then tamper with manifest.json to have a different version.
 stor := storage.NewMemoryStorage()
 gs := newTestStore(t)
-zipBytes, _, err := archive.BuildZIP("test", stor, gs)
+zipBytes, _, err := archive.BuildZIP("test", stor, gs, nil)
 if err != nil {
 t.Fatalf("BuildZIP: %v", err)
 }
@@ -887,7 +887,7 @@ w.Write(content)
 }
 zw.Close()
 
-_, err = archive.ApplyZIP(newBuf.Bytes(), archive.RestoreOptions{}, storage.NewMemoryStorage(), newTestStore(t))
+_, err = archive.ApplyZIP(newBuf.Bytes(), archive.RestoreOptions{}, storage.NewMemoryStorage(), newTestStore(t), nil)
 if err == nil || !strings.Contains(err.Error(), "unsupported version") {
 t.Errorf("expected unsupported version error, got %v", err)
 }
@@ -898,4 +898,104 @@ _, err := archive.ParseManifest([]byte("not json"))
 if err == nil {
 t.Error("expected error for invalid JSON manifest")
 }
+}
+
+// TestCollectionRoundTrip verifies that collections are exported and restored correctly.
+func TestCollectionRoundTrip(t *testing.T) {
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	cb := store.NewMemoryCollectionBackend()
+
+	// Seed two collections.
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "Alice"}); err != nil {
+		t.Fatalf("SeedInsert users: %v", err)
+	}
+	if _, err := cb.SeedInsert("users", map[string]any{"name": "Bob"}); err != nil {
+		t.Fatalf("SeedInsert users 2: %v", err)
+	}
+	if _, err := cb.SeedInsert("products", map[string]any{"sku": "P1"}); err != nil {
+		t.Fatalf("SeedInsert products: %v", err)
+	}
+
+	zipBytes, manifest, err := archive.BuildZIP("col-test", stor, gs, cb)
+	if err != nil {
+		t.Fatalf("BuildZIP: %v", err)
+	}
+	if manifest.Counts.Collections != 2 {
+		t.Errorf("counts.collections = %d, want 2", manifest.Counts.Collections)
+	}
+
+	// Restore into a fresh backend.
+	dstCB := store.NewMemoryCollectionBackend()
+	result, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{}, stor, gs, dstCB)
+	if err != nil {
+		t.Fatalf("ApplyZIP: %v", err)
+	}
+	if len(result.Errors) > 0 {
+		t.Errorf("restore errors: %v", result.Errors)
+	}
+	if result.Created["collections"] != 3 {
+		t.Errorf("created.collections = %d, want 3 (2 users + 1 product)", result.Created["collections"])
+	}
+
+	users, err := dstCB.GetAll("users")
+	if err != nil {
+		t.Fatalf("GetAll users: %v", err)
+	}
+	if len(users) != 2 {
+		t.Errorf("users count = %d, want 2", len(users))
+	}
+
+	products, err := dstCB.GetAll("products")
+	if err != nil {
+		t.Fatalf("GetAll products: %v", err)
+	}
+	if len(products) != 1 {
+		t.Errorf("products count = %d, want 1", len(products))
+	}
+}
+
+// TestCollectionWipeFirst verifies that existing collections are dropped before restoring.
+func TestCollectionWipeFirst(t *testing.T) {
+	stor := storage.NewMemoryStorage()
+	gs := newTestStore(t)
+	cb := store.NewMemoryCollectionBackend()
+	if _, err := cb.SeedInsert("items", map[string]any{"x": 1}); err != nil {
+		t.Fatalf("SeedInsert: %v", err)
+	}
+
+	zipBytes, _, err := archive.BuildZIP("wipe-col", stor, gs, cb)
+	if err != nil {
+		t.Fatalf("BuildZIP: %v", err)
+	}
+
+	// Destination has a pre-existing collection that is NOT in the archive.
+	dstCB := store.NewMemoryCollectionBackend()
+	if _, err := dstCB.SeedInsert("garbage", map[string]any{"drop": "me"}); err != nil {
+		t.Fatalf("SeedInsert garbage: %v", err)
+	}
+
+	if _, err := archive.ApplyZIP(zipBytes, archive.RestoreOptions{WipeFirst: true}, stor, gs, dstCB); err != nil {
+		t.Fatalf("ApplyZIP wipe: %v", err)
+	}
+
+	// "garbage" collection should be gone.
+	names, err := dstCB.ListCollections()
+	if err != nil {
+		t.Fatalf("ListCollections: %v", err)
+	}
+	for _, n := range names {
+		if n == "garbage" {
+			t.Error("expected 'garbage' collection to be wiped")
+		}
+	}
+
+	// "items" should be present.
+	items, err := dstCB.GetAll("items")
+	if err != nil {
+		t.Fatalf("GetAll items: %v", err)
+	}
+	if len(items) != 1 {
+		t.Errorf("items count = %d, want 1", len(items))
+	}
 }
