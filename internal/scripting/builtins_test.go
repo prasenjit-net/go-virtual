@@ -18,7 +18,7 @@ func mustCompileAndRun(t *testing.T, id, src string, sess *store.Session) (any, 
 	if err != nil {
 		t.Fatalf("Compile %s: %v", id, err)
 	}
-	return cs.Execute(context.Background(), &ScriptInput{}, 500, sess, nil, nil)
+	return cs.Execute(context.Background(), &ScriptInput{}, 500, sess, nil, nil, nil)
 }
 
 func mustCompile(t *testing.T, id, src string) (any, error) {
@@ -309,7 +309,7 @@ def run(req):
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	v, err := cs.Execute(context.Background(), &ScriptInput{Body: input}, 200, nil, nil, nil)
+	v, err := cs.Execute(context.Background(), &ScriptInput{Body: input}, 200, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}

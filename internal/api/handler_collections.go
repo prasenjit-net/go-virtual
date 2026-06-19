@@ -9,10 +9,10 @@ import (
 	"github.com/prasenjit/go-virtual/internal/models"
 )
 
-// collectionGuard is a small helper that returns early when the global store is
-// unavailable and ensures the collection name is not the empty string.
+// collectionGuard returns early when the CollectionBackend is unavailable or
+// the collection name is empty.
 func (h *Handler) collectionGuard(c *gin.Context) (name string, ok bool) {
-	if h.globalStore == nil {
+	if h.collectionBackend == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "store not enabled"})
 		return "", false
 	}
@@ -24,76 +24,51 @@ func (h *Handler) collectionGuard(c *gin.Context) (name string, ok bool) {
 	return name, true
 }
 
-// collectionKey returns the flat store key for the given collection name.
-func collectionKey(name string) string { return models.CollectionKeyPrefix + name }
-
-// loadDocs reads the document slice for a collection from the global store.
-// Returns an empty (non-nil) slice when the collection doesn't exist yet.
-func (h *Handler) loadDocs(name string) []map[string]any {
-	raw, ok := h.globalStore.Get(collectionKey(name))
-	if !ok || raw == nil {
-		return []map[string]any{}
-	}
-	switch v := raw.(type) {
-	case []any:
-		out := make([]map[string]any, 0, len(v))
-		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
-				out = append(out, m)
-			}
-		}
-		return out
-	case []map[string]any:
-		return v
-	}
-	return []map[string]any{}
-}
-
-// saveDocs writes the document slice back to the global store.
-func (h *Handler) saveDocs(name string, docs []map[string]any) error {
-	raw := make([]any, len(docs))
-	for i, d := range docs {
-		raw[i] = d
-	}
-	return h.globalStore.Set(collectionKey(name), raw)
-}
-
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 // ListCollections returns a summary of all named collections (name + count).
 // GET /_api/store/collections
 func (h *Handler) ListCollections(c *gin.Context) {
-	if h.globalStore == nil {
+	if h.collectionBackend == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "store not enabled"})
 		return
 	}
-	entries := h.globalStore.List()
-	result := []models.CollectionInfo{}
-	for _, e := range entries {
-		if !strings.HasPrefix(e.Key, models.CollectionKeyPrefix) {
-			continue
-		}
-		name := strings.TrimPrefix(e.Key, models.CollectionKeyPrefix)
+	names, err := h.collectionBackend.ListCollections()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	result := make([]models.CollectionInfo, 0, len(names))
+	for _, name := range names {
+		docs, err := h.collectionBackend.GetAll(name)
 		count := 0
-		if arr, ok := e.Value.([]any); ok {
-			count = len(arr)
+		if err == nil {
+			count = len(docs)
 		}
 		result = append(result, models.CollectionInfo{Name: name, Count: count})
 	}
 	c.JSON(http.StatusOK, result)
 }
 
-// GetCollection returns all documents in a collection.
+// GetCollection returns all base documents in a collection.
 // GET /_api/store/collections/:name
 func (h *Handler) GetCollection(c *gin.Context) {
 	name, ok := h.collectionGuard(c)
 	if !ok {
 		return
 	}
-	c.JSON(http.StatusOK, h.loadDocs(name))
+	docs, err := h.collectionBackend.GetAll(name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if docs == nil {
+		docs = []map[string]any{}
+	}
+	c.JSON(http.StatusOK, docs)
 }
 
-// InsertCollectionDoc appends one document to a collection.
+// InsertCollectionDoc seeds one document into a collection's base.
 // POST /_api/store/collections/:name
 // Body: any JSON object
 func (h *Handler) InsertCollectionDoc(c *gin.Context) {
@@ -111,18 +86,17 @@ func (h *Handler) InsertCollectionDoc(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be a JSON object"})
 		return
 	}
-	docs := h.loadDocs(name)
-	docs = append(docs, m)
-	if err := h.saveDocs(name, docs); err != nil {
+	inserted, err := h.collectionBackend.SeedInsert(name, m)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, m)
+	c.JSON(http.StatusCreated, inserted)
 }
 
 // UpdateCollectionDoc replaces the document at the given zero-based index.
 // PUT /_api/store/collections/:name/:index
-// Body: JSON object with updated fields (merged, not replaced)
+// Body: JSON object with fields to merge into the existing document
 func (h *Handler) UpdateCollectionDoc(c *gin.Context) {
 	name, ok := h.collectionGuard(c)
 	if !ok {
@@ -142,7 +116,11 @@ func (h *Handler) UpdateCollectionDoc(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "body must be a JSON object"})
 		return
 	}
-	docs := h.loadDocs(name)
+	docs, err := h.collectionBackend.GetAll(name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if idx < 0 || idx >= len(docs) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "index out of range"})
 		return
@@ -150,9 +128,16 @@ func (h *Handler) UpdateCollectionDoc(c *gin.Context) {
 	for k, v := range changes {
 		docs[idx][k] = v
 	}
-	if err := h.saveDocs(name, docs); err != nil {
+	// Rewrite the collection base: clear then re-seed
+	if err := h.collectionBackend.SeedClear(name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	for _, d := range docs {
+		if _, err := h.collectionBackend.SeedInsert(name, d); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, docs[idx])
 }
@@ -168,27 +153,37 @@ func (h *Handler) DeleteCollectionDoc(c *gin.Context) {
 	if !ok {
 		return
 	}
-	docs := h.loadDocs(name)
+	docs, err := h.collectionBackend.GetAll(name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	if idx < 0 || idx >= len(docs) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "index out of range"})
 		return
 	}
 	docs = append(docs[:idx], docs[idx+1:]...)
-	if err := h.saveDocs(name, docs); err != nil {
+	if err := h.collectionBackend.SeedClear(name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
+	}
+	for _, d := range docs {
+		if _, err := h.collectionBackend.SeedInsert(name, d); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
 	}
 	c.Status(http.StatusNoContent)
 }
 
-// ClearCollection removes all documents from a collection.
+// ClearCollection removes all base documents from a collection.
 // DELETE /_api/store/collections/:name
 func (h *Handler) ClearCollection(c *gin.Context) {
 	name, ok := h.collectionGuard(c)
 	if !ok {
 		return
 	}
-	if err := h.saveDocs(name, nil); err != nil {
+	if err := h.collectionBackend.SeedClear(name); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}

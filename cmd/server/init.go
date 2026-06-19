@@ -75,6 +75,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		dataDir,
 		filepath.Join(dataDir, "specs"),
 		filepath.Join(dataDir, "responses"),
+		filepath.Join(dataDir, "collections"),
 	}
 
 	for _, dir := range dirs {

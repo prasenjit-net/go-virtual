@@ -178,6 +178,25 @@ func runServe(cmd *cobra.Command, args []string) error {
 		seedDefaultAIScenarios(store, serverLog)
 	}
 
+	// Initialize collection backend (persistent base data for named collections)
+	var collBackend gvstore.CollectionBackend
+	switch storageType {
+	case config.StorageTypeMongo:
+		collBackend, err = newMongoCollectionBackend(mongoCfg)
+		if err != nil {
+			serverLog.Warn("Failed to initialize mongo collection backend; using memory fallback", "event", "collection_backend_init_failed", "error", err)
+			collBackend = gvstore.NewMemoryCollectionBackend()
+		}
+	case config.StorageTypeFile:
+		collBackend, err = gvstore.NewFileCollectionBackend(storagePath)
+		if err != nil {
+			serverLog.Warn("Failed to initialize file collection backend; using memory fallback", "event", "collection_backend_init_failed", "path", storagePath, "error", err)
+			collBackend = gvstore.NewMemoryCollectionBackend()
+		}
+	default:
+		collBackend = gvstore.NewMemoryCollectionBackend()
+	}
+
 	// Initialize statistics collector
 	statsCollector := stats.NewCollector()
 
@@ -189,6 +208,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Initialize proxy engine
 	scriptTimeoutMs := viper.GetInt("scripting.defaultTimeoutMs")
 	proxyEngine := proxy.NewEngine(store, statsCollector, tracingService, scriptTimeoutMs)
+	proxyEngine.SetCollectionBackend(collBackend)
 	proxyEngine.SetAIGenerator(aiGenerator)
 
 	// Initialize Phase 2 — GlobalStore and SessionManager
@@ -281,11 +301,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	var archiveService archive.ArchiveService
 	switch storageType {
 	case config.StorageTypeMongo, config.StorageTypeMemory:
-		archiveService = archive.NewSnapshotArchiveManager(store, globalStore)
+		archiveService = archive.NewSnapshotArchiveManager(store, globalStore, collBackend)
 		serverLog.Info("Archive mode: snapshot (no persistent history)", "event", "archive_mode", "mode", "snapshot", "storage_type", storageType)
 	default: // file
 		archivesDir := filepath.Join(storePath, "archives")
-		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore); err != nil {
+		if am, err := archive.NewArchiveManager(archivesDir, store, globalStore, collBackend); err != nil {
 			serverLog.Warn("Failed to initialize archive manager", "event", "archive_manager_init_failed", "path", archivesDir, "error", err)
 		} else {
 			archiveService = am
@@ -295,17 +315,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	// Setup router — all dependencies injected upfront, no post-construction setters.
 	router := api.NewRouter(api.RouterConfig{
-		Store:          store,
-		StatsCollector: statsCollector,
-		TracingService: tracingService,
-		ProxyEngine:    proxyEngine,
-		GlobalStore:    globalStore,
-		SessionManager: sessionManager,
-		ArchiveManager: archiveService,
-		Branding:       branding,
-		Headless:       headless,
-		ScriptTimeout:  scriptTimeoutMs,
-		AIGenerator:    aiGenerator,
+		Store:             store,
+		StatsCollector:    statsCollector,
+		TracingService:    tracingService,
+		ProxyEngine:       proxyEngine,
+		GlobalStore:       globalStore,
+		CollectionBackend: collBackend,
+		SessionManager:    sessionManager,
+		ArchiveManager:    archiveService,
+		Branding:          branding,
+		Headless:          headless,
+		ScriptTimeout:     scriptTimeoutMs,
+		AIGenerator:       aiGenerator,
 	})
 
 	// Setup UI and docs serving (skipped in headless mode)

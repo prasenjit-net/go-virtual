@@ -8,7 +8,8 @@ import (
 
 func newTestOps(name string) *Ops {
 	sess := store.NewEphemeralSession(nil)
-	return NewOps(name, sess)
+	backend := store.NewMemoryCollectionBackend()
+	return NewOps(name, backend, sess)
 }
 
 func TestInsertAssignsID(t *testing.T) {
@@ -175,27 +176,108 @@ func TestDeleteNoMatch(t *testing.T) {
 	}
 }
 
-func TestSharedSessionWithStarlarkFormat(t *testing.T) {
-	// Verify that Ops reads the same format that store.CollectionBuiltin writes.
-	// CollectionBuiltin stores as []any, Ops.load() must handle that.
+func TestUpsertFound(t *testing.T) {
+	backend := store.NewMemoryCollectionBackend()
+	backend.SeedInsert("products", map[string]any{"_id": "p1", "sku": "A1", "qty": 5})
 	sess := store.NewEphemeralSession(nil)
-	key := "__col__shared"
+	ops := NewOps("products", backend, sess)
 
-	// Simulate what CollectionBuiltin.save does
-	rawDocs := []any{
-		map[string]any{"_id": "x1", "val": "hello"},
+	doc, err := ops.Upsert(map[string]any{"sku": "A1"}, map[string]any{"qty": 10})
+	if err != nil {
+		t.Fatal(err)
 	}
-	_ = sess.Set(key, rawDocs)
+	if doc == nil {
+		t.Fatal("expected upsert to return document")
+	}
+	if doc["qty"] != 10 {
+		t.Errorf("expected qty=10, got %v", doc["qty"])
+	}
 
-	ops := NewOps("shared", sess)
-	found, err := ops.FindOne(map[string]any{"_id": "x1"})
+	all, _ := ops.FindMany(nil)
+	if len(all) != 1 {
+		t.Errorf("upsert on existing should not create new doc, got %d", len(all))
+	}
+}
+
+func TestUpsertNotFound(t *testing.T) {
+	backend := store.NewMemoryCollectionBackend()
+	sess := store.NewEphemeralSession(nil)
+	ops := NewOps("products", backend, sess)
+
+	doc, err := ops.Upsert(map[string]any{"sku": "NEW"}, map[string]any{"qty": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc == nil {
+		t.Fatal("expected upsert to return new document")
+	}
+	if doc["sku"] != "NEW" || doc["qty"] != 3 {
+		t.Errorf("unexpected upserted doc: %v", doc)
+	}
+	if doc["_id"] == nil || doc["_id"] == "" {
+		t.Error("upserted doc should have _id")
+	}
+}
+
+func TestFindOneNilFilter(t *testing.T) {
+	ops := newTestOps("users")
+	ops.Insert(map[string]any{"name": "alice"})
+	// nil filter matches first doc
+	found, err := ops.FindOne(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if found == nil {
-		t.Fatal("expected to find document written by CollectionBuiltin-style save")
+		t.Error("expected to find a doc with nil filter")
 	}
-	if found["val"] != "hello" {
-		t.Errorf("expected val=hello, got %v", found["val"])
+}
+
+func TestFindManyEmptyCollection(t *testing.T) {
+	ops := newTestOps("empty")
+	docs, err := ops.FindMany(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs) != 0 {
+		t.Errorf("expected 0 docs, got %d", len(docs))
+	}
+}
+
+func TestSessionEventsIsolation(t *testing.T) {
+	// Each session gets its own event log on top of the shared global base.
+	backend := store.NewMemoryCollectionBackend()
+	if _, err := backend.SeedInsert("shared", map[string]any{"_id": "base1", "val": "base"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess1 := store.NewEphemeralSession(nil)
+	sess2 := store.NewEphemeralSession(nil)
+
+	ops1 := NewOps("shared", backend, sess1)
+	ops2 := NewOps("shared", backend, sess2)
+
+	// sess1 inserts a doc
+	if _, err := ops1.Insert(map[string]any{"val": "session1-only"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// sess2 should NOT see sess1's insert
+	docs2, err := ops2.FindMany(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range docs2 {
+		if d["val"] == "session1-only" {
+			t.Error("sess2 should not see sess1's insert")
+		}
+	}
+
+	// sess1 should see its own insert plus the base doc
+	docs1, err := ops1.FindMany(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(docs1) != 2 {
+		t.Errorf("sess1 expected 2 docs (base + insert), got %d", len(docs1))
 	}
 }

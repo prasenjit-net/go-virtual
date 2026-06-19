@@ -36,6 +36,7 @@ import (
 // Engine handles proxying requests to virtual API endpoints
 type Engine struct {
 	store               storage.Storage
+	collectionBackend   store.CollectionBackend
 	statsCollector      *stats.Collector
 	tracingService      *tracing.Service
 	condEvaluator       *condition.Evaluator
@@ -69,16 +70,15 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	}
 
 	e := &Engine{
-		store:               store,
-		statsCollector:      statsCollector,
-		tracingService:      tracingService,
-		condEvaluator:       condition.NewEvaluator(),
-		templateEngine:      template.NewEngine(),
-		scriptEngine:        scripting.NewScriptEngine(store, timeoutMs),
-		collectionExecutor:  collection.NewExecutor(store),
-		recorder:            NewRecorder(store),
-		runtimeWarnings:     make(map[string]struct{}),
-		routes:              make(map[string][]*route),
+		store:              store,
+		statsCollector:     statsCollector,
+		tracingService:     tracingService,
+		condEvaluator:      condition.NewEvaluator(),
+		templateEngine:     template.NewEngine(),
+		scriptEngine:       scripting.NewScriptEngine(store, timeoutMs),
+		recorder:           NewRecorder(store),
+		runtimeWarnings:    make(map[string]struct{}),
+		routes:             make(map[string][]*route),
 	}
 
 	// Load initial routes
@@ -92,6 +92,14 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 func (e *Engine) SetSessionManager(sm store.SessionRegistry, headerName string) {
 	e.sessionManager = sm
 	e.sessionHeaderName = headerName
+}
+
+// SetCollectionBackend wires the CollectionBackend into the engine, enabling
+// collection mappings and store.collection() in scripts.
+func (e *Engine) SetCollectionBackend(cb store.CollectionBackend) {
+	e.collectionBackend = cb
+	e.collectionExecutor = collection.NewExecutor(e.store, cb)
+	e.scriptEngine.SetCollectionBackend(cb)
 }
 
 // SetProxyHTTPClient replaces the HTTP client used by the proxy recorder for

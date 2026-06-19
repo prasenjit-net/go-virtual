@@ -22,17 +22,18 @@ import (
 
 // RouterConfig holds all dependencies and options for creating a Router.
 type RouterConfig struct {
-	Store          storage.Storage
-	StatsCollector *stats.Collector
-	TracingService *tracing.Service
-	ProxyEngine    *proxy.Engine
-	GlobalStore    store.GlobalStoreBackend  // optional; nil = Phase 1 mode
-	SessionManager store.SessionRegistry   // optional; nil = Phase 1 mode
-	ArchiveManager archive.ArchiveService  // optional; nil disables archive endpoints
-	Branding       config.BrandingConfig
-	Headless       bool
-	ScriptTimeout  int           // ms; 0 = use default (100)
-	AIGenerator    *ai.Generator // optional; nil = AI generation disabled
+	Store             storage.Storage
+	StatsCollector    *stats.Collector
+	TracingService    *tracing.Service
+	ProxyEngine       *proxy.Engine
+	GlobalStore       store.GlobalStoreBackend  // optional; nil = Phase 1 mode
+	CollectionBackend store.CollectionBackend   // optional; nil disables collection admin endpoints
+	SessionManager    store.SessionRegistry     // optional; nil = Phase 1 mode
+	ArchiveManager    archive.ArchiveService    // optional; nil disables archive endpoints
+	Branding          config.BrandingConfig
+	Headless          bool
+	ScriptTimeout     int           // ms; 0 = use default (100)
+	AIGenerator       *ai.Generator // optional; nil = AI generation disabled
 }
 
 // Router handles HTTP routing
@@ -57,16 +58,17 @@ func NewRouter(cfg RouterConfig) *Router {
 
 	// Create handler with all dependencies in one shot — no post-construction setters needed.
 	r.handler = NewHandler(HandlerConfig{
-		Store:          cfg.Store,
-		StatsCollector: cfg.StatsCollector,
-		TracingService: cfg.TracingService,
-		ProxyEngine:    cfg.ProxyEngine,
-		GlobalStore:    cfg.GlobalStore,
-		SessionManager: cfg.SessionManager,
-		ArchiveManager: cfg.ArchiveManager,
-		Branding:       cfg.Branding,
-		ScriptTimeout:  cfg.ScriptTimeout,
-		AIGenerator:    cfg.AIGenerator,
+		Store:             cfg.Store,
+		StatsCollector:    cfg.StatsCollector,
+		TracingService:    cfg.TracingService,
+		ProxyEngine:       cfg.ProxyEngine,
+		GlobalStore:       cfg.GlobalStore,
+		CollectionBackend: cfg.CollectionBackend,
+		SessionManager:    cfg.SessionManager,
+		ArchiveManager:    cfg.ArchiveManager,
+		Branding:          cfg.Branding,
+		ScriptTimeout:     cfg.ScriptTimeout,
+		AIGenerator:       cfg.AIGenerator,
 	})
 
 	// Setup middleware

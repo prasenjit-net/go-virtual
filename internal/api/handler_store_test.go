@@ -18,7 +18,8 @@ import (
 	"github.com/prasenjit/go-virtual/internal/tracing"
 )
 
-// setupTestHandlerWithStore creates a Handler with GlobalStore + SessionManager wired in.
+// setupTestHandlerWithStore creates a Handler with GlobalStore, CollectionBackend,
+// and SessionManager wired in.
 func setupTestHandlerWithStore(t *testing.T) (*Handler, *store.GlobalStore, *store.SessionManager, *gin.Engine) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -38,18 +39,57 @@ func setupTestHandlerWithStore(t *testing.T) (*Handler, *store.GlobalStore, *sto
 		MaxSessions:       100,
 	}
 	sm := store.NewSessionManager(context.Background(), gs, cfg)
+	collBackend := store.NewMemoryCollectionBackend()
 
 	handler := NewHandler(HandlerConfig{
-		Store:          stor,
-		StatsCollector: collector,
-		TracingService: tracingSvc,
-		ProxyEngine:    proxyEngine,
-		GlobalStore:    gs,
-		SessionManager: sm,
+		Store:             stor,
+		StatsCollector:    collector,
+		TracingService:    tracingSvc,
+		ProxyEngine:       proxyEngine,
+		GlobalStore:       gs,
+		CollectionBackend: collBackend,
+		SessionManager:    sm,
 	})
 
 	r := gin.New()
 	return handler, gs, sm, r
+}
+
+// setupTestHandlerWithCollections is like setupTestHandlerWithStore but also
+// returns the CollectionBackend for tests that need to seed base documents.
+func setupTestHandlerWithCollections(t *testing.T) (*Handler, *store.GlobalStore, *store.MemoryCollectionBackend, *store.SessionManager, *gin.Engine) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+
+	stor := storage.NewMemoryStorage()
+	collector := stats.NewCollector()
+	tracingSvc := tracing.NewService(100)
+	proxyEngine := proxy.NewEngine(stor, collector, tracingSvc)
+
+	gs, err := store.NewGlobalStore(filepath.Join(t.TempDir(), "store.json"))
+	if err != nil {
+		t.Fatalf("NewGlobalStore: %v", err)
+	}
+	cfg := config.SessionConfig{
+		HeaderName:        "X-Virtual-Session-Id",
+		InactivityTimeout: 30 * time.Minute,
+		MaxSessions:       100,
+	}
+	sm := store.NewSessionManager(context.Background(), gs, cfg)
+	collBackend := store.NewMemoryCollectionBackend()
+
+	handler := NewHandler(HandlerConfig{
+		Store:             stor,
+		StatsCollector:    collector,
+		TracingService:    tracingSvc,
+		ProxyEngine:       proxyEngine,
+		GlobalStore:       gs,
+		CollectionBackend: collBackend,
+		SessionManager:    sm,
+	})
+
+	r := gin.New()
+	return handler, gs, collBackend, sm, r
 }
 
 // ── ListStoreEntries ──────────────────────────────────────────────────────────

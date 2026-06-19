@@ -20,11 +20,13 @@ import (
 type SnapshotArchiveManager struct {
 	stor storage.Storage
 	gs   store.GlobalStoreBackend
+	cb   store.CollectionBackend
 }
 
 // NewSnapshotArchiveManager creates a SnapshotArchiveManager.
-func NewSnapshotArchiveManager(stor storage.Storage, gs store.GlobalStoreBackend) *SnapshotArchiveManager {
-	return &SnapshotArchiveManager{stor: stor, gs: gs}
+// cb may be nil (collections are skipped in exports/imports).
+func NewSnapshotArchiveManager(stor storage.Storage, gs store.GlobalStoreBackend, cb store.CollectionBackend) *SnapshotArchiveManager {
+	return &SnapshotArchiveManager{stor: stor, gs: gs, cb: cb}
 }
 
 // Mode returns ModeSnapshot.
@@ -34,7 +36,7 @@ func (s *SnapshotArchiveManager) Mode() ArchiveMode { return ModeSnapshot }
 // the raw bytes together with summary metadata.
 func (s *SnapshotArchiveManager) DownloadSnapshot() ([]byte, *ArchiveMeta, error) {
 	label := "snapshot-" + time.Now().UTC().Format("20060102-150405")
-	zipBytes, manifest, err := BuildZIP(label, s.stor, s.gs)
+	zipBytes, manifest, err := BuildZIP(label, s.stor, s.gs, s.cb)
 	if err != nil {
 		return nil, nil, fmt.Errorf("snapshot: build zip: %w", err)
 	}
@@ -55,7 +57,7 @@ func (s *SnapshotArchiveManager) RestoreSnapshot(data []byte) (*RestoreResponse,
 	logger := logging.Logger("archive.snapshot")
 	logger.Info("Starting snapshot restore", "event", "snapshot_restore_started", "bytes", len(data))
 
-	result, err := ApplyZIP(data, RestoreOptions{WipeFirst: true}, s.stor, s.gs)
+	result, err := ApplyZIP(data, RestoreOptions{WipeFirst: true}, s.stor, s.gs, s.cb)
 	if err != nil {
 		errCount := 0
 		if result != nil {

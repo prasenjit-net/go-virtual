@@ -2,10 +2,6 @@ package models
 
 import "time"
 
-// CollectionKeyPrefix is prepended to every collection name when persisted in
-// the flat key-value store. This ensures collections never collide with plain keys.
-const CollectionKeyPrefix = "__col__"
-
 // StoreEntry represents one key-value pair in the global store.
 // Values can be any JSON-serialisable type: string, number, boolean, array, or object.
 type StoreEntry struct {

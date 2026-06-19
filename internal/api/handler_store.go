@@ -7,9 +7,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/models"
+	gvstore "github.com/prasenjit/go-virtual/internal/store"
 )
 
-// ListStoreEntries returns all entries in the global store, excluding collection keys.
+// ListStoreEntries returns all entries in the global store, excluding internal event keys.
 func (h *Handler) ListStoreEntries(c *gin.Context) {
 	if h.globalStore == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "store not enabled"})
@@ -18,7 +19,7 @@ func (h *Handler) ListStoreEntries(c *gin.Context) {
 	all := h.globalStore.List()
 	result := all[:0]
 	for _, e := range all {
-		if !strings.HasPrefix(e.Key, models.CollectionKeyPrefix) {
+		if !strings.HasPrefix(e.Key, gvstore.CollectionEventKeyPrefix) {
 			result = append(result, e)
 		}
 	}
