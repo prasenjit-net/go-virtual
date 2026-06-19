@@ -82,6 +82,7 @@ type CollectionTrace struct {
 	CollectionName string           `json:"collectionName"`
 	Operation      CollectionOpType `json:"operation"`
 	OutputKey      string           `json:"outputKey"`
+	Scope          string           `json:"scope,omitempty"` // "spec" | "operation" | "response"
 	DurationMs     float64          `json:"durationMs"`
 	RecordCount    int              `json:"recordCount"`
 	Error          string           `json:"error,omitempty"`

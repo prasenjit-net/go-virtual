@@ -408,7 +408,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e.serveMatchedConfig(w, r, recorded, pathParams, requestBody, signature, startTime,
 				matchedRoute, sess, lazySession, &sessionIsNew,
 				nil, nil, nil, nil, nil, // no scripts, no validations at this stage
-				nil, nil, // no early collections at this stage
+				nil, nil, nil, // no early collections, no pipeline at this stage
 				models.TraceResponseTierRecorded,
 				"", "", "", "")
 			return
@@ -456,17 +456,19 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Spec-scope pipeline: scripts, validations, collections interleaved by Order.
+	var pipelineTrace []models.PipelineTraceItem
 	{
 		specBindings, _ := e.store.GetSpecScriptBindings(matchedRoute.spec.ID)
 		specRules, _ := e.store.ListValidationRulesBySpec(matchedRoute.spec.ID)
 		specMappings, _ := e.store.GetCollectionMappingsBySpec(matchedRoute.spec.ID)
-		sTraces, vTraces, cTraces, _ := e.runScopePipeline(
-			r.Context(), specBindings, specRules, specMappings,
+		sTraces, vTraces, cTraces, pItems, _ := e.runScopePipeline(
+			r.Context(), "spec", specBindings, specRules, specMappings,
 			scriptInput, collReqCtxEarly, collSessEarly, reqData,
 		)
 		scriptTraces = append(scriptTraces, sTraces...)
 		validationTraces = append(validationTraces, vTraces...)
 		earlyCollectionTraces = append(earlyCollectionTraces, cTraces...)
+		pipelineTrace = append(pipelineTrace, pItems...)
 	}
 	// Check if spec-scope collection writes materialised the lazy session.
 	if lazySession != nil && sess == nil {
@@ -572,6 +574,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				BackendURI:         matchedRoute.spec.BackendURI,
 				ProxySkippedReason: proxySkippedReason,
 				Scripts:            scriptTraces,
+				Validations:        validationTraces,
+				Collections:        earlyCollectionTraces,
+				Pipeline:           pipelineTrace,
 				Request: models.TraceRequest{
 					Method:  r.Method,
 					URL:     r.URL.String(),
@@ -595,13 +600,14 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		opBindings, _ := e.store.GetScriptBindings(matchedRoute.operation.ID)
 		opRules, _ := e.store.ListValidationRulesByOperation(matchedRoute.operation.ID)
 		opMappings, _ := e.store.GetCollectionMappingsByOperation(matchedRoute.operation.ID)
-		sTraces, vTraces, cTraces, _ := e.runScopePipeline(
-			r.Context(), opBindings, opRules, opMappings,
+		sTraces, vTraces, cTraces, pItems, _ := e.runScopePipeline(
+			r.Context(), "operation", opBindings, opRules, opMappings,
 			scriptInput, collReqCtxEarly, collSessEarly, reqData,
 		)
 		scriptTraces = append(scriptTraces, sTraces...)
 		validationTraces = append(validationTraces, vTraces...)
 		earlyCollectionTraces = append(earlyCollectionTraces, cTraces...)
+		pipelineTrace = append(pipelineTrace, pItems...)
 	}
 	// Check if op-scope collection writes materialised the lazy session.
 	if lazySession != nil && sess == nil {
@@ -701,6 +707,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						AIScenarioApplied:   aiScenarioName(appliedScenario),
 						Scripts:             scriptTraces,
 						Validations:         validationTraces,
+						Collections:         earlyCollectionTraces,
+						Pipeline:            pipelineTrace,
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -778,6 +786,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					AIScenarioApplied:   aiScenarioName(appliedScenario),
 					Scripts:             scriptTraces,
 					Validations:         validationTraces,
+					Collections:         earlyCollectionTraces,
+					Pipeline:            pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -852,6 +862,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ProxySkippedReason: proxySkippedReason,
 					Scripts:            scriptTraces,
 					Validations:        validationTraces,
+					Collections:        earlyCollectionTraces,
+					Pipeline:           pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -885,6 +897,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		scriptInput, scriptOutput, scriptTraces,
 		validationOutput, validationTraces,
 		earlyCollectionOutput, earlyCollectionTraces,
+		pipelineTrace,
 		responseTier,
 		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario))
 }
@@ -910,6 +923,7 @@ func (e *Engine) serveMatchedConfig(
 	validationTraces []models.ValidationTrace,
 	earlyCollectionOutput map[string]any,
 	earlyCollectionTraces []models.CollectionTrace,
+	pipelineTrace []models.PipelineTraceItem,
 	responseTier string,
 	aiSkippedReason string,
 	proxySkippedReason string,
@@ -966,12 +980,13 @@ func (e *Engine) serveMatchedConfig(
 
 		respBindings, _ := e.store.GetResponseScriptBindings(matchedConfig.ID)
 		respMappings, _ := e.store.GetCollectionMappingsByResponse(matchedConfig.ID)
-		respScriptTraces, _, respCollTraces, _ := e.runScopePipeline(
-			r.Context(), respBindings, nil, respMappings,
+		respScriptTraces, _, respCollTraces, respPipelineItems, _ := e.runScopePipeline(
+			r.Context(), "response", respBindings, nil, respMappings,
 			scriptInput, respCollReq, sessForResp, respReqData,
 		)
 		scriptTraces = append(scriptTraces, respScriptTraces...)
 		collectionTraces = append(collectionTraces, respCollTraces...)
+		pipelineTrace = append(pipelineTrace, respPipelineItems...)
 		if len(respScriptTraces) > 0 {
 			reqLogger.Debug("Executed response-scope pipeline",
 				"event", "response_pipeline_executed",
@@ -1139,6 +1154,7 @@ func (e *Engine) serveMatchedConfig(
 			Scripts:             scriptTraces,
 			Collections:         collectionTraces,
 			Validations:         validationTraces,
+			Pipeline:            pipelineTrace,
 			Session:             sessionTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
@@ -1533,8 +1549,12 @@ func stepTypeOrder(t models.PipelineStepType) int {
 // their user-defined Order sequence. reqData is updated in-place so that later
 // steps in the same scope see the outputs of earlier steps. On validation failure,
 // the remaining steps are skipped and aborted=true is returned.
+// scope ("spec", "operation", "response") is stamped on each trace for observability.
+// The returned pipelineItems slice records all steps in execution order for the
+// unified pipeline timeline in the trace.
 func (e *Engine) runScopePipeline(
 	ctx context.Context,
+	scope string,
 	bindings []*models.ScriptBinding,
 	rules []*models.ValidationRule,
 	mappings []*models.CollectionMapping,
@@ -1542,7 +1562,7 @@ func (e *Engine) runScopePipeline(
 	collReq *collection.RequestContext,
 	sess store.SessionState,
 	reqData *condition.RequestData,
-) (scriptTraces []models.ScriptTrace, valTraces []models.ValidationTrace, collTraces []models.CollectionTrace, aborted bool) {
+) (scriptTraces []models.ScriptTrace, valTraces []models.ValidationTrace, collTraces []models.CollectionTrace, pipelineItems []models.PipelineTraceItem, aborted bool) {
 	var items []pipelineItem
 	for _, b := range bindings {
 		if b != nil && b.Enabled {
@@ -1574,7 +1594,12 @@ func (e *Engine) runScopePipeline(
 				continue
 			}
 			out, trace := e.scriptEngine.RunOneBinding(ctx, item.binding, scriptInput, sess)
+			trace.Scope = scope
 			scriptTraces = append(scriptTraces, trace)
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:   models.PipelineStepScript,
+				Script: &scriptTraces[len(scriptTraces)-1],
+			})
 			if reqData.ScriptOutput == nil {
 				reqData.ScriptOutput = make(map[string]any)
 			}
@@ -1589,7 +1614,13 @@ func (e *Engine) runScopePipeline(
 				reqData.ValidationOutput = make(map[string]*models.ValidationResult)
 			}
 			reqData.ValidationOutput[item.rule.Name] = result
-			if result.Status == "fail" {
+			isAbort := result.Status == "fail"
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:       models.PipelineStepValidation,
+				Validation: &valTraces[len(valTraces)-1],
+				Aborted:    isAbort,
+			})
+			if isAbort {
 				aborted = true
 				return
 			}
@@ -1599,7 +1630,12 @@ func (e *Engine) runScopePipeline(
 				continue
 			}
 			out, trace, _ := e.collectionExecutor.RunOneMapping(ctx, item.mapping, collReq, sess)
+			trace.Scope = scope
 			collTraces = append(collTraces, trace)
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:       models.PipelineStepCollection,
+				Collection: &collTraces[len(collTraces)-1],
+			})
 			if reqData.CollectionOutput == nil {
 				reqData.CollectionOutput = make(map[string]any)
 			}

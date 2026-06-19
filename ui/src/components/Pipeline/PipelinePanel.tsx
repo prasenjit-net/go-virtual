@@ -19,7 +19,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
     GripVertical, Plus, Trash2, ToggleLeft, ToggleRight,
-    ChevronUp, ChevronDown, Code2, ShieldCheck, Database,
+    ChevronDown, Code2, ShieldCheck, Database,
     Layers, X, Loader2, ExternalLink,
 } from 'lucide-react'
 import clsx from 'clsx'
@@ -229,7 +229,6 @@ interface StepCardProps {
     onToggle: () => void
     onDelete: () => void
     onEdit: () => void
-    onMove?: (dir: 'up' | 'down') => void
     isDragOverlay?: boolean
     dragHandleListeners?: ReturnType<typeof useSortable>['listeners']
     dragHandleAttributes?: ReturnType<typeof useSortable>['attributes']
@@ -238,14 +237,12 @@ interface StepCardProps {
 }
 
 function StepCard({
-    step, index, total, scope,
-    onToggle, onDelete, onEdit, onMove,
+    step, index, total: _total, scope: _scope,
+    onToggle, onDelete, onEdit,
     isDragOverlay = false,
     dragHandleListeners, dragHandleAttributes,
     innerRef, style,
 }: StepCardProps) {
-    const showDrag = scope !== 'response'
-
     return (
         <div
             ref={innerRef}
@@ -256,28 +253,15 @@ function StepCard({
                 !step.script?.enabled && !step.validation?.enabled && !step.collection?.enabled && 'opacity-60',
             )}
         >
-            {/* Drag handle or up/down */}
-            {showDrag ? (
-                <button
-                    {...dragHandleListeners}
-                    {...dragHandleAttributes}
-                    className="flex-shrink-0 cursor-grab text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
-                    tabIndex={-1}
-                >
-                    <GripVertical className="w-4 h-4" />
-                </button>
-            ) : (
-                <div className="flex flex-col gap-0.5 flex-shrink-0">
-                    <button onClick={() => onMove?.('up')} disabled={index === 0}
-                        className="p-0.5 text-gray-300 dark:text-slate-600 hover:text-gray-600 dark:hover:text-slate-300 disabled:opacity-30 transition-colors">
-                        <ChevronUp className="w-4 h-4" />
-                    </button>
-                    <button onClick={() => onMove?.('down')} disabled={index === total - 1}
-                        className="p-0.5 text-gray-300 dark:text-slate-600 hover:text-gray-600 dark:hover:text-slate-300 disabled:opacity-30 transition-colors">
-                        <ChevronDown className="w-4 h-4" />
-                    </button>
-                </div>
-            )}
+            {/* Drag handle */}
+            <button
+                {...dragHandleListeners}
+                {...dragHandleAttributes}
+                className="flex-shrink-0 cursor-grab text-gray-300 dark:text-slate-600 hover:text-gray-500 dark:hover:text-slate-400 transition-colors"
+                tabIndex={-1}
+            >
+                <GripVertical className="w-4 h-4" />
+            </button>
 
             {/* Position number */}
             <span className="w-5 text-center text-xs text-gray-400 dark:text-slate-500 flex-shrink-0 tabular-nums">
@@ -461,20 +445,6 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
         const newIdx = steps.findIndex((s) => stepId(s) === over.id)
         if (oldIdx === -1 || newIdx === -1) return
         const reordered = arrayMove(steps, oldIdx, newIdx)
-        reorderMutation.mutate(reordered.map((s) => ({
-            type: s.type,
-            id: stepEntityId(s),
-        })))
-    }
-
-    // ── Up/down move (response scope) ──
-    const moveStep = (step: PipelineStep, dir: 'up' | 'down') => {
-        const idx = steps.findIndex((s) => stepId(s) === stepId(step))
-        if (dir === 'up' && idx === 0) return
-        if (dir === 'down' && idx === steps.length - 1) return
-        const swapIdx = dir === 'up' ? idx - 1 : idx + 1
-        const reordered = [...steps]
-        ;[reordered[idx], reordered[swapIdx]] = [reordered[swapIdx], reordered[idx]]
         reorderMutation.mutate(reordered.map((s) => ({
             type: s.type,
             id: stepEntityId(s),
@@ -694,31 +664,16 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
     // ── Render ──
     const stepList = (
         <div className="divide-y divide-gray-100 dark:divide-slate-800">
-            {steps.map((step, idx) => {
-                if (scope === 'response') {
-                    return (
-                        <StepCard
-                            key={stepId(step)}
-                            step={step} index={idx} total={steps.length}
-                            scope={scope}
-                            onToggle={() => toggleMutation.mutate(step)}
-                            onDelete={() => { if (confirm('Remove this step?')) deleteMutation.mutate(step) }}
-                            onEdit={() => openEdit(step)}
-                            onMove={(dir) => moveStep(step, dir)}
-                        />
-                    )
-                }
-                return (
-                    <SortableStepCard
-                        key={stepId(step)}
-                        step={step} index={idx} total={steps.length}
-                        scope={scope}
-                        onToggle={() => toggleMutation.mutate(step)}
-                        onDelete={() => { if (confirm('Remove this step?')) deleteMutation.mutate(step) }}
-                        onEdit={() => openEdit(step)}
-                    />
-                )
-            })}
+            {steps.map((step, idx) => (
+                <SortableStepCard
+                    key={stepId(step)}
+                    step={step} index={idx} total={steps.length}
+                    scope={scope}
+                    onToggle={() => toggleMutation.mutate(step)}
+                    onDelete={() => { if (confirm('Remove this step?')) deleteMutation.mutate(step) }}
+                    onEdit={() => openEdit(step)}
+                />
+            ))}
         </div>
     )
 
@@ -734,9 +689,9 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
                         <div>
                             <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100">Processing Pipeline</h2>
                             <p className="text-sm text-gray-500 dark:text-slate-400 mt-0.5">
-                                Scripts, validations, and collection mappings run in the order shown.{' '}
-                                {scope !== 'response' && 'Drag rows to reorder.'}
-                                {' '}A failing validation aborts remaining steps at this scope.
+                                Scripts, validations, and collection mappings run in the order shown.
+                                {' '}Drag rows to reorder.
+                                {scope !== 'response' && ' A failing validation aborts remaining steps at this scope.'}
                             </p>
                         </div>
                     </div>
@@ -780,8 +735,6 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
                             Add scripts, validations, or collection mappings using the buttons above.
                         </p>
                     </div>
-                ) : scope === 'response' ? (
-                    stepList
                 ) : (
                     <DndContext
                         sensors={sensors}
