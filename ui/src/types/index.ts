@@ -537,6 +537,25 @@ export interface ArchiveMeta {
     counts: ArchiveCounts;
 }
 
+// ---- Pipeline ----
+
+export type PipelineStepType = 'script' | 'validation' | 'collection'
+
+export interface PipelineStep {
+    type: PipelineStepType
+    order: number
+    script?: ScriptBinding
+    validation?: ValidationRule
+    collection?: CollectionMapping
+}
+
+export interface PipelineReorderItem {
+    type: PipelineStepType
+    id: string
+}
+
+export type PipelineScope = 'spec' | 'operation' | 'response'
+
 export interface RestoreError {
     path: string;
     message: string;

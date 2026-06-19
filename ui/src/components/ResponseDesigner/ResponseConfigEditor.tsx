@@ -3,10 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
-import { collectionMappingsApi, responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
-import type { CollectionMappingInput, ConditionNode, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
-import ScriptBindingsPanel from '../ScriptManager/ScriptBindingsPanel'
-import CollectionMappingsPanel from '../CollectionMapper/CollectionMappingsPanel'
+import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
+import type { ConditionNode, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
+import PipelinePanel from '../Pipeline/PipelinePanel'
 import ConditionEditor, { conditionsToTree } from '../shared/ConditionEditor'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
@@ -189,7 +188,6 @@ export default function ResponseConfigEditor({
     const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<typeof Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const [pendingCollectionMappings, setPendingCollectionMappings] = useState<CollectionMappingInput[]>([])
 
     const queryClient = useQueryClient()
     const isDark = useIsDark()
@@ -218,13 +216,7 @@ export default function ResponseConfigEditor({
 
     const updateMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.update(config!.id, data),
-        onSuccess: async () => {
-            const id = config!.id
-            if (pendingCollectionMappings.length > 0) {
-                await Promise.allSettled(pendingCollectionMappings.map((m) => collectionMappingsApi.create(operationId, id, m)))
-                setPendingCollectionMappings([])
-                queryClient.invalidateQueries({ queryKey: ['collectionMappings', id] })
-            }
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['responses', operationId] })
             onClose()
         },
@@ -908,22 +900,12 @@ export default function ResponseConfigEditor({
                 </div>
             </div>
         </div>
-        {/* Response-level script bindings — shown below editor when editing an existing config in page mode */}
+        {/* Response-scope pipeline: scripts + collections interleaved */}
         {!isModal && config?.id && !readOnly && (
-            <ScriptBindingsPanel
-                kind="response"
+            <PipelinePanel
+                scope="response"
+                scopeId={config.id}
                 operationId={operationId}
-                responseConfigId={config.id}
-            />
-        )}
-        {/* Collection mappings — shown below script bindings in page mode */}
-        {!isModal && config?.id && !readOnly && (
-            <CollectionMappingsPanel
-                kind="response"
-                operationId={operationId}
-                responseConfigId={config.id}
-                pendingMappings={pendingCollectionMappings}
-                onPendingMappingsChange={setPendingCollectionMappings}
             />
         )}
         {showExamplePicker && (
