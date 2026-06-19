@@ -388,8 +388,8 @@ export default function OperationDetail() {
                                 {operation.exampleResponse.body && (
                                     <div className="text-sm">
                                         <span className={spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"}>Body:</span>
-                                        <pre className="mt-1 bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48">
-                                            {operation.exampleResponse.body}
+                                        <pre className="mt-1 bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48 whitespace-pre">
+                                            {(() => { try { return JSON.stringify(JSON.parse(operation.exampleResponse.body), null, 2); } catch { return operation.exampleResponse.body; } })()}
                                         </pre>
                                     </div>
                                 )}
