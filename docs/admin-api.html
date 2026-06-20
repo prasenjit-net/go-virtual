@@ -72,6 +72,7 @@
         <li><a href="#responses-api">Responses</a></li>
         <li><a href="#scripts-api">Scripts</a></li>
         <li><a href="#bindings-api">Script Bindings</a></li>
+        <li><a href="#pipeline-api">Pipeline</a></li>
         <li><a href="#store-api">Global Store</a></li>
         <li><a href="#sessions-api">Sessions</a></li>
         <li><a href="#traces-api">Traces</a></li>
@@ -476,6 +477,79 @@
         <div>
           <div class="path">/_api/operations/:operationId/scripts/:bindingId</div>
           <div class="desc">Remove a specific script binding.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline API -->
+    <div class="section" id="pipeline-api">
+      <h2>Pipeline</h2>
+      <p>The pipeline endpoints expose the unified, mixed-order step sequence for each scope. A pipeline step is one of: a script binding (<code>type: "script"</code>), a validation rule (<code>type: "validation"</code>), or a collection mapping (<code>type: "collection"</code>). Steps are ordered by their <code>order</code> field, and within the same order value, scripts run before validations, validations before collections.</p>
+      <p>Use the reorder endpoint to drag-and-drop reorder steps from the Admin UI, or to programmatically reassign execution order across all step types at once.</p>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/specs/:specId/pipeline</div>
+          <div class="desc">List all pipeline steps for a spec scope (scripts, validation rules, and collection mappings), sorted by order.</div>
+        </div>
+      </div>
+      <pre><code>{
+  <span class="key">"steps"</span>: [
+    { <span class="key">"type"</span>: <span class="str">"script"</span>,     <span class="key">"order"</span>: <span class="num">0</span>,  <span class="key">"script"</span>: { <span class="cm">/* ScriptBinding */</span> } },
+    { <span class="key">"type"</span>: <span class="str">"validation"</span>, <span class="key">"order"</span>: <span class="num">10</span>, <span class="key">"validation"</span>: { <span class="cm">/* ValidationRule */</span> } },
+    { <span class="key">"type"</span>: <span class="str">"collection"</span>, <span class="key">"order"</span>: <span class="num">20</span>, <span class="key">"collection"</span>: { <span class="cm">/* CollectionMapping */</span> } }
+  ]
+}
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/specs/:specId/pipeline/reorder</div>
+          <div class="desc">Reorder all spec-scope pipeline steps. Accepts an ordered array of <code>{type, id}</code> items; assigns <code>order = index × 10</code> to each referenced entity.</div>
+        </div>
+      </div>
+      <pre><code><span class="cm">// Request body</span>
+[
+  { <span class="key">"type"</span>: <span class="str">"script"</span>,     <span class="key">"id"</span>: <span class="str">"binding-id"</span> },
+  { <span class="key">"type"</span>: <span class="str">"validation"</span>, <span class="key">"id"</span>: <span class="str">"rule-id"</span> },
+  { <span class="key">"type"</span>: <span class="str">"collection"</span>, <span class="key">"id"</span>: <span class="str">"mapping-id"</span> }
+]
+
+<span class="cm">// Response</span>
+{ <span class="key">"reordered"</span>: <span class="num">3</span> }
+</code></pre>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/pipeline</div>
+          <div class="desc">List all pipeline steps for an operation scope, sorted by order.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/operations/:operationId/pipeline/reorder</div>
+          <div class="desc">Reorder all operation-scope pipeline steps. Same body format as the spec reorder endpoint.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div>
+          <div class="path">/_api/responses/:responseId/pipeline</div>
+          <div class="desc">List all pipeline steps for a response config scope (scripts and collection mappings only — validation rules are not supported at response scope), sorted by order.</div>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div>
+          <div class="path">/_api/responses/:responseId/pipeline/reorder</div>
+          <div class="desc">Reorder all response-scope pipeline steps. Same body format as the spec reorder endpoint.</div>
         </div>
       </div>
     </div>

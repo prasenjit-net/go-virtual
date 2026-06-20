@@ -146,26 +146,33 @@
       </div>
 
       <h3>Request pipeline position</h3>
-      <p>Collection Mappings run at different points in the request pipeline depending on their scope:</p>
+      <p>At each scope, scripts, validation rules, and collection mappings execute together in a single <strong>mixed-order pipeline</strong>, interleaved by their <code>order</code> field rather than running in fixed phases. You control the exact sequence by setting the order on each step.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Step</th><th>What happens</th></tr></thead>
           <tbody>
             <tr><td>① Route</td><td>Path + method matched to an OpenAPI operation</td></tr>
             <tr><td>② Session</td><td>Session resolved from header</td></tr>
-            <tr><td>③ Recorded responses</td><td>Signature-matched pre-recorded responses served</td></tr>
-            <tr><td>④ Scripts</td><td>Spec/operation-level Starlark scripts run</td></tr>
-            <tr><td>⑤ Proxy check</td><td>Proxy mode evaluated</td></tr>
-            <tr><td>⑥ Validation</td><td>Spec/operation validation rules evaluated</td></tr>
-            <tr><td><strong>⑥.5 Spec/Op Collections</strong></td><td><strong>Spec-level then operation-level collection mappings run. Results available in conditions and templates.</strong></td></tr>
-            <tr><td>⑦ Response match</td><td>Response configs evaluated in priority order using conditions (which can now reference collection output)</td></tr>
-            <tr><td><strong>⑦.5 Response Collections</strong></td><td><strong>Response-level collection mappings run after a config is matched. Results merged into template context.</strong></td></tr>
-            <tr><td>⑧ Template render</td><td>Response body + headers rendered with full context</td></tr>
+            <tr><td>③ Recorded responses</td><td>Signature-matched pre-recorded responses served immediately</td></tr>
+            <tr><td><strong>④ Spec-scope pipeline</strong></td><td><strong>Scripts, validation rules, and collection mappings at spec level run in user-defined order. Results accumulate and are visible to later steps in the same pipeline.</strong></td></tr>
+            <tr><td>⑤ Proxy check</td><td>Proxy mode evaluated using spec-scope outputs</td></tr>
+            <tr><td><strong>⑥ Operation-scope pipeline</strong></td><td><strong>Scripts, validation rules, and collection mappings at operation level run in user-defined order. Results merge with spec-scope outputs.</strong></td></tr>
+            <tr><td>⑦ Response match</td><td>Response configs evaluated in priority order; conditions can reference all script, validation, and collection outputs</td></tr>
+            <tr><td><strong>⑦.5 Response-scope pipeline</strong></td><td><strong>Scripts and collection mappings at response level run in user-defined order after a config is matched. Validation rules are not supported at response scope.</strong></td></tr>
+            <tr><td>⑧ Template render</td><td>Response body + headers rendered with full context from all scopes</td></tr>
           </tbody>
         </table>
       </div>
 
-      <p>Because spec/operation-level mappings run <em>before</em> response matching (step ⑥.5), you can use their results in conditions to select different responses. Response-level mappings run <em>after</em> matching (step ⑦.5) — ideal for side-effect writes like recording the request in a log collection.</p>
+      <p>Because spec and operation-scope pipelines run <em>before</em> response matching (steps ④ and ⑥), you can use their collection results in conditions to select different responses. Response-scope mappings run <em>after</em> matching (step ⑦.5) — ideal for side-effect writes like recording the request in a log collection.</p>
+
+      <div class="callout info">
+        <span class="callout-icon">💡</span>
+        <div class="callout-body">
+          <strong>Ordering across step types</strong>
+          Use the <strong>Pipeline</strong> panel on the Spec Detail or Operation Detail page to drag and reorder all steps — scripts, validation rules, and collection mappings — in a single unified view. Within a scope, a step with a lower order number runs first. Steps with equal order numbers run scripts before validations, validations before collections.
+        </div>
+      </div>
     </div>
 
     <!-- Scopes -->
@@ -395,8 +402,8 @@
       <div class="callout warning">
         <span class="callout-icon">⚠️</span>
         <div class="callout-body">
-          <strong>Response-level mappings cannot influence conditions</strong>
-          Only spec-level and operation-level mapping output is available for condition evaluation, because response-level mappings run <em>after</em> response matching. Use spec/operation-level mappings when the result needs to influence which response is selected.
+          <strong>Response-scope mappings cannot influence conditions</strong>
+          Only spec-scope and operation-scope mapping output is available for condition evaluation, because response-scope mappings run <em>after</em> response matching. Use spec/operation-scope mappings when the result needs to influence which response is selected.
         </div>
       </div>
     </div>
