@@ -961,3 +961,22 @@ export const aiApi = {
         return data.configured === true;
     },
 };
+
+// Pipeline API
+export const pipelineApi = {
+    list: async (scope: import('../types').PipelineScope, scopeId: string): Promise<{ steps: import('../types').PipelineStep[] }> => {
+        const prefix = scope === 'spec' ? 'specs' : scope === 'operation' ? 'operations' : 'responses';
+        const response = await fetch(`${API_BASE}/${prefix}/${scopeId}/pipeline`);
+        return handleResponse<{ steps: import('../types').PipelineStep[] }>(response);
+    },
+
+    reorder: async (scope: import('../types').PipelineScope, scopeId: string, items: import('../types').PipelineReorderItem[]): Promise<{ reordered: number }> => {
+        const prefix = scope === 'spec' ? 'specs' : scope === 'operation' ? 'operations' : 'responses';
+        const response = await fetch(`${API_BASE}/${prefix}/${scopeId}/pipeline/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(items),
+        });
+        return handleResponse<{ reordered: number }>(response);
+    },
+};

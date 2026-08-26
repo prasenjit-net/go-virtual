@@ -63,6 +63,7 @@ type ScriptTrace struct {
 	ScriptID   string   `json:"scriptId"`
 	ScriptName string   `json:"scriptName"`
 	OutputKey  string   `json:"outputKey"`
+	Scope      string   `json:"scope,omitempty"` // "spec" | "operation" | "response"
 	DurationMs float64  `json:"durationMs"`
 	Output     any      `json:"output,omitempty"`
 	Error      string   `json:"error,omitempty"`

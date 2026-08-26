@@ -181,7 +181,7 @@
     <!-- Bindings -->
     <div class="section" id="bindings">
       <h2>Script Bindings</h2>
-      <p>A binding associates a script with an operation. When the operation is called, the bound scripts execute in binding order. Each binding has an <code>outputKey</code> — the name used to reference that script's output in templates.</p>
+      <p>A binding associates a script with a spec, operation, or response config. Each binding has an <code>outputKey</code> — the name used to reference that script's output in templates and conditions — and an <code>order</code> that controls when it runs relative to validation rules and collection mappings at the same scope. All three step types share a single <strong>mixed-order pipeline</strong>: a script can run before or after a validation rule or collection mapping depending on their order values.</p>
 
       <h3>Create a binding</h3>
       <pre><code>curl -X POST http://localhost:8080/_api/operations/&lt;op-id&gt;/scripts \

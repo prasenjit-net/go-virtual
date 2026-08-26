@@ -408,35 +408,89 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			e.serveMatchedConfig(w, r, recorded, pathParams, requestBody, signature, startTime,
 				matchedRoute, sess, lazySession, &sessionIsNew,
 				nil, nil, nil, nil, nil, // no scripts, no validations at this stage
-				nil, nil, // no early collections at this stage
+				nil, nil, nil, // no early collections, no pipeline at this stage
 				models.TraceResponseTierRecorded,
 				"", "", "", "")
 			return
 		}
 	}
 
-	// ④ Scripts — spec-level then operation-level
+	// ④ + ⑥ + ⑥.5 — Spec and operation scope pipelines (scripts, validations, collections in user-defined order)
 	scriptInput := scripting.BuildInput(pathParams, r, requestBody)
-	scriptOutput, scriptTraces := e.scriptEngine.RunSpecBindings(r.Context(), matchedRoute.spec.ID, scriptInput, sess)
-	opOutput, opTraces := e.scriptEngine.RunBindings(r.Context(), matchedRoute.operation.ID, scriptInput, sess)
-	for k, v := range opOutput {
-		scriptOutput[k] = v
-	}
-	scriptTraces = append(scriptTraces, opTraces...)
-	reqLogger.Debug("Executed script bindings",
-		"event", "script_bindings_executed",
-		"binding_count", len(scriptTraces),
-	)
 
-	// Build initial reqData (ScriptOutput available from here onwards)
+	// Shared output maps; runScopePipeline updates them in-place so conditions
+	// in later steps within the same scope see earlier outputs.
+	scriptOutput := make(map[string]any)
+	validationOutput := make(map[string]*models.ValidationResult)
+	earlyCollectionOutput := make(map[string]any)
+
 	reqData := &condition.RequestData{
-		PathParams:   pathParams,
-		QueryParams:  r.URL.Query(),
-		Headers:      r.Header,
-		Body:         requestBody,
-		Signature:    signature,
-		ScriptOutput: scriptOutput,
+		PathParams:       pathParams,
+		QueryParams:      r.URL.Query(),
+		Headers:          r.Header,
+		Body:             requestBody,
+		Signature:        signature,
+		ScriptOutput:     scriptOutput,
+		ValidationOutput: validationOutput,
+		CollectionOutput: earlyCollectionOutput,
 	}
+
+	var scriptTraces []models.ScriptTrace
+	var validationTraces []models.ValidationTrace
+	var earlyCollectionTraces []models.CollectionTrace
+
+	// Determine session available for collection steps.
+	collSessEarly := sess
+	if collSessEarly == nil && lazySession != nil {
+		collSessEarly = lazySession
+	}
+	var collReqCtxEarly *collection.RequestContext
+	if collSessEarly != nil {
+		collReqCtxEarly = &collection.RequestContext{
+			PathParams:  pathParams,
+			QueryParams: r.URL.Query(),
+			Headers:     r.Header,
+			Body:        requestBody,
+			Session:     collSessEarly,
+		}
+	}
+
+	// Spec-scope pipeline: scripts, validations, collections interleaved by Order.
+	var pipelineTrace []models.PipelineTraceItem
+	{
+		specBindings, _ := e.store.GetSpecScriptBindings(matchedRoute.spec.ID)
+		specRules, _ := e.store.ListValidationRulesBySpec(matchedRoute.spec.ID)
+		specMappings, _ := e.store.GetCollectionMappingsBySpec(matchedRoute.spec.ID)
+		sTraces, vTraces, cTraces, pItems, _ := e.runScopePipeline(
+			r.Context(), "spec", specBindings, specRules, specMappings,
+			scriptInput, collReqCtxEarly, collSessEarly, reqData,
+		)
+		scriptTraces = append(scriptTraces, sTraces...)
+		validationTraces = append(validationTraces, vTraces...)
+		earlyCollectionTraces = append(earlyCollectionTraces, cTraces...)
+		pipelineTrace = append(pipelineTrace, pItems...)
+	}
+	// Check if spec-scope collection writes materialised the lazy session.
+	if lazySession != nil && sess == nil {
+		if inner := lazySession.Materialized(); inner != nil {
+			info := inner.Info(false)
+			w.Header().Set(e.sessionHeaderName, info.ID)
+			sess = inner
+			sessionIsNew = true
+			collSessEarly = sess
+			if collReqCtxEarly != nil {
+				collReqCtxEarly.Session = collSessEarly
+			}
+			reqLogger.Debug("Lazy session materialised by spec-scope pipeline",
+				"event", "lazy_session_created_by_spec_pipeline",
+				"session_id", info.ID,
+			)
+		}
+	}
+	reqLogger.Debug("Executed spec-scope pipeline",
+		"event", "spec_pipeline_executed",
+		"step_count", len(scriptTraces)+len(validationTraces)+len(earlyCollectionTraces),
+	)
 
 	// ⑤ Proxy — evaluate proxy conditions (uses ScriptOutput); if triggered, forward + return
 	proxyActivated, proxySkippedReason := e.proxyConditionsMet(matchedRoute.spec, reqData)
@@ -520,6 +574,9 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				BackendURI:         matchedRoute.spec.BackendURI,
 				ProxySkippedReason: proxySkippedReason,
 				Scripts:            scriptTraces,
+				Validations:        validationTraces,
+				Collections:        earlyCollectionTraces,
+				Pipeline:           pipelineTrace,
 				Request: models.TraceRequest{
 					Method:  r.Method,
 					URL:     r.URL.String(),
@@ -538,65 +595,37 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ⑥ Validations — run spec-level then operation-level validation rules
-	validationRules := e.loadValidationRules(matchedRoute.spec.ID, matchedRoute.operation.ID)
-	validationOutput, validationTraces := validation.RunRules(validationRules, reqData)
-	reqData.ValidationOutput = validationOutput
-	reqLogger.Debug("Evaluated validation rules",
-		"event", "validation_rules_evaluated",
-		"rule_count", len(validationTraces),
-	)
-
-	// ⑥.5 Spec + operation collection mappings — run before response matching so
-	// their output is available to response config condition evaluation.
-	var earlyCollectionOutput map[string]any
-	var earlyCollectionTraces []models.CollectionTrace
-	if e.sessionManager != nil || lazySession != nil {
-		collSess := sess
-		if collSess == nil && lazySession != nil {
-			collSess = lazySession
-		}
-		if collSess != nil {
-			collReqCtx := &collection.RequestContext{
-				PathParams:  pathParams,
-				QueryParams: r.URL.Query(),
-				Headers:     r.Header,
-				Body:        requestBody,
-				Session:     collSess,
-			}
-			specCollOut, specCollTraces, _ := e.collectionExecutor.RunForSpec(r.Context(), matchedRoute.spec.ID, collReqCtx, collSess)
-			opCollOut, opCollTraces, _ := e.collectionExecutor.RunForOperation(r.Context(), matchedRoute.operation.ID, collReqCtx, collSess)
-			earlyCollectionOutput = make(map[string]any)
-			for k, v := range specCollOut {
-				earlyCollectionOutput[k] = v
-			}
-			for k, v := range opCollOut {
-				earlyCollectionOutput[k] = v
-			}
-			earlyCollectionTraces = append(earlyCollectionTraces, specCollTraces...)
-			earlyCollectionTraces = append(earlyCollectionTraces, opCollTraces...)
-			// Materialise lazy session if a collection write triggered it
-			if lazySession != nil && sess == nil {
-				if inner := lazySession.Materialized(); inner != nil {
-					info := inner.Info(false)
-					w.Header().Set(e.sessionHeaderName, info.ID)
-					sess = inner
-					sessionIsNew = true
-					reqLogger.Debug("Lazy session materialised by early collection operation",
-						"event", "lazy_session_created_by_early_collection",
-						"session_id", info.ID,
-					)
-				}
-			}
-			if len(earlyCollectionTraces) > 0 {
-				reqLogger.Debug("Executed early collection mappings",
-					"event", "early_collection_mappings_executed",
-					"mapping_count", len(earlyCollectionTraces),
-				)
-			}
+	// Operation-scope pipeline: scripts, validations, collections interleaved by Order.
+	{
+		opBindings, _ := e.store.GetScriptBindings(matchedRoute.operation.ID)
+		opRules, _ := e.store.ListValidationRulesByOperation(matchedRoute.operation.ID)
+		opMappings, _ := e.store.GetCollectionMappingsByOperation(matchedRoute.operation.ID)
+		sTraces, vTraces, cTraces, pItems, _ := e.runScopePipeline(
+			r.Context(), "operation", opBindings, opRules, opMappings,
+			scriptInput, collReqCtxEarly, collSessEarly, reqData,
+		)
+		scriptTraces = append(scriptTraces, sTraces...)
+		validationTraces = append(validationTraces, vTraces...)
+		earlyCollectionTraces = append(earlyCollectionTraces, cTraces...)
+		pipelineTrace = append(pipelineTrace, pItems...)
+	}
+	// Check if op-scope collection writes materialised the lazy session.
+	if lazySession != nil && sess == nil {
+		if inner := lazySession.Materialized(); inner != nil {
+			info := inner.Info(false)
+			w.Header().Set(e.sessionHeaderName, info.ID)
+			sess = inner
+			sessionIsNew = true
+			reqLogger.Debug("Lazy session materialised by op-scope pipeline",
+				"event", "lazy_session_created_by_op_pipeline",
+				"session_id", info.ID,
+			)
 		}
 	}
-	reqData.CollectionOutput = earlyCollectionOutput
+	reqLogger.Debug("Executed operation-scope pipeline",
+		"event", "op_pipeline_executed",
+		"step_count", len(scriptTraces)+len(validationTraces)+len(earlyCollectionTraces),
+	)
 
 	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput + CollectionOutput
 	var matchedConfig *models.ResponseConfig
@@ -678,6 +707,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						AIScenarioApplied:   aiScenarioName(appliedScenario),
 						Scripts:             scriptTraces,
 						Validations:         validationTraces,
+						Collections:         earlyCollectionTraces,
+						Pipeline:            pipelineTrace,
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -755,6 +786,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					AIScenarioApplied:   aiScenarioName(appliedScenario),
 					Scripts:             scriptTraces,
 					Validations:         validationTraces,
+					Collections:         earlyCollectionTraces,
+					Pipeline:            pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -829,6 +862,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					ProxySkippedReason: proxySkippedReason,
 					Scripts:            scriptTraces,
 					Validations:        validationTraces,
+					Collections:        earlyCollectionTraces,
+					Pipeline:           pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -862,6 +897,7 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		scriptInput, scriptOutput, scriptTraces,
 		validationOutput, validationTraces,
 		earlyCollectionOutput, earlyCollectionTraces,
+		pipelineTrace,
 		responseTier,
 		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario))
 }
@@ -887,6 +923,7 @@ func (e *Engine) serveMatchedConfig(
 	validationTraces []models.ValidationTrace,
 	earlyCollectionOutput map[string]any,
 	earlyCollectionTraces []models.CollectionTrace,
+	pipelineTrace []models.PipelineTraceItem,
 	responseTier string,
 	aiSkippedReason string,
 	proxySkippedReason string,
@@ -904,83 +941,73 @@ func (e *Engine) serveMatchedConfig(
 		sessionIsNew = *sessionIsNewPtr
 	}
 
-	// Run response-level script bindings (if any)
+	// Response-scope pipeline: scripts and collections interleaved by Order
+	// (no validation rules at response scope).
+	collectionOutput := make(map[string]any)
+	for k, v := range earlyCollectionOutput {
+		collectionOutput[k] = v
+	}
+	collectionTraces := append([]models.CollectionTrace(nil), earlyCollectionTraces...)
+
 	if scriptInput != nil {
-		if respScriptOutput, respScriptTraces := e.scriptEngine.RunResponseBindings(r.Context(), matchedConfig.ID, scriptInput, sess); len(respScriptOutput) > 0 {
-			if scriptOutput == nil {
-				scriptOutput = make(map[string]any)
+		sessForResp := sess
+		if sessForResp == nil && lazySession != nil {
+			sessForResp = lazySession
+		}
+
+		var respCollReq *collection.RequestContext
+		if sessForResp != nil {
+			respCollReq = &collection.RequestContext{
+				PathParams:  pathParams,
+				QueryParams: r.URL.Query(),
+				Headers:     r.Header,
+				Body:        requestBody,
+				Session:     sessForResp,
 			}
-			for k, v := range respScriptOutput {
-				scriptOutput[k] = v
-			}
-			scriptTraces = append(scriptTraces, respScriptTraces...)
-			reqLogger.Debug("Executed response script bindings",
-				"event", "response_script_bindings_executed",
-				"binding_count", len(respScriptTraces),
+		}
+
+		// Build a local reqData so scripts inside the response scope see the
+		// accumulated spec+op outputs.
+		respReqData := &condition.RequestData{
+			PathParams:       pathParams,
+			QueryParams:      r.URL.Query(),
+			Headers:          r.Header,
+			Body:             requestBody,
+			ScriptOutput:     scriptOutput,
+			ValidationOutput: validationOutput,
+			CollectionOutput: collectionOutput,
+		}
+
+		respBindings, _ := e.store.GetResponseScriptBindings(matchedConfig.ID)
+		respMappings, _ := e.store.GetCollectionMappingsByResponse(matchedConfig.ID)
+		respScriptTraces, _, respCollTraces, respPipelineItems, _ := e.runScopePipeline(
+			r.Context(), "response", respBindings, nil, respMappings,
+			scriptInput, respCollReq, sessForResp, respReqData,
+		)
+		scriptTraces = append(scriptTraces, respScriptTraces...)
+		collectionTraces = append(collectionTraces, respCollTraces...)
+		pipelineTrace = append(pipelineTrace, respPipelineItems...)
+		if len(respScriptTraces) > 0 {
+			reqLogger.Debug("Executed response-scope pipeline",
+				"event", "response_pipeline_executed",
+				"step_count", len(respScriptTraces)+len(respCollTraces),
 			)
 		}
 	}
 
-	// Case 3 of session-creation rules: if a lazy session was used and any script
-	// performed a store operation, the session will now be materialised.
+	// Materialise lazy session if any response-scope step triggered it.
 	if lazySession != nil {
 		if inner := lazySession.Materialized(); inner != nil {
 			info := inner.Info(false)
 			w.Header().Set(e.sessionHeaderName, info.ID)
 			sess = inner
 			sessionIsNew = true
-			reqLogger.Debug("Lazy session materialised by store operation",
-				"event", "lazy_session_created",
+			reqLogger.Debug("Lazy session materialised by response-scope pipeline",
+				"event", "lazy_session_created_by_response_pipeline",
 				"session_id", info.ID,
 			)
 		} else {
 			sess = nil
-		}
-	}
-
-	// Run response-level collection mappings and merge with earlyCollectionOutput.
-	// earlyCollectionOutput holds spec/operation-level results from step ⑥.5.
-	// Response-level results are merged on top (response keys win on conflict).
-	collectionOutput := make(map[string]any)
-	for k, v := range earlyCollectionOutput {
-		collectionOutput[k] = v
-	}
-	collectionTraces := append([]models.CollectionTrace(nil), earlyCollectionTraces...)
-	sessForCollection := sess
-	if sessForCollection == nil && lazySession != nil {
-		sessForCollection = lazySession
-	}
-	if sessForCollection != nil {
-		reqCtx := &collection.RequestContext{
-			PathParams:  pathParams,
-			QueryParams: r.URL.Query(),
-			Headers:     r.Header,
-			Body:        requestBody,
-			Session:     sessForCollection,
-		}
-		respCollOut, respCollTraces, _ := e.collectionExecutor.Run(r.Context(), matchedConfig.ID, reqCtx, sessForCollection)
-		for k, v := range respCollOut {
-			collectionOutput[k] = v // response-level wins
-		}
-		collectionTraces = append(collectionTraces, respCollTraces...)
-		if len(respCollTraces) > 0 {
-			reqLogger.Debug("Executed response collection mappings",
-				"event", "collection_mappings_executed",
-				"mapping_count", len(respCollTraces),
-			)
-		}
-		// If a collection write op materialised the lazy session, emit the session header.
-		if lazySession != nil && sess == nil {
-			if inner := lazySession.Materialized(); inner != nil {
-				info := inner.Info(false)
-				w.Header().Set(e.sessionHeaderName, info.ID)
-				sess = inner
-				sessionIsNew = true
-				reqLogger.Debug("Lazy session materialised by collection operation",
-					"event", "lazy_session_created_by_collection",
-					"session_id", info.ID,
-				)
-			}
 		}
 	}
 
@@ -1127,6 +1154,7 @@ func (e *Engine) serveMatchedConfig(
 			Scripts:             scriptTraces,
 			Collections:         collectionTraces,
 			Validations:         validationTraces,
+			Pipeline:            pipelineTrace,
 			Session:             sessionTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
@@ -1495,6 +1523,128 @@ func (e *Engine) GetRegisteredRoutes() map[string][]string {
 		}
 	}
 	return result
+}
+
+// pipelineItem is a unified step in the mixed-order pipeline.
+type pipelineItem struct {
+	order      int
+	stepType   models.PipelineStepType
+	binding    *models.ScriptBinding
+	rule       *models.ValidationRule
+	mapping    *models.CollectionMapping
+}
+
+func stepTypeOrder(t models.PipelineStepType) int {
+	switch t {
+	case models.PipelineStepScript:
+		return 0
+	case models.PipelineStepValidation:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// runScopePipeline executes scripts, validation rules, and collection mappings in
+// their user-defined Order sequence. reqData is updated in-place so that later
+// steps in the same scope see the outputs of earlier steps. On validation failure,
+// the remaining steps are skipped and aborted=true is returned.
+// scope ("spec", "operation", "response") is stamped on each trace for observability.
+// The returned pipelineItems slice records all steps in execution order for the
+// unified pipeline timeline in the trace.
+func (e *Engine) runScopePipeline(
+	ctx context.Context,
+	scope string,
+	bindings []*models.ScriptBinding,
+	rules []*models.ValidationRule,
+	mappings []*models.CollectionMapping,
+	scriptInput *scripting.ScriptInput,
+	collReq *collection.RequestContext,
+	sess store.SessionState,
+	reqData *condition.RequestData,
+) (scriptTraces []models.ScriptTrace, valTraces []models.ValidationTrace, collTraces []models.CollectionTrace, pipelineItems []models.PipelineTraceItem, aborted bool) {
+	var items []pipelineItem
+	for _, b := range bindings {
+		if b != nil && b.Enabled {
+			items = append(items, pipelineItem{order: b.Order, stepType: models.PipelineStepScript, binding: b})
+		}
+	}
+	for _, r := range rules {
+		if r != nil && r.Enabled {
+			items = append(items, pipelineItem{order: r.Order, stepType: models.PipelineStepValidation, rule: r})
+		}
+	}
+	for _, m := range mappings {
+		if m != nil && m.Enabled {
+			items = append(items, pipelineItem{order: m.Order, stepType: models.PipelineStepCollection, mapping: m})
+		}
+	}
+
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].order != items[j].order {
+			return items[i].order < items[j].order
+		}
+		return stepTypeOrder(items[i].stepType) < stepTypeOrder(items[j].stepType)
+	})
+
+	for _, item := range items {
+		switch item.stepType {
+		case models.PipelineStepScript:
+			if scriptInput == nil {
+				continue
+			}
+			out, trace := e.scriptEngine.RunOneBinding(ctx, item.binding, scriptInput, sess)
+			trace.Scope = scope
+			scriptTraces = append(scriptTraces, trace)
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:   models.PipelineStepScript,
+				Script: &scriptTraces[len(scriptTraces)-1],
+			})
+			if reqData.ScriptOutput == nil {
+				reqData.ScriptOutput = make(map[string]any)
+			}
+			for k, v := range out {
+				reqData.ScriptOutput[k] = v
+			}
+
+		case models.PipelineStepValidation:
+			result, trace := validation.RunRule(item.rule, reqData)
+			valTraces = append(valTraces, trace)
+			if reqData.ValidationOutput == nil {
+				reqData.ValidationOutput = make(map[string]*models.ValidationResult)
+			}
+			reqData.ValidationOutput[item.rule.Name] = result
+			isAbort := result.Status == "fail"
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:       models.PipelineStepValidation,
+				Validation: &valTraces[len(valTraces)-1],
+				Aborted:    isAbort,
+			})
+			if isAbort {
+				aborted = true
+				return
+			}
+
+		case models.PipelineStepCollection:
+			if collReq == nil {
+				continue
+			}
+			out, trace, _ := e.collectionExecutor.RunOneMapping(ctx, item.mapping, collReq, sess)
+			trace.Scope = scope
+			collTraces = append(collTraces, trace)
+			pipelineItems = append(pipelineItems, models.PipelineTraceItem{
+				Type:       models.PipelineStepCollection,
+				Collection: &collTraces[len(collTraces)-1],
+			})
+			if reqData.CollectionOutput == nil {
+				reqData.CollectionOutput = make(map[string]any)
+			}
+			for k, v := range out {
+				reqData.CollectionOutput[k] = v
+			}
+		}
+	}
+	return
 }
 
 // recordUnmatchedTrace records a trace for requests that don't match any operation

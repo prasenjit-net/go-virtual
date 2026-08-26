@@ -279,6 +279,67 @@ func (e *ScriptEngine) RunResponseBindings(
 
 	return output, traces
 }
+// RunOneBinding executes a single enabled ScriptBinding and returns its output
+// and trace. Used by the mixed-order pipeline runner in proxy/engine.go.
+// The caller is responsible for checking binding.Enabled before calling.
+func (e *ScriptEngine) RunOneBinding(
+	ctx context.Context,
+	binding *models.ScriptBinding,
+	input *ScriptInput,
+	sess store.SessionState,
+) (map[string]any, models.ScriptTrace) {
+	output := make(map[string]any)
+	st := models.ScriptTrace{
+		BindingID: binding.ID,
+		OutputKey: binding.OutputKey,
+	}
+
+	script, err := e.store.GetScript(binding.ScriptID)
+	if err != nil || script == nil || !script.Enabled {
+		if err != nil {
+			st.Error = err.Error()
+		}
+		return output, st
+	}
+
+	st.ScriptID = script.ID
+	st.ScriptName = script.Name
+
+	compiled, cacheHit := e.cache.Get(script.ID, script.UpdatedAt)
+	if !cacheHit {
+		var compileErr error
+		compiled, compileErr = e.runner.Compile(script.ID, script.Source)
+		if compileErr != nil {
+			st.Error = compileErr.Error()
+			return output, st
+		}
+		e.cache.Set(script.ID, script.UpdatedAt, compiled)
+	}
+
+	timeoutMs := script.Timeout
+	if timeoutMs <= 0 {
+		timeoutMs = e.defaultTimeoutMs
+	}
+
+	var accessLog []models.StoreAccessEvent
+	var logBuf []string
+
+	start := time.Now()
+	result, execErr := compiled.Execute(ctx, input, timeoutMs, sess, &accessLog, &logBuf, e.collBackend)
+	st.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
+
+	if execErr != nil {
+		st.Error = execErr.Error()
+	} else {
+		st.Output = result
+		output[binding.OutputKey] = result
+	}
+	if len(logBuf) > 0 {
+		st.Logs = logBuf
+	}
+	return output, st
+}
+
 // Used for /validate endpoint. Returns a compile error string, or "" if valid.
 func (e *ScriptEngine) CompileAndValidate(scriptID, source string) error {
 	_, err := e.runner.Compile(scriptID, source)

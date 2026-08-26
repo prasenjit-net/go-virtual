@@ -16,9 +16,7 @@ import {
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
 import type { AIStatus, Operation, ResponseConfig, ResponseConfigInput, SignatureAvailableInputs, SignatureConfig, SignatureConfigResponse, Spec } from '../types'
-import ScriptBindingsPanel from './ScriptManager/ScriptBindingsPanel'
-import ValidationRulesPanel from './ValidationManager/ValidationRulesPanel'
-import CollectionMappingsPanel from './CollectionMapper/CollectionMappingsPanel'
+import PipelinePanel from './Pipeline/PipelinePanel'
 import AIGenerateModal from './ResponseDesigner/AIGenerateModal'
 import ResponseConfigList from './ResponseDesigner/ResponseConfigList'
 import ResponseImportModal from './ResponseDesigner/ResponseImportModal'
@@ -212,14 +210,8 @@ export default function OperationDetail() {
                 </p>
             </div>
 
-            {/* Script Bindings */}
-            <ScriptBindingsPanel kind="operation" operationId={operationId!} />
-
-            {/* Validation Rules */}
-            <ValidationRulesPanel scope="operation" operationId={operationId!} />
-
-            {/* Operation-level Collection Mappings */}
-            <CollectionMappingsPanel kind="operation" operationId={operationId!} />
+            {/* Processing Pipeline */}
+            <PipelinePanel scope="operation" scopeId={operationId!} />
 
             {/* Response Configurations */}
             <div className="mt-6 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-gray-200 dark:border-slate-800">
@@ -396,8 +388,8 @@ export default function OperationDetail() {
                                 {operation.exampleResponse.body && (
                                     <div className="text-sm">
                                         <span className={spec?.useExampleFallback ? "text-amber-700 dark:text-amber-300" : "text-gray-500 dark:text-slate-400"}>Body:</span>
-                                        <pre className="mt-1 bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48">
-                                            {operation.exampleResponse.body}
+                                        <pre className="mt-1 bg-gray-900 dark:bg-slate-950 text-gray-100 rounded p-3 text-xs overflow-x-auto max-h-48 whitespace-pre">
+                                            {(() => { try { return JSON.stringify(JSON.parse(operation.exampleResponse.body), null, 2); } catch { return operation.exampleResponse.body; } })()}
                                         </pre>
                                     </div>
                                 )}

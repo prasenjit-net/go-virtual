@@ -49,9 +49,24 @@ type Trace struct {
 	// Validation traces — one entry per evaluated validation rule
 	Validations []ValidationTrace `json:"validations,omitempty"`
 
+	// Pipeline is the unified execution timeline in step order across all scopes
+	// (spec → operation → response). Each item carries one of Script/Validation/Collection.
+	// Aborted is set on the validation step that caused a scope abort.
+	Pipeline []PipelineTraceItem `json:"pipeline,omitempty"`
+
 	// Session identifies the session that was active during this request.
 	// Populated in Phase 2 when session management is enabled.
 	Session *SessionTrace `json:"session,omitempty"`
+}
+
+// PipelineTraceItem is one step in the unified pipeline execution timeline.
+type PipelineTraceItem struct {
+	Type       PipelineStepType  `json:"type"`
+	Script     *ScriptTrace      `json:"script,omitempty"`
+	Validation *ValidationTrace  `json:"validation,omitempty"`
+	Collection *CollectionTrace  `json:"collection,omitempty"`
+	// Aborted is true when this validation step caused the remaining scope steps to be skipped.
+	Aborted bool `json:"aborted,omitempty"`
 }
 
 // TraceRequest represents the captured request

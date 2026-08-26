@@ -134,28 +134,28 @@
       <p>Validation Rules are the flexible alternative to hard-coded conditions on individual response configs. Instead of repeating <em>"Authorization header exists AND has role=admin"</em> on every response, define it once as a validation rule called <code>isAdmin</code>, then reference <code>source=validation, key=isAdmin._status</code> in any condition.</p>
 
       <h3>Pipeline position</h3>
+      <p>Validation rules participate in a <strong>mixed-order pipeline</strong> alongside scripts and collection mappings. Within a scope, all three step types are interleaved by their <code>order</code> field, so you can run a collection lookup before a validation rule, or a script after one.</p>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Step</th><th>What happens</th></tr></thead>
           <tbody>
             <tr><td>① Route</td><td>Path + method matched to an OpenAPI operation</td></tr>
             <tr><td>② Session</td><td>Session resolved from header</td></tr>
-            <tr><td>③ Recorded responses</td><td>Signature-matched pre-recorded responses served</td></tr>
-            <tr><td>④ Scripts</td><td>Spec/operation-level Starlark scripts run</td></tr>
-            <tr><td>⑤ Proxy check</td><td>Proxy mode evaluated</td></tr>
-            <tr><td><strong>⑥ Validation</strong></td><td><strong>Spec-level then operation-level validation rules run. Results are named and available in the request context.</strong></td></tr>
-            <tr><td>⑥.5 Collections</td><td>Spec/operation collection mappings run</td></tr>
+            <tr><td>③ Recorded responses</td><td>Signature-matched pre-recorded responses served immediately</td></tr>
+            <tr><td><strong>④ Spec-scope pipeline</strong></td><td><strong>Scripts, validation rules, and collection mappings at spec level run in user-defined order.</strong></td></tr>
+            <tr><td>⑤ Proxy check</td><td>Proxy mode evaluated using spec-scope outputs</td></tr>
+            <tr><td><strong>⑥ Operation-scope pipeline</strong></td><td><strong>Scripts, validation rules, and collection mappings at operation level run in user-defined order.</strong></td></tr>
             <tr><td>⑦ Response match</td><td>Response configs evaluated — can use validation results in conditions</td></tr>
             <tr><td>⑧ Template render</td><td>Response body + headers rendered — can use validation results in templates</td></tr>
           </tbody>
         </table>
       </div>
 
-      <div class="callout info">
-        <span class="callout-icon">💡</span>
+      <div class="callout warning">
+        <span class="callout-icon">⚠️</span>
         <div class="callout-body">
-          <strong>All rules run — there is no early exit</strong>
-          All enabled validation rules for a scope execute in order, regardless of whether earlier rules pass or fail. This lets multiple independent checks contribute their named results independently.
+          <strong>A failing validation aborts the remaining scope steps</strong>
+          If a validation rule's condition tree evaluates to <code>fail</code>, all remaining steps in that scope (later scripts, validations, and collection mappings) are skipped. Design your rule order accordingly — place gates early if you want them to short-circuit expensive lookups that follow.
         </div>
       </div>
     </div>

@@ -259,6 +259,17 @@ export interface RegexPatternToken {
     pattern: string;
 }
 
+// Pipeline trace types
+export type PipelineTraceItemType = 'script' | 'validation' | 'collection'
+
+export interface PipelineTraceItem {
+    type: PipelineTraceItemType
+    script?: ScriptTrace
+    validation?: ValidationTrace
+    collection?: CollectionTrace
+    aborted?: boolean
+}
+
 // Trace types
 export interface Trace {
     id: string;
@@ -292,6 +303,8 @@ export interface Trace {
     collections?: CollectionTrace[];
     // Validation rule traces
     validations?: ValidationTrace[];
+    // Unified pipeline execution timeline (spec → operation → response)
+    pipeline?: PipelineTraceItem[];
 }
 
 export interface TraceRequest {
@@ -413,6 +426,7 @@ export interface ScriptTrace {
     scriptId: string;
     scriptName: string;
     outputKey: string;
+    scope?: string;
     durationMs: number;
     output?: unknown;
     error?: string;
@@ -512,6 +526,7 @@ export interface CollectionTrace {
     collectionName: string
     operation: CollectionOpType
     outputKey: string
+    scope?: string
     durationMs: number
     recordCount: number
     error?: string
@@ -536,6 +551,25 @@ export interface ArchiveMeta {
     appVersion: string;
     counts: ArchiveCounts;
 }
+
+// ---- Pipeline ----
+
+export type PipelineStepType = 'script' | 'validation' | 'collection'
+
+export interface PipelineStep {
+    type: PipelineStepType
+    order: number
+    script?: ScriptBinding
+    validation?: ValidationRule
+    collection?: CollectionMapping
+}
+
+export interface PipelineReorderItem {
+    type: PipelineStepType
+    id: string
+}
+
+export type PipelineScope = 'spec' | 'operation' | 'response'
 
 export interface RestoreError {
     path: string;

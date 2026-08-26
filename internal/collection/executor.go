@@ -113,6 +113,37 @@ func (e *Executor) RunForOperation(
 	return e.RunMappings(ctx, mappings, req, sess)
 }
 
+// RunOneMapping executes a single CollectionMapping and returns its output and trace.
+// Used by the mixed-order pipeline runner in proxy/engine.go.
+// The caller is responsible for checking m.Enabled before calling.
+func (e *Executor) RunOneMapping(
+	_ context.Context,
+	m *models.CollectionMapping,
+	req *RequestContext,
+	sess store.SessionState,
+) (map[string]any, models.CollectionTrace, error) {
+	output := make(map[string]any)
+	start := time.Now()
+	trace := models.CollectionTrace{
+		MappingID:      m.ID,
+		MappingName:    m.Name,
+		CollectionName: m.CollectionName,
+		Operation:      m.Operation,
+		OutputKey:      m.OutputKey,
+	}
+
+	result, count, execErr := e.execute(m, req, sess)
+	trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000.0
+	trace.RecordCount = count
+	if execErr != nil {
+		trace.Error = execErr.Error()
+	}
+	if m.OutputKey != "" {
+		output[m.OutputKey] = injectStatus(result, execErr)
+	}
+	return output, trace, execErr
+}
+
 // execute runs a single mapping and returns its result, record count, and any error.
 func (e *Executor) execute(
 	m *models.CollectionMapping,

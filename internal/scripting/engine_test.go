@@ -74,6 +74,18 @@ func TestSetGlobalStore(t *testing.T) {
 	}
 }
 
+func TestSetCollectionBackend(t *testing.T) {
+	mem := newEngineStore(t, nil, nil)
+	engine := NewScriptEngine(mem, 100)
+	backend := store.NewMemoryCollectionBackend()
+
+	engine.SetCollectionBackend(backend)
+
+	if engine.collBackend != backend {
+		t.Fatal("SetCollectionBackend did not update engine")
+	}
+}
+
 func TestRunBindings_SingleBinding(t *testing.T) {
 	src := `
 def run(req):
@@ -217,6 +229,86 @@ func TestRunBindings_CompilationErrorGraceful(t *testing.T) {
 	}
 	if len(traces) != 1 || traces[0].Error == "" {
 		t.Errorf("Expected 1 trace with error, got %+v", traces)
+	}
+}
+
+func TestRunOneBindingExecutesEnabledScript(t *testing.T) {
+	script := makeScript("s1", `
+def run(req):
+    return {"id": req.path("id"), "ok": True}
+`)
+	binding := makeBinding("b1", "op-1", "s1", "result", 0)
+
+	store := newEngineStore(t, []*models.Script{script}, []*models.ScriptBinding{binding})
+	engine := NewScriptEngine(store, 100)
+
+	out, trace := engine.RunOneBinding(
+		context.Background(),
+		binding,
+		&ScriptInput{Path: map[string]string{"id": "42"}},
+		nil,
+	)
+
+	result, ok := out["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result: got %T, want map[string]any", out["result"])
+	}
+	if result["id"] != "42" || result["ok"] != true {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	if trace.BindingID != "b1" || trace.ScriptID != "s1" || trace.OutputKey != "result" {
+		t.Fatalf("unexpected trace metadata: %+v", trace)
+	}
+	if trace.Error != "" {
+		t.Fatalf("unexpected trace error: %s", trace.Error)
+	}
+}
+
+func TestRunOneBindingReportsScriptProblems(t *testing.T) {
+	tests := []struct {
+		name    string
+		scripts []*models.Script
+	}{
+		{
+			name:    "missing script",
+			scripts: nil,
+		},
+		{
+			name: "disabled script",
+			scripts: []*models.Script{func() *models.Script {
+				s := makeScript("s1", `def run(req): return "skip"`)
+				s.Enabled = false
+				return s
+			}()},
+		},
+		{
+			name:    "compile error",
+			scripts: []*models.Script{makeScript("s1", `def run(req  # syntax error`)},
+		},
+		{
+			name:    "runtime error",
+			scripts: []*models.Script{makeScript("s1", `def run(req): return req.path("missing")`)},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			binding := makeBinding("b1", "op-1", "s1", "result", 0)
+			store := newEngineStore(t, tt.scripts, []*models.ScriptBinding{binding})
+			engine := NewScriptEngine(store, 100)
+
+			out, trace := engine.RunOneBinding(context.Background(), binding, &ScriptInput{}, nil)
+
+			if len(out) != 0 {
+				t.Fatalf("expected no output, got %+v", out)
+			}
+			if tt.name != "disabled script" && trace.Error == "" {
+				t.Fatalf("expected trace error, got %+v", trace)
+			}
+			if trace.BindingID != "b1" || trace.OutputKey != "result" {
+				t.Fatalf("unexpected trace metadata: %+v", trace)
+			}
+		})
 	}
 }
 

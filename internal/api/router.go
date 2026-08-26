@@ -188,6 +188,14 @@ func (r *Router) setupRoutes() {
 		api.PUT("/validations/:id", r.handler.UpdateValidation)
 		api.DELETE("/validations/:id", r.handler.DeleteValidation)
 
+		// Mixed-order pipeline (scripts + validations + collections interleaved)
+		api.GET("/specs/:id/pipeline", r.handler.ListSpecPipeline)
+		api.PUT("/specs/:id/pipeline/reorder", r.handler.ReorderSpecPipeline)
+		api.GET("/operations/:id/pipeline", r.handler.ListOperationPipeline)
+		api.PUT("/operations/:id/pipeline/reorder", r.handler.ReorderOperationPipeline)
+		api.GET("/responses/:id/pipeline", r.handler.ListResponsePipeline)
+		api.PUT("/responses/:id/pipeline/reorder", r.handler.ReorderResponsePipeline)
+
 		// Tags
 		api.GET("/tags", r.handler.ListTags)
 		api.POST("/tags", r.handler.CreateTag)
