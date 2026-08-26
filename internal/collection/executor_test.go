@@ -162,6 +162,65 @@ func TestExecutorRunForOperation(t *testing.T) {
 	}
 }
 
+func TestExecutorRunOneMapping(t *testing.T) {
+	exec := NewExecutor(storage.NewMemoryStorage(), store.NewMemoryCollectionBackend())
+	sess := store.NewEphemeralSession(nil)
+
+	mapping := &models.CollectionMapping{
+		ID:             "m1",
+		CollectionName: "items",
+		Name:           "Create Item",
+		Operation:      models.ColOpInsert,
+		DataRules:      []models.FieldMappingRule{{TargetField: "src", SourceType: "literal", SourceKey: "single"}},
+		OutputKey:      "item",
+		Enabled:        true,
+	}
+
+	output, trace, err := exec.RunOneMapping(context.Background(), mapping, &RequestContext{}, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.MappingID != "m1" || trace.MappingName != "Create Item" || trace.RecordCount != 1 {
+		t.Fatalf("unexpected trace: %+v", trace)
+	}
+	doc, ok := output["item"].(map[string]any)
+	if !ok {
+		t.Fatalf("item: got %T, want map[string]any", output["item"])
+	}
+	if doc["src"] != "single" || doc["_status"] != "success" {
+		t.Fatalf("unexpected item output: %+v", doc)
+	}
+}
+
+func TestExecutorRunOneMappingReturnsNotFoundStatus(t *testing.T) {
+	exec := NewExecutor(storage.NewMemoryStorage(), store.NewMemoryCollectionBackend())
+	sess := store.NewEphemeralSession(nil)
+
+	mapping := &models.CollectionMapping{
+		ID:             "m1",
+		CollectionName: "items",
+		Operation:      models.ColOpFindOne,
+		FilterRules:    []models.FieldMappingRule{{TargetField: "_id", SourceType: "literal", SourceKey: "missing"}},
+		OutputKey:      "item",
+		Enabled:        true,
+	}
+
+	output, trace, err := exec.RunOneMapping(context.Background(), mapping, &RequestContext{}, sess)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.RecordCount != 0 || trace.Error != "" {
+		t.Fatalf("unexpected trace: %+v", trace)
+	}
+	status, ok := output["item"].(map[string]any)
+	if !ok {
+		t.Fatalf("item: got %T, want map[string]any", output["item"])
+	}
+	if status["_status"] != "not_found" {
+		t.Fatalf("unexpected status output: %+v", status)
+	}
+}
+
 func TestExecutorSkipsDisabledMappings(t *testing.T) {
 	st := storage.NewMemoryStorage()
 	exec := NewExecutor(st, store.NewMemoryCollectionBackend())
