@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import Editor, { type Monaco } from '@monaco-editor/react'
+import { type Monaco } from '@monaco-editor/react'
 import type * as monacoEditor from 'monaco-editor'
 import {
     ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
@@ -14,6 +14,7 @@ import PipelinePanel from '../Pipeline/PipelinePanel'
 import ConditionEditor, { conditionsToTree } from '../shared/ConditionEditor'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
+import ResponseBodyEditor from './BodyEditor/ResponseBodyEditor'
 
 interface ResponseConfigIDEProps {
     operationId: string
@@ -799,32 +800,28 @@ export default function ResponseConfigIDE({
 
                     <div className="flex-1 min-h-0 overflow-hidden">
                         {ideActiveTab === 'body' && (
-                            <Editor
-                                key={config?.id ?? 'new-response'}
-                                height="100%"
-                                language="go-template"
-                                theme={isDark ? 'vs-dark' : 'light'}
-                                value={body}
-                                onMount={handleEditorMount}
-                                onChange={(value) => {
-                                    const next = value || ''
-                                    setBody(next)
-                                    setIsDirty(true)
-                                    scheduleTemplateValidation(next)
-                                }}
-                                options={{
-                                    minimap: { enabled: true },
-                                    fontSize: 14,
-                                    lineNumbers: 'on',
-                                    scrollBeyondLastLine: false,
-                                    wordWrap: 'on',
-                                    folding: true,
-                                    bracketPairColorization: { enabled: true },
-                                    automaticLayout: true,
-                                    padding: { top: 12 },
-                                    readOnly: readOnly,
-                                }}
-                            />
+                            <div className="h-full p-3">
+                                <ResponseBodyEditor
+                                    key={config?.id ?? 'new-response'}
+                                    body={body}
+                                    onBodyChange={(next) => {
+                                        setBody(next)
+                                        setIsDirty(true)
+                                        scheduleTemplateValidation(next)
+                                    }}
+                                    operationId={operationId}
+                                    responseConfigId={config?.id}
+                                    readOnly={readOnly}
+                                    isDark={isDark}
+                                    height="calc(100vh - 260px)"
+                                    heightClass="h-full"
+                                    lineNumbers="on"
+                                    minimap
+                                    folding
+                                    bodyError={bodyError}
+                                    onTextEditorMount={handleEditorMount}
+                                />
+                            </div>
                         )}
                         {ideActiveTab !== 'body' && (
                         <div className="overflow-y-auto h-full">

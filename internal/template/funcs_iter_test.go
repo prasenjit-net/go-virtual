@@ -3,6 +3,7 @@
 package template
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -67,6 +68,162 @@ func TestIterFuncs_List(t *testing.T) {
 	}
 	if result != "abc" {
 		t.Errorf("expected abc, got %q", result)
+	}
+}
+
+func TestRenderBodyTemplate_RangeCollectionWithJSONStrings(t *testing.T) {
+	e := NewEngine()
+	body := `[
+  {{range $i, $item := .Collection.u}}{{if $i}},{{end}}
+  {
+    "age": {{index $item ` + "`age`" + `}},
+    "email": "{{index $item ` + "`email`" + `}}",
+    "id": "{{index $item ` + "`id`" + `}}",
+    "name": "{{index $item ` + "`name`" + `}}"
+  }
+  {{end}}
+]`
+	ctx := &Context{
+		CollectionOutput: map[string]any{
+			"u": []any{
+				map[string]any{"age": 32, "email": "alice@example.com", "id": "1", "name": "Alice Johnson"},
+				map[string]any{"age": 45, "email": "bob@example.com", "id": "2", "name": "Bob Smith"},
+			},
+		},
+	}
+
+	result, err := e.RenderBodyTemplate(body, ctx)
+	if err != nil {
+		t.Fatalf("RenderBodyTemplate error: %v", err)
+	}
+
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(result), &rows); err != nil {
+		t.Fatalf("rendered body is not JSON: %v\n%s", err, result)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+	if rows[0]["email"] != "alice@example.com" || rows[1]["name"] != "Bob Smith" {
+		t.Fatalf("unexpected rows: %+v", rows)
+	}
+}
+
+func TestRenderBodyTemplate_ObjectWithNestedCollectionRange(t *testing.T) {
+	e := NewEngine()
+	body := `{
+  "id": "{{index .Collection.user ` + "`id`" + `}}",
+  "name": "{{index .Collection.user ` + "`name`" + `}}",
+  "orders": [
+    {{range $i, $item := .Collection.orders}}{{if $i}},{{end}}
+    {
+      "id": "{{index $item ` + "`id`" + `}}",
+      "total": {{index $item ` + "`total`" + `}}
+    }
+    {{end}}
+  ]
+}`
+	ctx := &Context{
+		CollectionOutput: map[string]any{
+			"user": map[string]any{"id": "u1", "name": "Alice"},
+			"orders": []any{
+				map[string]any{"id": "o1", "total": 10},
+				map[string]any{"id": "o2", "total": 20},
+			},
+		},
+	}
+
+	result, err := e.RenderBodyTemplate(body, ctx)
+	if err != nil {
+		t.Fatalf("RenderBodyTemplate error: %v", err)
+	}
+
+	var rendered struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Orders []struct {
+			ID    string  `json:"id"`
+			Total float64 `json:"total"`
+		} `json:"orders"`
+	}
+	if err := json.Unmarshal([]byte(result), &rendered); err != nil {
+		t.Fatalf("rendered body is not JSON: %v\n%s", err, result)
+	}
+	if rendered.ID != "u1" || rendered.Name != "Alice" {
+		t.Fatalf("unexpected user: %+v", rendered)
+	}
+	if len(rendered.Orders) != 2 || rendered.Orders[1].ID != "o2" || rendered.Orders[1].Total != 20 {
+		t.Fatalf("unexpected orders: %+v", rendered.Orders)
+	}
+}
+
+func TestRenderBodyTemplate_RangeCollectionWithNestedItemRange(t *testing.T) {
+	e := NewEngine()
+	body := `[
+  {{range $i, $item := .Collection.u}}{{if $i}},{{end}}
+  {
+    "age": {{index $item ` + "`age`" + `}},
+    "email": "{{index $item ` + "`email`" + `}}",
+    "id": "{{index $item ` + "`id`" + `}}",
+    "name": "{{index $item ` + "`name`" + `}}",
+    "orders": [
+      {{range $i, $item := index $item ` + "`orders`" + `}}{{if $i}},{{end}}
+      {
+        "id": "{{index $item ` + "`id`" + `}}",
+        "amount": {{index $item ` + "`amount`" + `}}
+      }
+      {{end}}
+    ]
+  }
+  {{end}}
+]`
+	ctx := &Context{
+		CollectionOutput: map[string]any{
+			"u": []any{
+				map[string]any{
+					"age":   32,
+					"email": "alice@example.com",
+					"id":    "1",
+					"name":  "Alice Johnson",
+					"orders": []any{
+						map[string]any{"id": "o1", "amount": 10},
+						map[string]any{"id": "o2", "amount": 20},
+					},
+				},
+				map[string]any{
+					"age":    45,
+					"email":  "bob@example.com",
+					"id":     "2",
+					"name":   "Bob Smith",
+					"orders": []any{map[string]any{"id": "o3", "amount": 30}},
+				},
+			},
+		},
+	}
+
+	result, err := e.RenderBodyTemplate(body, ctx)
+	if err != nil {
+		t.Fatalf("RenderBodyTemplate error: %v", err)
+	}
+
+	var rows []struct {
+		ID     string `json:"id"`
+		Orders []struct {
+			ID     string  `json:"id"`
+			Amount float64 `json:"amount"`
+		} `json:"orders"`
+	}
+	if err := json.Unmarshal([]byte(result), &rows); err != nil {
+		t.Fatalf("rendered body is not JSON: %v\n%s", err, result)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(rows))
+	}
+	if len(rows[0].Orders) != 2 || rows[0].Orders[1].ID != "o2" || rows[0].Orders[1].Amount != 20 {
+		t.Fatalf("unexpected first user orders: %+v", rows[0].Orders)
+	}
+	if len(rows[1].Orders) != 1 || rows[1].Orders[0].ID != "o3" || rows[1].Orders[0].Amount != 30 {
+		t.Fatalf("unexpected second user orders: %+v", rows[1].Orders)
 	}
 }
 
