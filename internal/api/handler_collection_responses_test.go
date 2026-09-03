@@ -56,7 +56,7 @@ const collRespTestSpecContent = `{
 
 // setupCollectionResponseTestHandler wires a collection backend so
 // h.collResponseSvc is non-nil, and seeds a spec + two operations.
-func setupCollectionResponseTestHandler(t *testing.T) (*Handler, storage.Storage, *gin.Engine) {
+func setupCollectionResponseTestHandler(t *testing.T) (*Handler, storage.Storage, *gin.Engine, *store.MemoryCollectionBackend) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
@@ -85,7 +85,7 @@ func setupCollectionResponseTestHandler(t *testing.T) (*Handler, storage.Storage
 	}
 
 	r := gin.New()
-	return handler, s, r
+	return handler, s, r, backend
 }
 
 func validCollectionResponsePayload() map[string]any {
@@ -105,7 +105,7 @@ func validCollectionResponsePayload() map[string]any {
 }
 
 func TestCreateResponseConfig_Collection_Success(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
 
 	jsonBody, _ := json.Marshal(validCollectionResponsePayload())
@@ -133,7 +133,7 @@ func TestCreateResponseConfig_Collection_Success(t *testing.T) {
 }
 
 func TestCreateResponseConfig_Collection_MissingConfig(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
 
 	body := map[string]any{"name": "Users", "statusCode": 200, "kind": "collection"}
@@ -149,7 +149,7 @@ func TestCreateResponseConfig_Collection_MissingConfig(t *testing.T) {
 }
 
 func TestCreateResponseConfig_Manual_RejectsCollectionResponseField(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
 
 	payload := validCollectionResponsePayload()
@@ -166,7 +166,7 @@ func TestCreateResponseConfig_Manual_RejectsCollectionResponseField(t *testing.T
 }
 
 func TestCreateResponseConfig_Collection_InvalidFilterSource(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
 
 	payload := map[string]any{
@@ -194,7 +194,7 @@ func TestCreateResponseConfig_Collection_InvalidFilterSource(t *testing.T) {
 }
 
 func TestCreateResponseConfig_Collection_PrimarySourceRejectedForArrayRoot(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
 
 	payload := map[string]any{
@@ -228,7 +228,7 @@ func TestCreateResponseConfig_Collection_PrimarySourceRejectedForArrayRoot(t *te
 }
 
 func TestUpdateResponseConfig_CannotAddCollectionResponseToManual(t *testing.T) {
-	handler, s, r := setupCollectionResponseTestHandler(t)
+	handler, s, r, _ := setupCollectionResponseTestHandler(t)
 	if err := s.CreateResponseConfig(&models.ResponseConfig{ID: "resp-1", OperationID: "op-user", Name: "Manual", StatusCode: 200, Body: "{}"}); err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestUpdateResponseConfig_CannotAddCollectionResponseToManual(t *testing.T) 
 }
 
 func TestCloneResponseConfig_PreservesCollectionKind(t *testing.T) {
-	handler, s, r := setupCollectionResponseTestHandler(t)
+	handler, s, r, _ := setupCollectionResponseTestHandler(t)
 	src := &models.ResponseConfig{
 		ID:          "resp-1",
 		OperationID: "op-user",
@@ -288,7 +288,7 @@ func TestCloneResponseConfig_PreservesCollectionKind(t *testing.T) {
 }
 
 func TestCreateResponseScriptBinding_RejectedForCollectionResponse(t *testing.T) {
-	handler, s, r := setupCollectionResponseTestHandler(t)
+	handler, s, r, _ := setupCollectionResponseTestHandler(t)
 	src := &models.ResponseConfig{
 		ID:          "resp-1",
 		OperationID: "op-user",
@@ -320,7 +320,7 @@ func TestCreateResponseScriptBinding_RejectedForCollectionResponse(t *testing.T)
 }
 
 func TestCreateCollectionMapping_RejectedForCollectionResponse(t *testing.T) {
-	handler, s, r := setupCollectionResponseTestHandler(t)
+	handler, s, r, _ := setupCollectionResponseTestHandler(t)
 	src := &models.ResponseConfig{
 		ID:          "resp-1",
 		OperationID: "op-user",
@@ -349,7 +349,7 @@ func TestCreateCollectionMapping_RejectedForCollectionResponse(t *testing.T) {
 }
 
 func TestPreviewCollectionResponse(t *testing.T) {
-	handler, _, r := setupCollectionResponseTestHandler(t)
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
 	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
 
 	// Seed via the collection backend directly is not exposed here; instead
@@ -384,5 +384,157 @@ func TestPreviewCollectionResponse(t *testing.T) {
 	}
 	if result.RootKind != models.RootKindObject {
 		t.Fatalf("expected object root, got %q", result.RootKind)
+	}
+}
+
+func TestPreviewCollectionResponse_Matched(t *testing.T) {
+	handler, _, r, backend := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+
+	if _, err := backend.SeedInsert("users", map[string]any{"_id": "42", "id": "42", "name": "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := map[string]any{
+		"statusCode": 200,
+		"collectionResponse": map[string]any{
+			"primary": map[string]any{
+				"collectionName": "users",
+				"filterRules": []map[string]any{
+					{"targetPath": "_id", "value": map[string]any{"source": "path", "key": "id"}},
+				},
+			},
+		},
+		"request": map[string]any{"pathParams": map[string]any{"id": "42"}},
+	}
+	jsonBody, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/operations/op-user/collection-responses/preview", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var result collectionResponsePreviewResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Matched || result.RecordCount != 1 {
+		t.Fatalf("expected a match with 1 record, got %#v", result)
+	}
+	if result.Body == "" {
+		t.Fatal("expected a rendered body")
+	}
+}
+
+func TestPreviewCollectionResponse_OperationNotFound(t *testing.T) {
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+
+	req := httptest.NewRequest("POST", "/operations/nonexistent/collection-responses/preview", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPreviewCollectionResponse_NoCollectionBackend(t *testing.T) {
+	handler, s, r := setupTestHandler(t)
+	if err := s.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1", Method: "GET", Path: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+
+	req := httptest.NewRequest("POST", "/operations/op-1/collection-responses/preview", bytes.NewReader([]byte("{}")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPreviewCollectionResponse_InvalidJSON(t *testing.T) {
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+
+	req := httptest.NewRequest("POST", "/operations/op-user/collection-responses/preview", bytes.NewReader([]byte("{not json")))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPreviewCollectionResponse_ValidationError(t *testing.T) {
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+
+	payload := map[string]any{"statusCode": 200} // missing collectionResponse
+	jsonBody, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/operations/op-user/collection-responses/preview", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestCreateResponseConfig_Collection_NoBackendConfigured(t *testing.T) {
+	handler, s, r := setupTestHandler(t)
+	if err := s.CreateOperation(&models.Operation{ID: "op-1", SpecID: "spec-1", Method: "GET", Path: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
+
+	jsonBody, _ := json.Marshal(validCollectionResponsePayload())
+	req := httptest.NewRequest("POST", "/operations/op-1/responses", bytes.NewReader(jsonBody))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (no collection backend configured), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPreviewSession(t *testing.T) {
+	s := previewSession{}
+	if s.Has("x") {
+		t.Fatal("expected Has(x) to be false initially")
+	}
+	if err := s.Set("x", 1); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if !s.Has("x") {
+		t.Fatal("expected Has(x) to be true after Set")
+	}
+	v, ok := s.Get("x")
+	if !ok || v != 1 {
+		t.Fatalf("Get(x) = %v, %v", v, ok)
+	}
+	if keys := s.Keys(); len(keys) != 1 || keys[0] != "x" {
+		t.Fatalf("Keys() = %v", keys)
+	}
+	if snap := s.Snapshot(); snap["x"] != 1 {
+		t.Fatalf("Snapshot() = %v", snap)
+	}
+	if info := s.Info(false); info.ID != "preview" {
+		t.Fatalf("Info().ID = %q, want preview", info.ID)
+	}
+	if err := s.Delete("x"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if s.Has("x") {
+		t.Fatal("expected Has(x) to be false after Delete")
 	}
 }

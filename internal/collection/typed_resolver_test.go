@@ -151,6 +151,43 @@ func TestResolveValueBinding_PrimaryDocumentMapper(t *testing.T) {
 	if found {
 		t.Fatal("unknown mapper output key should not be found")
 	}
+
+	// A mapper key with no "." addresses the whole mapper result.
+	v, found, _ = ResolveValueBinding(models.ValueBinding{Source: models.ValueSourceMapper, Key: "plan"}, ctx)
+	if !found {
+		t.Fatal("mapper key without a path should resolve the whole result")
+	}
+	if m, ok := v.(map[string]any); !ok || m["label"] != "Gold" {
+		t.Fatalf("mapper whole-result: got %v", v)
+	}
+}
+
+func TestResolveValueBinding_NilContext(t *testing.T) {
+	sources := []models.ValueSource{
+		models.ValueSourcePath, models.ValueSourceQuery, models.ValueSourceHeader,
+		models.ValueSourceBody, models.ValueSourcePrimary, models.ValueSourceDocument, models.ValueSourceMapper,
+	}
+	for _, src := range sources {
+		v, found, err := ResolveValueBinding(models.ValueBinding{Source: src, Key: "x"}, nil)
+		if err != nil || found || v != nil {
+			t.Fatalf("source %q with nil ctx: got v=%v found=%v err=%v", src, v, found, err)
+		}
+	}
+}
+
+func TestResolveValueBinding_UnknownSource(t *testing.T) {
+	v, found, err := ResolveValueBinding(models.ValueBinding{Source: "bogus"}, nil)
+	if err != nil || found || v != nil {
+		t.Fatalf("got v=%v found=%v err=%v", v, found, err)
+	}
+}
+
+func TestResolveValueBinding_HeaderNotFound(t *testing.T) {
+	ctx := &BindingContext{Request: &TypedRequestContext{Headers: http.Header{}}}
+	_, found, _ := ResolveValueBinding(models.ValueBinding{Source: models.ValueSourceHeader, Key: "X-Missing"}, ctx)
+	if found {
+		t.Fatal("missing header should not be found")
+	}
 }
 
 func TestResolveFilterMap(t *testing.T) {
@@ -169,5 +206,15 @@ func TestResolveFilterMap(t *testing.T) {
 	}
 	if b, ok := out["active"].(bool); !ok || !b {
 		t.Fatalf("active = %v, want true", out["active"])
+	}
+}
+
+func TestResolveFilterMap_Error(t *testing.T) {
+	filters := []models.CollectionFilter{
+		{TargetPath: "x", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: []byte("not-json")}},
+	}
+	_, err := ResolveFilterMap(filters, &BindingContext{})
+	if err == nil {
+		t.Fatal("expected an error for an invalid literal filter value")
 	}
 }

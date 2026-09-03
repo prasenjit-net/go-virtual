@@ -2,6 +2,7 @@ package collectionresponse
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/prasenjit/go-virtual/internal/collection"
@@ -367,5 +368,177 @@ func TestValidateAgainstOperation_IdentityModeRequiresRootKind(t *testing.T) {
 	}
 	if len(errs) == 0 {
 		t.Fatal("expected an error: rootKind is required in identity mode")
+	}
+}
+
+func TestRender_IdentityMode_OverridesRenameAndFallThrough(t *testing.T) {
+	svc, _, _, backend := setupService(t)
+	pingOp := &models.Operation{ID: "op-ping", SpecID: "spec1", Method: "GET", Path: "/ping"}
+	if _, err := backend.SeedInsert("events", map[string]any{"_id": "e1", "type": "click", "meta": map[string]any{"x": 1}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &models.ResponseConfig{
+		ID:         "r-ping",
+		StatusCode: 204,
+		Kind:       models.ResponseKindCollection,
+		CollectionResponse: &models.CollectionResponseConfig{
+			Primary:  models.CollectionQuery{CollectionName: "events"},
+			RootKind: models.RootKindObject,
+			Overrides: []models.FieldOverride{
+				// Renames an existing top-level field.
+				{TargetPath: "type", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: json.RawMessage(`"renamed"`)}},
+				// Creates a new nested path that doesn't exist in the document.
+				{TargetPath: "extra.info", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: json.RawMessage(`"x"`)}},
+				// References a request value that isn't present — should warn, not fail.
+				{TargetPath: "missing", Value: models.ValueBinding{Source: models.ValueSourceQuery, Key: "absent"}},
+			},
+		},
+	}
+	req := &collection.TypedRequestContext{}
+	sess := store.NewEphemeralSession(nil)
+
+	match, err := svc.TryMatch(pingOp, cfg, req, sess)
+	if err != nil || !match.Matched {
+		t.Fatalf("TryMatch: match=%v err=%v", match, err)
+	}
+	if match.Template.Source != TemplateSourceIdentity {
+		t.Fatalf("expected identity mode, got %v", match.Template.Source)
+	}
+
+	render, err := svc.Render(cfg, match, req, sess)
+	if err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(render.Body, &body); err != nil {
+		t.Fatalf("invalid JSON: %s", render.Body)
+	}
+	if body["type"] != "renamed" {
+		t.Fatalf("expected override applied, got %#v", body)
+	}
+	if body["_id"] != "e1" {
+		t.Fatalf("expected passthrough field, got %#v", body)
+	}
+	extra, ok := body["extra"].(map[string]any)
+	if !ok || extra["info"] != "x" {
+		t.Fatalf("expected a newly created nested path, got %#v", body["extra"])
+	}
+	if _, ok := body["missing"]; ok {
+		t.Fatalf("unresolved override should not set the field, got %#v", body["missing"])
+	}
+	if len(render.Warnings) == 0 {
+		t.Fatal("expected a warning for the unresolved override")
+	}
+}
+
+func TestRender_AdditionalMapperFindMany(t *testing.T) {
+	svc, getUser, _, backend := setupService(t)
+	if _, err := backend.SeedInsert("users", map[string]any{"_id": "u1", "id": "u1", "name": "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.SeedInsert("orders", map[string]any{"_id": "o1", "userId": "u1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.SeedInsert("orders", map[string]any{"_id": "o2", "userId": "u1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &models.ResponseConfig{
+		ID:         "r-fm",
+		StatusCode: 200,
+		Kind:       models.ResponseKindCollection,
+		CollectionResponse: &models.CollectionResponseConfig{
+			Primary: models.CollectionQuery{
+				CollectionName: "users",
+				FilterRules: []models.CollectionFilter{
+					{TargetPath: "_id", Value: models.ValueBinding{Source: models.ValueSourcePath, Key: "id"}},
+				},
+			},
+			AdditionalMappers: []models.NamedQuery{
+				{OutputKey: "orders", Mode: models.QueryModeFindMany, CollectionQuery: models.CollectionQuery{CollectionName: "orders"}},
+			},
+		},
+	}
+	req := &collection.TypedRequestContext{PathParams: map[string]string{"id": "u1"}}
+	sess := store.NewEphemeralSession(nil)
+
+	match, err := svc.TryMatch(getUser, cfg, req, sess)
+	if err != nil || !match.Matched {
+		t.Fatalf("TryMatch: match=%v err=%v", match, err)
+	}
+	render, err := svc.Render(cfg, match, req, sess)
+	if err != nil {
+		t.Fatalf("Render error: %v", err)
+	}
+	if len(render.AdditionalMapperTraces) != 1 || render.AdditionalMapperTraces[0].RecordCount != 2 {
+		t.Fatalf("mapper trace = %#v", render.AdditionalMapperTraces)
+	}
+}
+
+// partialErrorBackend fails GetAll for one named collection and delegates to
+// a real in-memory backend for every other one — used to exercise the
+// additional-mapper error path without the primary query also failing.
+type partialErrorBackend struct {
+	*store.MemoryCollectionBackend
+	failCollection string
+}
+
+func (b *partialErrorBackend) GetAll(name string) ([]map[string]any, error) {
+	if name == b.failCollection {
+		return nil, fmt.Errorf("simulated backend outage")
+	}
+	return b.MemoryCollectionBackend.GetAll(name)
+}
+
+func TestRender_AdditionalMapperError(t *testing.T) {
+	s := storage.NewMemoryStorage()
+	if err := s.CreateSpec(&models.Spec{ID: "spec-err", Content: testSpecContent}); err != nil {
+		t.Fatal(err)
+	}
+	op := &models.Operation{ID: "op-err", SpecID: "spec-err", Method: "GET", Path: "/users/{id}"}
+
+	backend := &partialErrorBackend{MemoryCollectionBackend: store.NewMemoryCollectionBackend(), failCollection: "orders"}
+	if _, err := backend.SeedInsert("users", map[string]any{"_id": "u1", "id": "u1", "name": "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := NewService(s, backend)
+	cfg := &models.ResponseConfig{
+		ID:         "r-err",
+		StatusCode: 200,
+		Kind:       models.ResponseKindCollection,
+		CollectionResponse: &models.CollectionResponseConfig{
+			Primary: models.CollectionQuery{
+				CollectionName: "users",
+				FilterRules: []models.CollectionFilter{
+					{TargetPath: "_id", Value: models.ValueBinding{Source: models.ValueSourcePath, Key: "id"}},
+				},
+			},
+			AdditionalMappers: []models.NamedQuery{
+				{OutputKey: "orders", Mode: models.QueryModeFindOne, CollectionQuery: models.CollectionQuery{CollectionName: "orders"}},
+			},
+		},
+	}
+	req := &collection.TypedRequestContext{PathParams: map[string]string{"id": "u1"}}
+	sess := store.NewEphemeralSession(nil)
+
+	match, err := svc.TryMatch(op, cfg, req, sess)
+	if err != nil || !match.Matched {
+		t.Fatalf("TryMatch: match=%v err=%v", match, err)
+	}
+	if _, err := svc.Render(cfg, match, req, sess); err == nil {
+		t.Fatal("expected an error from the failing additional mapper")
+	}
+}
+
+func TestResolveTemplateFor(t *testing.T) {
+	svc, getUser, _, _ := setupService(t)
+	tmpl, err := svc.ResolveTemplateFor(getUser, 200, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tmpl.Root != models.RootKindObject {
+		t.Fatalf("root = %v, want object", tmpl.Root)
 	}
 }
