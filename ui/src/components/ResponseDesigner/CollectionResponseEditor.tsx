@@ -3,9 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
     ArrowLeft,
-    CheckCircle2,
     Database,
-    Eye,
     FileJson,
     GitBranch,
     Layers,
@@ -17,7 +15,7 @@ import {
     Trash2,
 } from 'lucide-react'
 import clsx from 'clsx'
-import { collectionResponsesApi, operationsApi, responsesApi, tagsApi } from '../../services/api'
+import { operationsApi, responsesApi, tagsApi } from '../../services/api'
 import type {
     CollectionFilter,
     CollectionResponseConfig,
@@ -223,7 +221,7 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
     }
 }
 
-type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'output' | 'headers' | 'preview'
+type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | 'output'
 
 export default function CollectionResponseEditor({ operationId, config, onClose }: CollectionResponseEditorProps) {
     const cr = config?.collectionResponse
@@ -252,11 +250,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     const [manualRootKind, setManualRootKind] = useState<RootKind>(cr?.rootKind || 'object')
     const [mappers, setMappers] = useState<MapperRowState[]>(() => mappersFromConfig(cr?.additionalMappers))
     const [overrides, setOverrides] = useState<BindingRowState[]>(() => rowsFromOverrides(cr?.overrides))
-
-    const [previewPathText, setPreviewPathText] = useState('{}')
-    const [previewQueryText, setPreviewQueryText] = useState('{}')
-    const [previewHeaderText, setPreviewHeaderText] = useState('{}')
-    const [previewBodyText, setPreviewBodyText] = useState('')
 
     const [error, setError] = useState('')
 
@@ -340,38 +333,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
         onError: (err: Error) => setError(err.message),
     })
 
-    const previewMutation = useMutation({
-        mutationFn: () => {
-            const parseObj = (text: string): Record<string, string> => {
-                if (!text.trim()) return {}
-                try {
-                    const obj = JSON.parse(text)
-                    if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
-                        const out: Record<string, string> = {}
-                        for (const [k, v] of Object.entries(obj)) out[k] = String(v)
-                        return out
-                    }
-                } catch {
-                    // fall through
-                }
-                return {}
-            }
-            const toMulti = (obj: Record<string, string>): Record<string, string[]> =>
-                Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, [v]]))
-
-            return collectionResponsesApi.preview(operationId, {
-                statusCode,
-                collectionResponse: buildCollectionResponse(),
-                request: {
-                    pathParams: parseObj(previewPathText),
-                    queryParams: toMulti(parseObj(previewQueryText)),
-                    headers: toMulti(parseObj(previewHeaderText)),
-                    body: previewBodyText,
-                },
-            })
-        },
-    })
-
     const handleSave = () => {
         setError('')
         if (!name.trim()) {
@@ -439,10 +400,9 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
         { id: 'metadata', label: 'Metadata', icon: Settings },
         { id: 'conditions', label: 'Conditions', icon: GitBranch },
         { id: 'query', label: 'Query', icon: Database },
-        { id: 'mappers', label: 'Mappers', icon: Layers },
-        { id: 'output', label: 'Output', icon: FileJson },
+        { id: 'mappers', label: 'Additional Mappers', icon: Layers },
         { id: 'headers', label: 'Headers', icon: List },
-        { id: 'preview', label: 'Preview', icon: Eye },
+        { id: 'output', label: 'Output', icon: FileJson },
     ]
 
     return (
@@ -603,18 +563,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     </div>
                                 </div>
 
-                                {matchingExamples.length > 1 && (
-                                    <div className="max-w-2xl">
-                                        <label className={labelClass}>Template (named example)</label>
-                                        <select value={templateRef} onChange={(e) => setTemplateRef(e.target.value)} className={inputClass}>
-                                            <option value="">(default)</option>
-                                            {matchingExamples.filter((e) => e.exampleName).map((e) => (
-                                                <option key={e.exampleName} value={e.exampleName}>{e.exampleName}{e.exampleSummary ? ` — ${e.exampleSummary}` : ''}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                )}
-
                                 {isIdentityMode && (
                                     <div className="max-w-2xl">
                                         <label className={labelClass}>Root shape</label>
@@ -668,102 +616,94 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                         {activeTab === 'mappers' && (
                             <div className="p-4 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-xs text-gray-400 dark:text-slate-500 max-w-xl">
-                                        Named lookups used only to fill fields — they never affect whether this response matches.
-                                    </p>
-                                    <button type="button" onClick={() => setMappers([...mappers, emptyMapper()])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline flex-shrink-0 ml-3">
+                                <div className="flex items-start gap-2 rounded-lg border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50 dark:bg-indigo-950/20 px-3 py-2.5">
+                                    <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400 flex-shrink-0 mt-0.5" />
+                                    <div>
+                                        <div className="text-sm font-medium text-indigo-800 dark:text-indigo-300">Additional data mappers</div>
+                                        <div className="text-xs text-indigo-700 dark:text-indigo-400">
+                                            Secondary collection lookups used only to fill Output fields (e.g. via a "Mapper output" override). They never affect whether this response matches — only the primary query on the Query tab does that.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex items-center justify-end">
+                                    <button type="button" onClick={() => setMappers([...mappers, emptyMapper()])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline flex-shrink-0">
                                         <Plus className="w-3.5 h-3.5" /> Add mapper
                                     </button>
                                 </div>
                                 {mappers.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500">No additional mappers configured.</p>}
                                 <div className="space-y-3">
                                     {mappers.map((m, i) => (
-                                        <div key={i} className="rounded-lg border border-gray-200 dark:border-slate-800 p-3 space-y-3">
-                                            <div className="flex items-center gap-2">
-                                                <input
-                                                    value={m.outputKey}
-                                                    onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, outputKey: e.target.value } : mm)))}
-                                                    placeholder="outputKey (e.g. plan)"
-                                                    className={`${inputClass} font-mono w-40`}
-                                                />
-                                                <select
-                                                    value={m.mode}
-                                                    onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as QueryMode } : mm)))}
-                                                    className={`${inputClass} w-36`}
-                                                >
-                                                    <option value="find-one">Find One</option>
-                                                    <option value="find-many">Find Many</option>
-                                                </select>
-                                                <input
-                                                    value={m.collectionName}
-                                                    onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, collectionName: e.target.value } : mm)))}
-                                                    placeholder="collection"
-                                                    className={`${inputClass} font-mono flex-1`}
-                                                />
-                                                <button type="button" onClick={() => setMappers(mappers.filter((_, j) => j !== i))} className="p-1 text-gray-400 dark:text-slate-500 hover:text-red-600" title="Remove mapper">
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                        <div key={i} className="rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
+                                            <div className="flex items-center gap-2 bg-indigo-50/60 dark:bg-indigo-950/20 px-3 py-1.5 border-b border-gray-200 dark:border-slate-800">
+                                                <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" />
+                                                <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                                                    Additional mapper {m.outputKey ? `— ${m.outputKey}` : `#${i + 1}`}
+                                                </span>
                                             </div>
-                                            <div>
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: [...mm.filters, emptyRow()] } : mm)))}
-                                                        className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline"
-                                                    >
-                                                        <Plus className="w-3 h-3" /> Add filter
+                                            <div className="p-3 space-y-3">
+                                                <div className="flex flex-wrap items-end gap-2">
+                                                    <div className="w-40">
+                                                        <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Output key</label>
+                                                        <input
+                                                            value={m.outputKey}
+                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, outputKey: e.target.value } : mm)))}
+                                                            placeholder="plan"
+                                                            className={`${inputClass} font-mono`}
+                                                        />
+                                                    </div>
+                                                    <div className="w-36">
+                                                        <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Mode</label>
+                                                        <select
+                                                            value={m.mode}
+                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as QueryMode } : mm)))}
+                                                            className={inputClass}
+                                                        >
+                                                            <option value="find-one">Find One</option>
+                                                            <option value="find-many">Find Many</option>
+                                                        </select>
+                                                    </div>
+                                                    <div className="flex-1 min-w-[10rem]">
+                                                        <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Collection</label>
+                                                        <input
+                                                            value={m.collectionName}
+                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, collectionName: e.target.value } : mm)))}
+                                                            placeholder="plans"
+                                                            className={`${inputClass} font-mono`}
+                                                        />
+                                                    </div>
+                                                    <button type="button" onClick={() => setMappers(mappers.filter((_, j) => j !== i))} className="p-2 text-gray-400 dark:text-slate-500 hover:text-red-600" title="Remove mapper">
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
-                                                <div className="space-y-2">
-                                                    {m.filters.map((row, k) => (
-                                                        <BindingRow
-                                                            key={k}
-                                                            row={row}
-                                                            sources={MAPPER_FILTER_SOURCES}
-                                                            keyPlaceholder={filterKeyPlaceholder}
-                                                            targetPathLabel="Collection field"
-                                                            targetPathPlaceholder="_id"
-                                                            onChange={(next) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: mm.filters.map((r, l) => (l === k ? next : r)) } : mm)))}
-                                                            onRemove={() => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: mm.filters.filter((_, l) => l !== k) } : mm)))}
-                                                        />
-                                                    ))}
+                                                <div>
+                                                    <div className="flex items-center justify-between mb-1">
+                                                        <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: [...mm.filters, emptyRow()] } : mm)))}
+                                                            className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline"
+                                                        >
+                                                            <Plus className="w-3 h-3" /> Add filter
+                                                        </button>
+                                                    </div>
+                                                    <div className="space-y-2">
+                                                        {m.filters.map((row, k) => (
+                                                            <BindingRow
+                                                                key={k}
+                                                                row={row}
+                                                                sources={MAPPER_FILTER_SOURCES}
+                                                                keyPlaceholder={filterKeyPlaceholder}
+                                                                targetPathLabel="Collection field"
+                                                                targetPathPlaceholder="_id"
+                                                                onChange={(next) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: mm.filters.map((r, l) => (l === k ? next : r)) } : mm)))}
+                                                                onRemove={() => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, filters: mm.filters.filter((_, l) => l !== k) } : mm)))}
+                                                            />
+                                                        ))}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'output' && (
-                            <div className="p-4 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <p className="text-xs text-gray-400 dark:text-slate-500 max-w-xl">
-                                        Every response field fills automatically from the document field of the same name. Add an override only for fields that need a rename, a lookup, request context, or a literal.
-                                    </p>
-                                    <button type="button" onClick={() => setOverrides([...overrides, emptyRow('document')])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline flex-shrink-0 ml-3">
-                                        <Plus className="w-3.5 h-3.5" /> Add override
-                                    </button>
-                                </div>
-                                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
-                                    <input type="checkbox" checked={fallbackToExample} onChange={(e) => setFallbackToExample(e.target.checked)} />
-                                    When a field has no matching document value, keep the spec's example value (otherwise render null)
-                                </label>
-                                {overrides.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500">No overrides — every field fills by convention.</p>}
-                                <div className="space-y-2">
-                                    {overrides.map((row, i) => (
-                                        <BindingRow
-                                            key={i}
-                                            row={row}
-                                            sources={OVERRIDE_SOURCES}
-                                            keyPlaceholder={filterKeyPlaceholder}
-                                            targetPathLabel="Response field path"
-                                            targetPathPlaceholder="customer.name"
-                                            onChange={(next) => setOverrides(overrides.map((r, j) => (j === i ? next : r)))}
-                                            onRemove={() => setOverrides(overrides.filter((_, j) => j !== i))}
-                                        />
                                     ))}
                                 </div>
                             </div>
@@ -791,78 +731,50 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                             </div>
                         )}
 
-                        {activeTab === 'preview' && (
-                            <div className="p-4 space-y-3 max-w-3xl">
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div>
-                                        <label className={labelClass}>Path params (JSON)</label>
-                                        <textarea value={previewPathText} onChange={(e) => setPreviewPathText(e.target.value)} rows={2} className={`${inputClass} font-mono`} />
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Query params (JSON)</label>
-                                        <textarea value={previewQueryText} onChange={(e) => setPreviewQueryText(e.target.value)} rows={2} className={`${inputClass} font-mono`} />
-                                    </div>
-                                    <div>
-                                        <label className={labelClass}>Headers (JSON)</label>
-                                        <textarea value={previewHeaderText} onChange={(e) => setPreviewHeaderText(e.target.value)} rows={2} className={`${inputClass} font-mono`} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className={labelClass}>Body</label>
-                                    <textarea value={previewBodyText} onChange={(e) => setPreviewBodyText(e.target.value)} rows={2} className={`${inputClass} font-mono`} placeholder='{"customer":{"email":"a@example.com"}}' />
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => previewMutation.mutate()}
-                                    disabled={previewMutation.isPending || !primaryCollectionName.trim()}
-                                    className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition-colors disabled:opacity-50 text-sm"
-                                >
-                                    {previewMutation.isPending ? 'Running preview…' : 'Run preview'}
-                                </button>
-
-                                {previewMutation.isError && (
-                                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 dark:bg-red-950/40 dark:border-red-900/40 dark:text-red-300">
-                                        {(previewMutation.error as Error).message}
+                        {activeTab === 'output' && (
+                            <div className="p-4 space-y-4">
+                                {matchingExamples.length > 1 && (
+                                    <div className="max-w-2xl">
+                                        <label className={labelClass}>Template (named example)</label>
+                                        <select value={templateRef} onChange={(e) => setTemplateRef(e.target.value)} className={inputClass}>
+                                            <option value="">(default)</option>
+                                            {matchingExamples.filter((e) => e.exampleName).map((e) => (
+                                                <option key={e.exampleName} value={e.exampleName}>{e.exampleName}{e.exampleSummary ? ` — ${e.exampleSummary}` : ''}</option>
+                                            ))}
+                                        </select>
+                                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
+                                            The spec's {statusCode} response defines more than one named example — pick which one shapes the output.
+                                        </p>
                                     </div>
                                 )}
 
-                                {previewMutation.data && (
-                                    <div className="space-y-2">
-                                        <div className={clsx(
-                                            'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm',
-                                            previewMutation.data.matched
-                                                ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-900/50 dark:bg-green-950/30 dark:text-green-300'
-                                                : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300',
-                                        )}>
-                                            {previewMutation.data.matched ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
-                                            {previewMutation.data.matched
-                                                ? `Matches — ${previewMutation.data.recordCount} record(s), ${previewMutation.data.rootKind === 'array' ? 'find-many' : 'find-one'}`
-                                                : 'Would fall through to the next response (no data, matchOnEmpty is off)'}
-                                        </div>
-                                        {previewMutation.data.filter && Object.keys(previewMutation.data.filter).length > 0 && (
-                                            <div>
-                                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Resolved filter</div>
-                                                <pre className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 text-xs overflow-x-auto">{JSON.stringify(previewMutation.data.filter, null, 2)}</pre>
-                                            </div>
-                                        )}
-                                        {previewMutation.data.body && (
-                                            <div>
-                                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Rendered body</div>
-                                                <pre className="bg-gray-50 dark:bg-slate-800 rounded-lg p-3 text-xs overflow-x-auto">{(() => {
-                                                    try { return JSON.stringify(JSON.parse(previewMutation.data!.body!), null, 2) } catch { return previewMutation.data!.body }
-                                                })()}</pre>
-                                            </div>
-                                        )}
-                                        {previewMutation.data.warnings && previewMutation.data.warnings.length > 0 && (
-                                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 dark:bg-amber-950/30 dark:border-amber-900/50">
-                                                <div className="text-xs font-medium text-amber-800 dark:text-amber-300 mb-1">Warnings</div>
-                                                <ul className="text-xs text-amber-700 dark:text-amber-400 list-disc list-inside space-y-0.5">
-                                                    {previewMutation.data.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                                                </ul>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
+                                <div className="flex items-center justify-between">
+                                    <p className="text-xs text-gray-400 dark:text-slate-500 max-w-xl">
+                                        Every response field fills automatically from the document field of the same name. Add an override only for fields that need a rename, a lookup, request context, or a literal.
+                                    </p>
+                                    <button type="button" onClick={() => setOverrides([...overrides, emptyRow('document')])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline flex-shrink-0 ml-3">
+                                        <Plus className="w-3.5 h-3.5" /> Add override
+                                    </button>
+                                </div>
+                                <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-slate-300">
+                                    <input type="checkbox" checked={fallbackToExample} onChange={(e) => setFallbackToExample(e.target.checked)} />
+                                    When a field has no matching document value, keep the spec's example value (otherwise render null)
+                                </label>
+                                {overrides.length === 0 && <p className="text-xs text-gray-400 dark:text-slate-500">No overrides — every field fills by convention.</p>}
+                                <div className="space-y-2">
+                                    {overrides.map((row, i) => (
+                                        <BindingRow
+                                            key={i}
+                                            row={row}
+                                            sources={OVERRIDE_SOURCES}
+                                            keyPlaceholder={filterKeyPlaceholder}
+                                            targetPathLabel="Response field path"
+                                            targetPathPlaceholder="customer.name"
+                                            onChange={(next) => setOverrides(overrides.map((r, j) => (j === i ? next : r)))}
+                                            onRemove={() => setOverrides(overrides.filter((_, j) => j !== i))}
+                                        />
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
