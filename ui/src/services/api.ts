@@ -289,6 +289,18 @@ export const responsesApi = {
     },
 };
 
+// Collection Responses API
+export const collectionResponsesApi = {
+    preview: async (operationId: string, data: import('../types').CollectionResponsePreviewRequest) => {
+        const response = await fetch(`${API_BASE}/operations/${operationId}/collection-responses/preview`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        return handleResponse<import('../types').CollectionResponsePreviewResult>(response);
+    },
+};
+
 // Templates API
 export const templatesApi = {
     validate: async (body: string) => {

@@ -6,6 +6,17 @@ const (
 	ResponseOriginAI     = "ai"
 )
 
+// ResponseKind distinguishes how a configured response's body is produced.
+type ResponseKind string
+
+const (
+	// ResponseKindManual renders Body as a Go template, as it always has.
+	ResponseKindManual ResponseKind = "manual"
+	// ResponseKindCollection resolves its body from a collection query at
+	// match time; see CollectionResponseConfig.
+	ResponseKindCollection ResponseKind = "collection"
+)
+
 // ResponseConfig represents a configured response for an operation
 type ResponseConfig struct {
 	ID            string            `json:"id"`
@@ -23,21 +34,50 @@ type ResponseConfig struct {
 	Enabled       bool              `json:"enabled"`
 	Recorded      bool              `json:"recorded"` // True if auto-recorded in proxy mode
 	Origin        string            `json:"origin"`
+
+	// Kind selects how the body is produced. Empty normalizes to
+	// ResponseKindManual — see EffectiveKind.
+	Kind ResponseKind `json:"kind,omitempty"`
+	// CollectionResponse holds the collection query, mappers, and field
+	// overrides used when Kind is ResponseKindCollection. Nil for manual
+	// responses.
+	CollectionResponse *CollectionResponseConfig `json:"collectionResponse,omitempty"`
+}
+
+// EffectiveKind returns r.Kind, normalizing an empty/unrecognised value to
+// ResponseKindManual so existing responses without a stored kind behave as
+// before.
+func (r *ResponseConfig) EffectiveKind() ResponseKind {
+	if r == nil {
+		return ResponseKindManual
+	}
+	if r.Kind == ResponseKindCollection {
+		return ResponseKindCollection
+	}
+	return ResponseKindManual
+}
+
+// IsCollectionResponse reports whether this response resolves its body from
+// a collection query rather than rendering Body as a template.
+func (r *ResponseConfig) IsCollectionResponse() bool {
+	return r.EffectiveKind() == ResponseKindCollection
 }
 
 // ResponseConfigInput represents input for creating/updating a response config
 type ResponseConfigInput struct {
-	Name          string            `json:"name"`
-	Description   string            `json:"description"`
-	Tag           string            `json:"tag"`
-	Priority      int               `json:"priority"`
-	Conditions    []Condition       `json:"conditions"`
-	ConditionTree *ConditionNode    `json:"conditionTree,omitempty"`
-	StatusCode    int               `json:"statusCode"`
-	Headers       map[string]string `json:"headers"`
-	Body          string            `json:"body"`
-	Delay         int               `json:"delay"`
-	Enabled       bool              `json:"enabled"`
+	Name               string                     `json:"name"`
+	Description        string                     `json:"description"`
+	Tag                string                     `json:"tag"`
+	Priority           int                        `json:"priority"`
+	Conditions         []Condition                `json:"conditions"`
+	ConditionTree      *ConditionNode             `json:"conditionTree,omitempty"`
+	StatusCode         int                        `json:"statusCode"`
+	Headers            map[string]string          `json:"headers"`
+	Body               string                     `json:"body"`
+	Delay              int                        `json:"delay"`
+	Enabled            bool                       `json:"enabled"`
+	Kind               ResponseKind               `json:"kind,omitempty"`
+	CollectionResponse *CollectionResponseConfig  `json:"collectionResponse,omitempty"`
 }
 
 // ResponseConfigUpdate represents input for updating a response config
@@ -53,6 +93,10 @@ type ResponseConfigUpdate struct {
 	Body          *string            `json:"body,omitempty"`
 	Delay         *int               `json:"delay,omitempty"`
 	Enabled       *bool              `json:"enabled,omitempty"`
+	// CollectionResponse, when non-nil, replaces the collection response
+	// configuration. Kind is immutable after creation and is not part of
+	// the update payload.
+	CollectionResponse *CollectionResponseConfig `json:"collectionResponse,omitempty"`
 }
 
 func NormalizeResponseOrigin(origin string, recorded bool) string {

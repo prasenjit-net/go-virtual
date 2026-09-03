@@ -11,7 +11,8 @@ import {
     Info,
     Fingerprint,
     X,
-    Radio
+    Radio,
+    Database
 } from 'lucide-react'
 import clsx from 'clsx'
 import { operationsApi, responsesApi, specsApi, aiApi } from '../services/api'
@@ -250,6 +251,14 @@ export default function OperationDetail() {
                         >
                             <Plus className="w-5 h-5 mr-2" />
                             Add Response
+                        </Link>
+                        <Link
+                            to={`/operations/${operationId}/responses/new?kind=collection`}
+                            className="flex items-center px-4 py-2 border border-teal-200 text-teal-700 dark:border-teal-800 dark:text-teal-300 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
+                            title="Fill a response body from a collection query, matched by naming convention"
+                        >
+                            <Database className="w-4 h-4 mr-2" />
+                            Add Collection Response
                         </Link>
                         <button
                             onClick={() => {

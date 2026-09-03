@@ -162,6 +162,8 @@ export interface ResponseConfig {
     enabled: boolean;
     recorded: boolean;
     origin: ResponseOrigin;
+    kind?: ResponseKind;
+    collectionResponse?: CollectionResponseConfig | null;
 }
 
 export interface ResponseConfigInput {
@@ -176,6 +178,73 @@ export interface ResponseConfigInput {
     body: string;
     delay?: number;
     enabled: boolean;
+    kind?: ResponseKind;
+    collectionResponse?: CollectionResponseConfig | null;
+}
+
+// ---- Collection Responses ----
+
+export type ResponseKind = 'manual' | 'collection';
+export type RootKind = 'object' | 'array';
+export type QueryMode = 'find-one' | 'find-many';
+export type ValueSource = 'document' | 'mapper' | 'primary' | 'path' | 'query' | 'header' | 'body' | 'literal';
+
+export interface ValueBinding {
+    source: ValueSource | '';
+    key?: string;
+    /** JSON-typed literal value (any JSON value) — used only when source === 'literal'. */
+    value?: unknown;
+}
+
+export interface CollectionFilter {
+    targetPath: string;
+    value: ValueBinding;
+}
+
+export interface CollectionQuery {
+    collectionName: string;
+    filterRules?: CollectionFilter[];
+}
+
+export interface NamedQuery extends CollectionQuery {
+    outputKey: string;
+    mode: QueryMode;
+}
+
+export interface FieldOverride {
+    targetPath: string;
+    value: ValueBinding;
+}
+
+export interface CollectionResponseConfig {
+    primary: CollectionQuery;
+    additionalMappers?: NamedQuery[];
+    overrides?: FieldOverride[];
+    templateRef?: string;
+    rootKind?: RootKind;
+    matchOnEmpty?: boolean;
+    fallbackToExample?: boolean;
+}
+
+export interface CollectionResponsePreviewRequest {
+    statusCode: number;
+    collectionResponse: CollectionResponseConfig;
+    request: {
+        pathParams?: Record<string, string>;
+        queryParams?: Record<string, string[]>;
+        headers?: Record<string, string[]>;
+        body?: string;
+    };
+}
+
+export interface CollectionResponsePreviewResult {
+    rootKind: RootKind;
+    templateSource: 'example' | 'schema' | 'identity' | string;
+    matched: boolean;
+    recordCount: number;
+    filter?: Record<string, unknown>;
+    body?: string;
+    warnings?: string[];
 }
 
 export interface Tag {

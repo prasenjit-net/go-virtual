@@ -3,6 +3,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { operationsApi, responsesApi } from '../../services/api'
 import type { Operation, ResponseConfig } from '../../types'
+import CollectionResponseEditor from './CollectionResponseEditor'
 import ResponseConfigEditor from './ResponseConfigEditor'
 import ResponseConfigIDE from './ResponseConfigIDE'
 
@@ -62,6 +63,25 @@ export default function ResponseConfigPage() {
         operationId: effectiveOperationId,
         config: responseConfig || null,
         readOnly: backToRecorded,
+    }
+
+    // Collection Responses use one unified editor (no desktop IDE / mobile
+    // form split): the kind is either loaded from an existing response, or
+    // chosen at creation time via ?kind=collection.
+    const isCollectionResponse = responseConfig
+        ? responseConfig.kind === 'collection'
+        : searchParams.get('kind') === 'collection'
+
+    if (isCollectionResponse) {
+        return (
+            <div className="h-full overflow-hidden">
+                <CollectionResponseEditor
+                    operationId={effectiveOperationId}
+                    config={responseConfig || null}
+                    onClose={() => navigate(backPath)}
+                />
+            </div>
+        )
     }
 
     return (
