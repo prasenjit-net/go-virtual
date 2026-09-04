@@ -6,6 +6,7 @@ import (
 
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/archive"
+	"github.com/prasenjit/go-virtual/internal/collectionresponse"
 	"github.com/prasenjit/go-virtual/internal/config"
 	"github.com/prasenjit/go-virtual/internal/parser"
 	"github.com/prasenjit/go-virtual/internal/proxy"
@@ -43,6 +44,7 @@ type Handler struct {
 	scriptEngine      *scripting.ScriptEngine
 	globalStore       store.GlobalStoreBackend
 	collectionBackend store.CollectionBackend
+	collResponseSvc   *collectionresponse.Service // nil when collectionBackend is nil
 	sessionManager    store.SessionRegistry
 	archiveManager    archive.ArchiveService
 	branding          config.BrandingConfig
@@ -79,6 +81,9 @@ func NewHandler(cfg HandlerConfig) *Handler {
 	}
 	if cfg.GlobalStore != nil {
 		h.scriptEngine.SetGlobalStore(cfg.GlobalStore)
+	}
+	if cfg.CollectionBackend != nil {
+		h.collResponseSvc = collectionresponse.NewService(cfg.Store, cfg.CollectionBackend)
 	}
 	return h
 }

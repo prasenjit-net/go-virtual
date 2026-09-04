@@ -1,27 +1,46 @@
+import { Suspense, lazy } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import PWAInstallBanner from './components/PWAInstallBanner'
-import Dashboard from './components/Dashboard'
-import SpecList from './components/SpecManager/SpecList'
-import SpecDetail from './components/SpecManager/SpecDetail'
-import AIScenariosPage from './components/SpecManager/AIScenariosPage'
-import OperationDetail from './components/OperationDetail'
-import OperationRecordedResponsesPage from './components/OperationRecordedResponsesPage'
-import ResponseConfigPage from './components/ResponseDesigner/ResponseConfigPage'
-import TraceViewer from './components/TraceViewer'
-import TraceDetailPage from './components/Traces/TraceDetailPage'
-import TagManager from './components/TagManager'
-import ScriptList from './components/ScriptManager/ScriptList'
-import ScriptEditor from './components/ScriptManager/ScriptEditor'
-import StoreManager from './components/StoreManager/StoreManager'
-import SessionList from './components/SessionManager/SessionList'
-import SessionDetail from './components/SessionManager/SessionDetail'
-import ArchiveManager from './components/ArchiveManager/ArchiveManager'
+
+// Every route below is its own lazy chunk: Vite/Rollup splits each dynamic
+// import into a separate file loaded on demand, instead of bundling every
+// page (Monaco-backed editors, recharts, dnd-kit-heavy lists, …) into the
+// single eager entry chunk. See vite.config.ts for the vendor-library
+// manualChunks that complement this.
+const Dashboard = lazy(() => import('./components/Dashboard'))
+const SpecList = lazy(() => import('./components/SpecManager/SpecList'))
+const SpecDetail = lazy(() => import('./components/SpecManager/SpecDetail'))
+const AIScenariosPage = lazy(() => import('./components/SpecManager/AIScenariosPage'))
+const OperationDetail = lazy(() => import('./components/OperationDetail'))
+const OperationRecordedResponsesPage = lazy(() => import('./components/OperationRecordedResponsesPage'))
+const ResponseConfigPage = lazy(() => import('./components/ResponseDesigner/ResponseConfigPage'))
+const TraceViewer = lazy(() => import('./components/TraceViewer'))
+const TraceDetailPage = lazy(() => import('./components/Traces/TraceDetailPage'))
+const TagManager = lazy(() => import('./components/TagManager'))
+const ScriptList = lazy(() => import('./components/ScriptManager/ScriptList'))
+const ScriptEditor = lazy(() => import('./components/ScriptManager/ScriptEditor'))
+const StoreManager = lazy(() => import('./components/StoreManager/StoreManager'))
+const SessionList = lazy(() => import('./components/SessionManager/SessionList'))
+const SessionDetail = lazy(() => import('./components/SessionManager/SessionDetail'))
+const ArchiveManager = lazy(() => import('./components/ArchiveManager/ArchiveManager'))
+
+function RouteFallback() {
+    return (
+        <div className="p-8">
+            <div className="animate-pulse space-y-4">
+                <div className="h-8 bg-gray-200 dark:bg-slate-800 rounded w-48"></div>
+                <div className="h-32 bg-gray-200 dark:bg-slate-800 rounded-xl"></div>
+            </div>
+        </div>
+    )
+}
 
 function App() {
     return (
         <>
         <PWAInstallBanner />
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
             <Route path="/" element={<Layout />}>
                 <Route index element={<Navigate to="/dashboard" replace />} />
@@ -47,6 +66,7 @@ function App() {
                 <Route path="archives" element={<ArchiveManager />} />
             </Route>
         </Routes>
+        </Suspense>
         </>
     )
 }

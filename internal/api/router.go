@@ -141,6 +141,7 @@ func (r *Router) setupRoutes() {
 		api.DELETE("/responses/:id", r.handler.DeleteResponseConfig)
 		api.PUT("/responses/:id/priority", r.handler.UpdateResponsePriority)
 		api.POST("/responses/:id/clone", r.handler.CloneResponseConfig)
+		api.POST("/operations/:id/collection-responses/preview", r.handler.PreviewCollectionResponse)
 
 		// Script bindings (per spec)
 		api.GET("/specs/:id/scripts", r.handler.ListSpecScriptBindings)

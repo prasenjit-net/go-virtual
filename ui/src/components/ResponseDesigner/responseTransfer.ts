@@ -1,4 +1,4 @@
-import type { Condition, ResponseConfig, ResponseConfigInput } from '../../types'
+import type { CollectionResponseConfig, Condition, ResponseConfig, ResponseConfigInput } from '../../types'
 
 export interface ResponseTransferEnvelope {
     type: 'go-virtual-response-config'
@@ -51,6 +51,10 @@ function sanitizeInput(input: unknown): ResponseConfigInput {
         body: typeof source.body === 'string' ? source.body : '',
         delay: Number.isFinite(source.delay) ? Number(source.delay) : 0,
         enabled: typeof source.enabled === 'boolean' ? source.enabled : true,
+        kind: source.kind === 'collection' ? 'collection' : undefined,
+        collectionResponse: isRecord(source.collectionResponse)
+            ? (source.collectionResponse as unknown as CollectionResponseConfig)
+            : undefined,
     }
 }
 

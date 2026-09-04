@@ -26,6 +26,7 @@ import {
     Code2,
     Check,
     Copy,
+    Database,
     Edit2,
     Eye,
     GitBranch,
@@ -94,6 +95,7 @@ interface RowProps {
     onClone: (e: React.MouseEvent, config: ResponseConfig) => void
     onDelete: (id: string) => void
     renderOriginBadge: (config: ResponseConfig) => React.ReactNode
+    renderKindBadge: (config: ResponseConfig) => React.ReactNode
     isRecorded: (config: ResponseConfig) => boolean
     editSuffix: string
     enableManualActions: boolean
@@ -116,6 +118,7 @@ function ResponseRow({
     onClone,
     onDelete,
     renderOriginBadge,
+    renderKindBadge,
     isRecorded,
     editSuffix,
     enableManualActions,
@@ -151,6 +154,7 @@ function ResponseRow({
                         <div className="flex items-center">
                             <span className="font-medium text-gray-900 dark:text-slate-100">{config.name}</span>
                             {renderOriginBadge(config)}
+                            {renderKindBadge(config)}
                             <span className="ml-2 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-slate-800 dark:text-slate-300">
                                 {config.tag || 'default'}
                             </span>
@@ -427,6 +431,20 @@ export default function ResponseConfigList({
     const isRecorded = (config: ResponseConfig) => config.recorded === true
     const editSuffix = editSource === 'recorded' ? '?source=recorded' : ''
 
+    const renderKindBadge = (config: ResponseConfig) => {
+        if (config.kind !== 'collection') return null
+        const collectionName = config.collectionResponse?.primary.collectionName
+        return (
+            <span
+                className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300"
+                title={collectionName ? `Collection: ${collectionName}` : 'Collection response'}
+            >
+                <Database className="w-2.5 h-2.5" />
+                Collection{collectionName ? `: ${collectionName}` : ''}
+            </span>
+        )
+    }
+
     const renderOriginBadge = (config: ResponseConfig) => {
         if (!config.recorded) return null
         if (config.origin === 'ai') {
@@ -454,6 +472,7 @@ export default function ResponseConfigList({
         },
         onDelete: (id: string) => deleteMutation.mutate(id),
         renderOriginBadge,
+        renderKindBadge,
         isRecorded,
         editSuffix,
         enableManualActions,

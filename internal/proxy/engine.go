@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/prasenjit/go-virtual/internal/ai"
 	"github.com/prasenjit/go-virtual/internal/collection"
+	"github.com/prasenjit/go-virtual/internal/collectionresponse"
 	"github.com/prasenjit/go-virtual/internal/condition"
 	"github.com/prasenjit/go-virtual/internal/logging"
 	"github.com/prasenjit/go-virtual/internal/metrics"
@@ -43,7 +44,8 @@ type Engine struct {
 	templateEngine      *template.Engine
 	scriptEngine        *scripting.ScriptEngine
 	collectionExecutor  *collection.Executor
-	sessionManager      store.SessionRegistry // nil when Phase 2 is not configured
+	collResponseService *collectionresponse.Service // nil until SetCollectionBackend is called
+	sessionManager      store.SessionRegistry       // nil when Phase 2 is not configured
 	sessionHeaderName   string
 	recorder            *Recorder
 	aiGenerator         *ai.Generator
@@ -70,15 +72,15 @@ func NewEngine(store storage.Storage, statsCollector *stats.Collector, tracingSe
 	}
 
 	e := &Engine{
-		store:              store,
-		statsCollector:     statsCollector,
-		tracingService:     tracingService,
-		condEvaluator:      condition.NewEvaluator(),
-		templateEngine:     template.NewEngine(),
-		scriptEngine:       scripting.NewScriptEngine(store, timeoutMs),
-		recorder:           NewRecorder(store),
-		runtimeWarnings:    make(map[string]struct{}),
-		routes:             make(map[string][]*route),
+		store:           store,
+		statsCollector:  statsCollector,
+		tracingService:  tracingService,
+		condEvaluator:   condition.NewEvaluator(),
+		templateEngine:  template.NewEngine(),
+		scriptEngine:    scripting.NewScriptEngine(store, timeoutMs),
+		recorder:        NewRecorder(store),
+		runtimeWarnings: make(map[string]struct{}),
+		routes:          make(map[string][]*route),
 	}
 
 	// Load initial routes
@@ -99,6 +101,7 @@ func (e *Engine) SetSessionManager(sm store.SessionRegistry, headerName string) 
 func (e *Engine) SetCollectionBackend(cb store.CollectionBackend) {
 	e.collectionBackend = cb
 	e.collectionExecutor = collection.NewExecutor(e.store, cb)
+	e.collResponseService = collectionresponse.NewService(e.store, cb)
 	e.scriptEngine.SetCollectionBackend(cb)
 }
 
@@ -410,7 +413,8 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				nil, nil, nil, nil, nil, // no scripts, no validations at this stage
 				nil, nil, nil, // no early collections, no pipeline at this stage
 				models.TraceResponseTierRecorded,
-				"", "", "", "")
+				"", "", "", "",
+				nil, nil) // recorded responses are always manual — no collection match/attempts
 			return
 		}
 	}
@@ -627,11 +631,37 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"step_count", len(scriptTraces)+len(validationTraces)+len(earlyCollectionTraces),
 	)
 
-	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput + CollectionOutput
+	// ⑦ Configured response matching — non-recorded configs only; uses ScriptOutput + ValidationOutput + CollectionOutput.
+	// Collection Responses run their primary query inline here: a non-empty
+	// result matches, an empty one falls through to the next response.
 	var matchedConfig *models.ResponseConfig
+	var collMatch *collectionresponse.MatchResult
+	var collAttempts []models.CollectionResponseAttempt
 	responseTier := ""
+	matchSess := sess
+	if matchSess == nil && lazySession != nil {
+		matchSess = lazySession
+	}
 	if respErr == nil && len(responseConfigs) > 0 {
-		matchedConfig = e.findMatchingResponseConfig(responseConfigs, reqData, enabledTags)
+		typedReq := &collection.TypedRequestContext{
+			PathParams:  pathParams,
+			QueryParams: r.URL.Query(),
+			Headers:     r.Header,
+			Body:        requestBody,
+		}
+		var matchErr error
+		matchedConfig, collMatch, collAttempts, matchErr = e.findMatchingResponseConfig(
+			responseConfigs, reqData, enabledTags, matchedRoute.operation, typedReq, matchSess,
+		)
+		if matchErr != nil {
+			reqLogger.Error("Collection response matching failed",
+				"event", "collection_response_match_failed",
+				"error", matchErr,
+			)
+			e.writeRuntimeError(w, matchedRoute, r, requestBody, startTime, matchErr,
+				scriptTraces, validationTraces, earlyCollectionTraces, pipelineTrace, collAttempts, proxySkippedReason)
+			return
+		}
 		if matchedConfig != nil {
 			responseTier = models.TraceResponseTierConfigured
 			reqLogger.Info("Selected configured response",
@@ -641,6 +671,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"response_origin", matchedConfig.EffectiveOrigin(),
 				"response_tier", responseTier,
 			)
+		}
+	}
+	// A collection query may have materialised a lazy session (first touch
+	// of session-scoped collection state) even without a match.
+	if lazySession != nil && sess == nil {
+		if inner := lazySession.Materialized(); inner != nil {
+			info := inner.Info(false)
+			w.Header().Set(e.sessionHeaderName, info.ID)
+			sess = inner
+			sessionIsNew = true
 		}
 	}
 
@@ -899,11 +939,16 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		earlyCollectionOutput, earlyCollectionTraces,
 		pipelineTrace,
 		responseTier,
-		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario))
+		"", proxySkippedReason, requestedScenarioName, aiScenarioName(appliedScenario),
+		collMatch, collAttempts)
 }
 
 // serveMatchedConfig renders and returns a matched ResponseConfig.
 // It handles response-level scripts, collection mappings, template rendering, stats, and tracing.
+// collMatch is the cached primary-query result for a Collection Response
+// (nil for manual responses, or when reached via the recorded-response path
+// which never selects a Collection Response). collAttempts records every
+// Collection Response evaluated during matching, for tracing.
 func (e *Engine) serveMatchedConfig(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -929,6 +974,8 @@ func (e *Engine) serveMatchedConfig(
 	proxySkippedReason string,
 	requestedScenarioName string,
 	appliedScenarioName string,
+	collMatch *collectionresponse.MatchResult,
+	collAttempts []models.CollectionResponseAttempt,
 ) {
 	reqLogger := logging.Logger("proxy.request").With(
 		"method", r.Method,
@@ -1071,16 +1118,64 @@ func (e *Engine) serveMatchedConfig(
 		w.Header().Set("Content-Type", "application/json")
 	}
 
-	// Process body with advanced templating
-	responseBody, err := e.templateEngine.RenderBodyTemplate(matchedConfig.Body, templateCtx)
-	if err != nil {
-		reqLogger.Error("Failed to render response template; using raw body",
-			"event", "response_template_render_failed",
-			"response_config_id", matchedConfig.ID,
-			"response_config_name", matchedConfig.Name,
-			"error", err,
-		)
-		responseBody = matchedConfig.Body
+	// Process body — a Collection Response fills its spec-derived template
+	// from the cached primary match (never re-queried); every other kind
+	// renders Body as a Go template exactly as before.
+	var responseBody string
+	var collResponseRenderTrace *models.CollectionResponseRenderTrace
+	if matchedConfig.IsCollectionResponse() && collMatch != nil && e.collResponseService != nil {
+		renderSess := sess
+		if renderSess == nil && lazySession != nil {
+			renderSess = lazySession
+		}
+		typedReq := &collection.TypedRequestContext{
+			PathParams:  pathParams,
+			QueryParams: r.URL.Query(),
+			Headers:     r.Header,
+			Body:        requestBody,
+		}
+		render, renderErr := e.collResponseService.Render(matchedConfig, collMatch, typedReq, renderSess)
+		if renderErr != nil {
+			reqLogger.Error("Failed to render collection response",
+				"event", "collection_response_render_failed",
+				"response_config_id", matchedConfig.ID,
+				"response_config_name", matchedConfig.Name,
+				"error", renderErr,
+			)
+			e.writeRuntimeError(w, matchedRoute, r, requestBody, startTime, renderErr,
+				scriptTraces, validationTraces, collectionTraces, pipelineTrace, collAttempts, proxySkippedReason)
+			return
+		}
+		responseBody = string(render.Body)
+		collResponseRenderTrace = &models.CollectionResponseRenderTrace{
+			TemplateStatusCode: matchedConfig.StatusCode,
+			TemplateSource:     string(collMatch.Template.Source),
+			AdditionalMappers:  render.AdditionalMapperTraces,
+			Warnings:           render.Warnings,
+		}
+		// An additional mapper read may have touched session-scoped
+		// collection state for the first time; materialise it like every
+		// other write path so the session header is echoed back.
+		if lazySession != nil && sess == nil {
+			if inner := lazySession.Materialized(); inner != nil {
+				info := inner.Info(false)
+				w.Header().Set(e.sessionHeaderName, info.ID)
+				sess = inner
+				sessionIsNew = true
+			}
+		}
+	} else {
+		var renderErr error
+		responseBody, renderErr = e.templateEngine.RenderBodyTemplate(matchedConfig.Body, templateCtx)
+		if renderErr != nil {
+			reqLogger.Error("Failed to render response template; using raw body",
+				"event", "response_template_render_failed",
+				"response_config_id", matchedConfig.ID,
+				"response_config_name", matchedConfig.Name,
+				"error", renderErr,
+			)
+			responseBody = matchedConfig.Body
+		}
 	}
 
 	// Write response
@@ -1135,27 +1230,29 @@ func (e *Engine) serveMatchedConfig(
 			}
 		}
 		trace := &models.Trace{
-			SpecID:              matchedRoute.spec.ID,
-			SpecName:            matchedRoute.spec.Name,
-			OperationID:         matchedRoute.operation.ID,
-			OperationPath:       matchedRoute.operation.Path,
-			Timestamp:           startTime,
-			Duration:            duration.Nanoseconds(),
-			MatchedConfigID:     matchedConfig.ID,
-			MatchedConfig:       matchedConfig.Name,
-			MatchedConfigOrigin: matchedConfig.EffectiveOrigin(),
-			ResponseSource:      models.TraceResponseSourceConfig,
-			ResponseTier:        responseTier,
-			Signature:           signature,
-			AISkippedReason:     aiSkippedReason,
-			ProxySkippedReason:  proxySkippedReason,
-			AIScenarioRequested: requestedScenarioName,
-			AIScenarioApplied:   appliedScenarioName,
-			Scripts:             scriptTraces,
-			Collections:         collectionTraces,
-			Validations:         validationTraces,
-			Pipeline:            pipelineTrace,
-			Session:             sessionTrace,
+			SpecID:                     matchedRoute.spec.ID,
+			SpecName:                   matchedRoute.spec.Name,
+			OperationID:                matchedRoute.operation.ID,
+			OperationPath:              matchedRoute.operation.Path,
+			Timestamp:                  startTime,
+			Duration:                   duration.Nanoseconds(),
+			MatchedConfigID:            matchedConfig.ID,
+			MatchedConfig:              matchedConfig.Name,
+			MatchedConfigOrigin:        matchedConfig.EffectiveOrigin(),
+			ResponseSource:             models.TraceResponseSourceConfig,
+			ResponseTier:               responseTier,
+			Signature:                  signature,
+			AISkippedReason:            aiSkippedReason,
+			ProxySkippedReason:         proxySkippedReason,
+			AIScenarioRequested:        requestedScenarioName,
+			AIScenarioApplied:          appliedScenarioName,
+			Scripts:                    scriptTraces,
+			Collections:                collectionTraces,
+			Validations:                validationTraces,
+			Pipeline:                   pipelineTrace,
+			Session:                    sessionTrace,
+			CollectionResponseAttempts: collAttempts,
+			CollectionResponseRender:   collResponseRenderTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
 				URL:     r.URL.String(),
@@ -1201,11 +1298,28 @@ func (e *Engine) findRecordedResponse(configs []*models.ResponseConfig, signatur
 	return nil
 }
 
-// findMatchingResponseConfig matches non-recorded configs only, using ScriptOutput + ValidationOutput.
-func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, reqData *condition.RequestData, enabledTags map[string]struct{}) *models.ResponseConfig {
+// findMatchingResponseConfig walks non-recorded configs in priority order.
+// A manual response matches as soon as its tags and conditions pass. A
+// Collection Response additionally runs its primary query inline once its
+// tags and conditions pass: a non-empty result (or MatchOnEmpty) matches and
+// its MatchResult is returned for reuse at render time; an empty result
+// falls through to the next response. attempts records every Collection
+// Response evaluated, matched or not, for tracing. A non-nil error means the
+// collection backend failed and matching must stop — the caller should
+// respond 500 rather than fall through, so an infrastructure outage is never
+// silently masked as "no match".
+func (e *Engine) findMatchingResponseConfig(
+	configs []*models.ResponseConfig,
+	reqData *condition.RequestData,
+	enabledTags map[string]struct{},
+	op *models.Operation,
+	typedReq *collection.TypedRequestContext,
+	sess store.SessionState,
+) (*models.ResponseConfig, *collectionresponse.MatchResult, []models.CollectionResponseAttempt, error) {
 	sort.Slice(configs, func(i, j int) bool {
 		return configs[i].Priority < configs[j].Priority
 	})
+	var attempts []models.CollectionResponseAttempt
 	for _, cfg := range configs {
 		if !cfg.Enabled {
 			continue
@@ -1221,11 +1335,99 @@ func (e *Engine) findMatchingResponseConfig(configs []*models.ResponseConfig, re
 		if _, ok := enabledTags[tag]; !ok {
 			continue
 		}
-		if e.evalConditions(cfg.ConditionTree, cfg.Conditions, reqData) {
-			return cfg
+		if !e.evalConditions(cfg.ConditionTree, cfg.Conditions, reqData) {
+			continue
+		}
+
+		if !cfg.IsCollectionResponse() {
+			return cfg, nil, attempts, nil
+		}
+		if e.collResponseService == nil {
+			continue
+		}
+
+		match, err := e.collResponseService.TryMatch(op, cfg, typedReq, sess)
+		if err != nil {
+			return nil, nil, attempts, fmt.Errorf("collection response %q: %w", cfg.Name, err)
+		}
+		mode := models.QueryModeFindOne
+		if match.RootKind == models.RootKindArray {
+			mode = models.QueryModeFindMany
+		}
+		attempts = append(attempts, models.CollectionResponseAttempt{
+			ResponseConfigID:   cfg.ID,
+			ResponseConfigName: cfg.Name,
+			CollectionName:     cfg.CollectionResponse.Primary.CollectionName,
+			Mode:               mode,
+			Filter:             match.Filter,
+			Matched:            match.Matched,
+			RecordCount:        match.RecordCount,
+		})
+		if match.Matched {
+			return cfg, match, attempts, nil
 		}
 	}
-	return nil
+	return nil, nil, attempts, nil
+}
+
+// writeRuntimeError responds 500 for a runtime failure that happened after
+// operation routing but before a response was selected (e.g. a collection
+// backend error during matching), and records a trace entry for it.
+func (e *Engine) writeRuntimeError(
+	w http.ResponseWriter,
+	route *route,
+	r *http.Request,
+	requestBody string,
+	startTime time.Time,
+	runtimeErr error,
+	scriptTraces []models.ScriptTrace,
+	validationTraces []models.ValidationTrace,
+	collectionTraces []models.CollectionTrace,
+	pipelineTrace []models.PipelineTraceItem,
+	collAttempts []models.CollectionResponseAttempt,
+	proxySkippedReason string,
+) {
+	statusCode := http.StatusInternalServerError
+	respBody := `{"error":"` + runtimeErr.Error() + `"}`
+	http.Error(w, respBody, statusCode)
+
+	duration := time.Since(startTime)
+	e.statsCollector.RecordRequest(route.spec.ID, route.operation.ID, route.operation.Method, route.operation.Path, duration, true)
+	metrics.RequestsTotal.WithLabelValues(route.spec.ID, route.operation.Method, route.operation.Path, metrics.StatusLabel(statusCode)).Inc()
+	metrics.RequestDurationSeconds.WithLabelValues(route.spec.ID, route.operation.Method, route.operation.Path).Observe(duration.Seconds())
+
+	if route.spec.Tracing {
+		e.tracingService.RecordTrace(&models.Trace{
+			SpecID:                     route.spec.ID,
+			SpecName:                   route.spec.Name,
+			OperationID:                route.operation.ID,
+			OperationPath:              route.operation.Path,
+			Timestamp:                  startTime,
+			Duration:                   duration.Nanoseconds(),
+			MatchedConfig:              "[collection-response-error]",
+			ResponseSource:             models.TraceResponseSourceConfig,
+			ResponseTier:               models.TraceResponseTierConfigured,
+			ProxySkippedReason:         proxySkippedReason,
+			Scripts:                    scriptTraces,
+			Validations:                validationTraces,
+			Collections:                collectionTraces,
+			Pipeline:                   pipelineTrace,
+			CollectionResponseAttempts: collAttempts,
+			Request: models.TraceRequest{
+				Method:  r.Method,
+				URL:     r.URL.String(),
+				Path:    r.URL.Path,
+				Query:   r.URL.Query(),
+				Headers: r.Header,
+				Body:    requestBody,
+			},
+			Response: models.TraceResponse{
+				StatusCode: statusCode,
+				Headers:    headersToMap(w.Header()),
+				Body:       respBody,
+			},
+		})
+	}
 }
 
 // evalConditions evaluates a ConditionTree when set, otherwise falls back to EvaluateAll(conditions).
@@ -1527,11 +1729,11 @@ func (e *Engine) GetRegisteredRoutes() map[string][]string {
 
 // pipelineItem is a unified step in the mixed-order pipeline.
 type pipelineItem struct {
-	order      int
-	stepType   models.PipelineStepType
-	binding    *models.ScriptBinding
-	rule       *models.ValidationRule
-	mapping    *models.CollectionMapping
+	order    int
+	stepType models.PipelineStepType
+	binding  *models.ScriptBinding
+	rule     *models.ValidationRule
+	mapping  *models.CollectionMapping
 }
 
 func stepTypeOrder(t models.PipelineStepType) int {

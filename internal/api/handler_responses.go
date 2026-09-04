@@ -1,11 +1,49 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/prasenjit/go-virtual/internal/models"
 )
+
+// validateResponseKind enforces the invariants between Kind and
+// CollectionResponse/Body for a create or update payload. op is the owning
+// operation and statusCode the response's (possibly just-updated) status
+// code, both used to cross-check the collection response against the spec's
+// response schema. Returns a non-empty list of field-specific errors when
+// invalid.
+func (h *Handler) validateResponseKind(op *models.Operation, statusCode int, kind models.ResponseKind, body string, cr *models.CollectionResponseConfig) []string {
+	if kind != models.ResponseKindCollection {
+		if cr != nil {
+			return []string{`collectionResponse is only allowed when kind is "collection"`}
+		}
+		return nil
+	}
+
+	var errs []string
+	if strings.TrimSpace(body) != "" {
+		errs = append(errs, "a collection response cannot have a manual body value")
+	}
+	if cr == nil {
+		return append(errs, `collectionResponse is required when kind is "collection"`)
+	}
+	errs = append(errs, cr.Validate()...)
+	if len(errs) > 0 {
+		return errs
+	}
+
+	if h.collResponseSvc == nil {
+		return []string{"collection responses require a collection backend to be configured"}
+	}
+	crossErrs, err := h.collResponseSvc.ValidateAgainstOperation(op, &models.ResponseConfig{StatusCode: statusCode, CollectionResponse: cr})
+	if err != nil {
+		return []string{"could not validate collection response against the operation's spec: " + err.Error()}
+	}
+	return crossErrs
+}
 
 // ListResponseConfigs returns all response configs for an operation
 func (h *Handler) ListResponseConfigs(c *gin.Context) {
@@ -25,7 +63,7 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 	opID := c.Param("id")
 
 	// Verify operation exists
-	_, err := h.store.GetOperation(opID)
+	op, err := h.store.GetOperation(opID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Operation not found"})
 		return
@@ -37,21 +75,28 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 		return
 	}
 
+	kind := input.Kind
+	if kind == "" {
+		kind = models.ResponseKindManual
+	}
+
 	// Generate ID
 	cfg := &models.ResponseConfig{
-		ID:            generateID(),
-		OperationID:   opID,
-		Name:          input.Name,
-		Description:   input.Description,
-		Tag:           normalizeTag(input.Tag),
-		Priority:      input.Priority,
-		Conditions:    input.Conditions,
-		ConditionTree: input.ConditionTree,
-		StatusCode:    input.StatusCode,
-		Headers:       input.Headers,
-		Body:          input.Body,
-		Delay:         input.Delay,
-		Enabled:       input.Enabled,
+		ID:                 generateID(),
+		OperationID:        opID,
+		Name:               input.Name,
+		Description:        input.Description,
+		Tag:                normalizeTag(input.Tag),
+		Priority:           input.Priority,
+		Conditions:         input.Conditions,
+		ConditionTree:      input.ConditionTree,
+		StatusCode:         input.StatusCode,
+		Headers:            input.Headers,
+		Body:               input.Body,
+		Delay:              input.Delay,
+		Enabled:            input.Enabled,
+		Kind:               kind,
+		CollectionResponse: input.CollectionResponse,
 	}
 
 	if cfg.Tag == "" {
@@ -71,6 +116,14 @@ func (h *Handler) CreateResponseConfig(c *gin.Context) {
 	}
 	if cfg.Conditions == nil {
 		cfg.Conditions = make([]models.Condition, 0)
+	}
+
+	if errs := h.validateResponseKind(op, cfg.StatusCode, kind, cfg.Body, cfg.CollectionResponse); len(errs) > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": strings.Join(errs, "; "), "fieldErrors": errs})
+		return
+	}
+	if kind == models.ResponseKindCollection {
+		cfg.Body = ""
 	}
 
 	if err := h.store.CreateResponseConfig(cfg); err != nil {
@@ -151,6 +204,26 @@ func (h *Handler) UpdateResponseConfig(c *gin.Context) {
 	if update.Enabled != nil {
 		cfg.Enabled = *update.Enabled
 	}
+	if update.CollectionResponse != nil {
+		if !cfg.IsCollectionResponse() {
+			c.JSON(http.StatusBadRequest, gin.H{"error": `collectionResponse can only be updated on a response created with kind "collection"`})
+			return
+		}
+		cfg.CollectionResponse = update.CollectionResponse
+	}
+
+	if cfg.IsCollectionResponse() {
+		op, err := h.store.GetOperation(cfg.OperationID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if errs := h.validateResponseKind(op, cfg.StatusCode, models.ResponseKindCollection, cfg.Body, cfg.CollectionResponse); len(errs) > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": strings.Join(errs, "; "), "fieldErrors": errs})
+			return
+		}
+		cfg.Body = ""
+	}
 
 	if err := h.store.UpdateResponseConfig(cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -207,21 +280,23 @@ func (h *Handler) CloneResponseConfig(c *gin.Context) {
 	}
 
 	clone := &models.ResponseConfig{
-		ID:            generateID(),
-		OperationID:   src.OperationID,
-		Name:          input.Name,
-		Description:   src.Description,
-		Tag:           src.Tag,
-		Priority:      src.Priority,
-		Conditions:    clonedConditions,
-		ConditionTree: cloneConditionTree(src.ConditionTree),
-		StatusCode:    src.StatusCode,
-		Headers:       clonedHeaders,
-		Body:          src.Body,
-		Delay:         src.Delay,
-		Enabled:       src.Enabled,
-		Origin:        models.ResponseOriginManual,
-		Recorded:      false,
+		ID:                 generateID(),
+		OperationID:        src.OperationID,
+		Name:               input.Name,
+		Description:        src.Description,
+		Tag:                src.Tag,
+		Priority:           src.Priority,
+		Conditions:         clonedConditions,
+		ConditionTree:      cloneConditionTree(src.ConditionTree),
+		StatusCode:         src.StatusCode,
+		Headers:            clonedHeaders,
+		Body:               src.Body,
+		Delay:              src.Delay,
+		Enabled:            src.Enabled,
+		Origin:             models.ResponseOriginManual,
+		Recorded:           false,
+		Kind:               src.Kind,
+		CollectionResponse: cloneCollectionResponseConfig(src.CollectionResponse),
 	}
 
 	if err := h.store.CreateResponseConfig(clone); err != nil {
@@ -230,6 +305,24 @@ func (h *Handler) CloneResponseConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, clone)
+}
+
+// cloneCollectionResponseConfig deep-copies a CollectionResponseConfig via a
+// JSON round-trip, which is sufficient since every field is JSON-serialisable
+// data (no pointers requiring identity preservation besides the FallbackToExample bool).
+func cloneCollectionResponseConfig(src *models.CollectionResponseConfig) *models.CollectionResponseConfig {
+	if src == nil {
+		return nil
+	}
+	data, err := json.Marshal(src)
+	if err != nil {
+		return nil
+	}
+	var dst models.CollectionResponseConfig
+	if err := json.Unmarshal(data, &dst); err != nil {
+		return nil
+	}
+	return &dst
 }
 
 // cloneConditionTree deep-copies a ConditionNode tree, stripping signature leaf nodes.

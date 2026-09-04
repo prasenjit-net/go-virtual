@@ -27,8 +27,13 @@ func (h *Handler) ListResponseScriptBindings(c *gin.Context) {
 // CreateResponseScriptBinding attaches a script to a response config.
 func (h *Handler) CreateResponseScriptBinding(c *gin.Context) {
 	responseConfigID := c.Param("respId")
-	if _, err := h.store.GetResponseConfig(responseConfigID); err != nil {
+	respCfg, err := h.store.GetResponseConfig(responseConfigID)
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "response config not found"})
+		return
+	}
+	if respCfg.IsCollectionResponse() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "response-level script bindings are not supported for a collection response"})
 		return
 	}
 

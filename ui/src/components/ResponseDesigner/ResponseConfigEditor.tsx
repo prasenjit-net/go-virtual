@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
-import Editor from '@monaco-editor/react'
 import type * as Monaco from 'monaco-editor'
 import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { ConditionNode, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
@@ -9,6 +8,7 @@ import PipelinePanel from '../Pipeline/PipelinePanel'
 import ConditionEditor, { conditionsToTree } from '../shared/ConditionEditor'
 import { useIsDark } from '../../hooks/useIsDark'
 import ExamplePickerModal from './ExamplePickerModal'
+import ResponseBodyEditor from './BodyEditor/ResponseBodyEditor'
 
 interface ResponseConfigEditorProps {
     operationId: string
@@ -669,42 +669,26 @@ export default function ResponseConfigEditor({
                             {'{{body "user.name"}}'}, {'{{random "uuid"}}'}, {'{{timestamp}}'}.
                             Header and query keys are lowercased.
                         </p>
-                        <div
-                            className={`border rounded-lg overflow-hidden ${bodyError
-                                ? 'border-red-300 dark:border-red-700'
-                                : 'border-gray-300 dark:border-slate-700'
-                                }`}
-                        >
-                            <Editor
-                                height="200px"
-                                defaultLanguage="go-template"
-                                value={body}
-                                onChange={(value) => {
-                                    const next = value || ''
-                                    setBody(next)
-                                    scheduleTemplateValidation(next)
-                                }}
-                                onMount={(editor, monaco) => {
-                                    editorRef.current = editor
-                                    monacoRef.current = monaco
-                                    registerTemplateLanguage(monaco)
-                                    const model = editor.getModel()
-                                    if (model) {
-                                        monaco.editor.setModelLanguage(model, 'go-template')
-                                    }
-                                    validateBodyTemplate(body)
-                                }}
-                                options={{
-                                    minimap: { enabled: false },
-                                    fontSize: 13,
-                                    lineNumbers: 'off',
-                                    folding: false,
-                                    scrollBeyondLastLine: false,
-                                    readOnly: readOnly,
-                                    theme: isDark ? 'vs-dark' : 'light',
-                                }}
-                            />
-                        </div>
+                        <ResponseBodyEditor
+                            body={body}
+                            onBodyChange={(next) => {
+                                setBody(next)
+                                scheduleTemplateValidation(next)
+                            }}
+                            operationId={operationId}
+                            responseConfigId={config?.id}
+                            readOnly={readOnly}
+                            isDark={isDark}
+                            height="200px"
+                            heightClass="h-[320px]"
+                            bodyError={bodyError}
+                            onTextEditorMount={(editor, monaco) => {
+                                editorRef.current = editor
+                                monacoRef.current = monaco
+                                registerTemplateLanguage(monaco)
+                                void validateBodyTemplate(body)
+                            }}
+                        />
                         {bodyError && (
                             <div className="mt-2 flex items-start text-xs text-red-600 dark:text-red-300">
                                 <AlertCircle className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
