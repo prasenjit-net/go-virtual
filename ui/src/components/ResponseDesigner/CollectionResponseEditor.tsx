@@ -21,7 +21,8 @@ import type {
     CollectionResponseConfig,
     FieldOverride,
     NamedQuery,
-    QueryMode,
+    CollectionOpType,
+    PrimaryResponseMapper,
     ResponseConfig,
     ResponseConfigInput,
     RootKind,
@@ -98,13 +99,14 @@ function rowToBinding(row: BindingRowState): ValueBinding {
 
 interface MapperRowState {
     outputKey: string
-    mode: QueryMode
+    mode: CollectionOpType
     collectionName: string
     filters: BindingRowState[]
+    data: BindingRowState[]
 }
 
 function emptyMapper(): MapperRowState {
-    return { outputKey: '', mode: 'find-one', collectionName: '', filters: [] }
+    return { outputKey: '', mode: 'find-one', collectionName: '', filters: [], data: [] }
 }
 
 function mappersFromConfig(mappers?: NamedQuery[]): MapperRowState[] {
@@ -113,6 +115,7 @@ function mappersFromConfig(mappers?: NamedQuery[]): MapperRowState[] {
         mode: m.mode,
         collectionName: m.collectionName,
         filters: rowsFromFilters(m.filterRules),
+        data: rowsFromFilters(m.dataRules),
     }))
 }
 
@@ -221,6 +224,27 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
     }
 }
 
+const writesData = (mode: CollectionOpType) => ['insert', 'update', 'upsert'].includes(mode)
+
+function DataRulesEditor({ rows, onChange, allowPrimary }: {
+    rows: BindingRowState[]
+    onChange: (rows: BindingRowState[]) => void
+    allowPrimary: boolean
+}) {
+    return <div className="space-y-2">
+        <div className="flex items-center justify-between">
+            <span className={labelClass}>Data fields</span>
+            <button type="button" onClick={() => onChange([...rows, emptyRow('body')])} className="text-xs text-primary-700 dark:text-primary-300 hover:underline">+ Add field</button>
+        </div>
+        {rows.length === 0 && <p className="text-xs text-gray-500 dark:text-slate-400">Add the fields this operation writes.</p>}
+        {rows.map((row, i) => <BindingRow key={i} row={row}
+            sources={allowPrimary ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
+            keyPlaceholder={filterKeyPlaceholder} targetPathLabel="Collection field" targetPathPlaceholder="status"
+            onChange={(next) => onChange(rows.map((r, j) => j === i ? next : r))}
+            onRemove={() => onChange(rows.filter((_, j) => j !== i))} />)}
+    </div>
+}
+
 type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | 'output'
 
 export default function CollectionResponseEditor({ operationId, config, onClose }: CollectionResponseEditorProps) {
@@ -244,6 +268,8 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     const [matchOnEmpty, setMatchOnEmpty] = useState(cr?.matchOnEmpty ?? false)
     const [fallbackToExample, setFallbackToExample] = useState(cr?.fallbackToExample ?? true)
 
+    const [primaryMode, setPrimaryMode] = useState<PrimaryResponseMapper['mode']>(cr?.primary.mode)
+    const [primaryData, setPrimaryData] = useState<BindingRowState[]>(() => rowsFromFilters(cr?.primary.dataRules))
     const [primaryCollectionName, setPrimaryCollectionName] = useState(cr?.primary.collectionName || '')
     const [primaryFilters, setPrimaryFilters] = useState<BindingRowState[]>(() => rowsFromFilters(cr?.primary.filterRules))
     const [templateRef, setTemplateRef] = useState(cr?.templateRef || '')
@@ -292,16 +318,18 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
     const buildCollectionResponse = (): CollectionResponseConfig => ({
         primary: {
+            mode: primaryMode,
+            dataRules: primaryMode === 'update' ? primaryData.filter((r) => r.targetPath.trim()).map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })) : undefined,
             collectionName: primaryCollectionName.trim(),
             filterRules: primaryFilters
                 .filter((r) => r.targetPath.trim())
                 .map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })),
         },
         additionalMappers: mappers
-            .filter((m) => m.outputKey.trim() && m.collectionName.trim())
             .map((m) => ({
                 outputKey: m.outputKey.trim(),
                 mode: m.mode,
+                dataRules: writesData(m.mode) ? m.data.filter((r) => r.targetPath.trim()).map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })) : undefined,
                 collectionName: m.collectionName.trim(),
                 filterRules: m.filters
                     .filter((r) => r.targetPath.trim())
@@ -347,6 +375,32 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
         }
 
         const collectionResponse = buildCollectionResponse()
+        if ((primaryMode === 'update' || primaryMode === 'find-one') && derivedRootKind !== 'object'
+            || primaryMode === 'find-many' && derivedRootKind !== 'array') {
+            setError('The main operation must match the response root shape. Update requires an object.')
+            setActiveTab('query')
+            return
+        }
+        if (primaryMode === 'update' && (!collectionResponse.primary.filterRules?.length || !collectionResponse.primary.dataRules?.length)) {
+            setError('Update requires at least one query filter and data field.')
+            setActiveTab('query')
+            return
+        }
+        const outputKeys = new Set<string>()
+        for (const mapper of collectionResponse.additionalMappers || []) {
+            if (!mapper.outputKey || !mapper.collectionName || outputKeys.has(mapper.outputKey)) {
+                setError('Each additional mapper needs a collection and a unique output key.')
+                setActiveTab('mappers')
+                return
+            }
+            outputKeys.add(mapper.outputKey)
+            if (writesData(mapper.mode) && !mapper.dataRules?.length
+                || ['update', 'upsert', 'delete'].includes(mapper.mode) && !mapper.filterRules?.length) {
+                setError(`Mapper ${mapper.outputKey}: ${mapper.mode} requires ${writesData(mapper.mode) ? 'data fields' : 'filters'}${['update', 'upsert'].includes(mapper.mode) ? ' and filters' : ''}.`)
+                setActiveTab('mappers')
+                return
+            }
+        }
 
         if (config) {
             updateMutation.mutate({
@@ -553,12 +607,21 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                         <input value={primaryCollectionName} onChange={(e) => setPrimaryCollectionName(e.target.value)} className={`${inputClass} font-mono`} placeholder="users" />
                                     </div>
                                     <div>
-                                        <label className={labelClass}>Operation (derived)</label>
-                                        <div className={`${inputClass} bg-gray-50 dark:bg-slate-900 flex items-center gap-2`}>
-                                            <span className="font-mono">{derivedRootKind === 'array' ? 'Find Many' : 'Find One'}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
-                                            {isIdentityMode ? 'No spec body for this status — choose the root shape below.' : `Derived from the spec's ${statusCode} response shape.`}
+                                        <label className={labelClass}>Main operation</label>
+                                        <select className={inputClass} value={primaryMode || 'auto'} onChange={(e) => {
+                                            const mode = e.target.value === 'auto' ? undefined : e.target.value as PrimaryResponseMapper['mode']
+                                            setPrimaryMode(mode)
+                                            if (mode !== 'update') setPrimaryData([])
+                                            if (isIdentityMode && mode) setManualRootKind(mode === 'find-many' ? 'array' : 'object')
+                                        }}>
+                                            <option value="auto">Automatic ({derivedRootKind === 'array' ? 'Find Many' : 'Find One'})</option>
+                                            <option value="find-one" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Find One</option>
+                                            <option value="find-many" disabled={!isIdentityMode && derivedRootKind !== 'array'}>Find Many</option>
+                                            <option value="update" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Update</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                            {primaryMode === 'update' ? 'Query filters select this response. Then the first matched document is updated and rendered.' : 'The query result determines whether this response is selected.'}
+                                            {derivedRootKind === 'array' && ' Update requires an object response root.'}
                                         </p>
                                     </div>
                                 </div>
@@ -571,11 +634,11 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                 <button
                                                     key={k}
                                                     type="button"
-                                                    onClick={() => setManualRootKind(k)}
+                                                    onClick={() => { setManualRootKind(k); if (primaryMode && k !== manualRootKind) { setPrimaryMode(k === 'array' ? 'find-many' : 'find-one'); setPrimaryData([]) } }}
                                                     className={clsx(
                                                         'px-3 py-1.5 rounded-lg border text-sm',
                                                         manualRootKind === k
-                                                            ? 'bg-primary-50 border-primary-400 text-primary-700 dark:bg-primary-950/40 dark:border-primary-700 dark:text-primary-300'
+                                                            ? 'bg-primary-50 border-primary-400 text-primary-700 dark:bg-primary-900/40 dark:border-primary-700 dark:text-primary-300'
                                                             : 'bg-white border-gray-300 text-gray-600 dark:bg-slate-950 dark:border-slate-700 dark:text-slate-300',
                                                     )}
                                                 >
@@ -586,6 +649,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     </div>
                                 )}
 
+                                {primaryMode === 'update' && <DataRulesEditor rows={primaryData} onChange={setPrimaryData} allowPrimary={derivedRootKind === 'object'} />}
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <label className={labelClass}>Query Filters</label>
@@ -621,7 +685,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     <div>
                                         <div className="text-sm font-medium text-indigo-800 dark:text-indigo-300">Additional data mappers</div>
                                         <div className="text-xs text-indigo-700 dark:text-indigo-400">
-                                            Secondary collection lookups used only to fill Output fields (e.g. via a "Mapper output" override). They never affect whether this response matches — only the primary query on the Query tab does that.
+                                            Run after the main operation, in the order shown, only when this response is selected. Reads and writes expose results through Mapper output overrides. Earlier writes remain if a later operation fails.
                                         </div>
                                     </div>
                                 </div>
@@ -656,11 +720,15 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                         <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Mode</label>
                                                         <select
                                                             value={m.mode}
-                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as QueryMode } : mm)))}
+                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as CollectionOpType, filters: e.target.value === 'insert' ? [] : mm.filters, data: writesData(e.target.value as CollectionOpType) ? mm.data : [] } : mm)))}
                                                             className={inputClass}
                                                         >
                                                             <option value="find-one">Find One</option>
                                                             <option value="find-many">Find Many</option>
+                                                            <option value="insert">Insert</option>
+                                                            <option value="update">Update</option>
+                                                            <option value="upsert">Upsert</option>
+                                                            <option value="delete">Delete</option>
                                                         </select>
                                                     </div>
                                                     <div className="flex-1 min-w-[10rem]">
@@ -672,11 +740,14 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             className={`${inputClass} font-mono`}
                                                         />
                                                     </div>
+                                                    <button type="button" disabled={i === 0} className="px-2 py-1 text-sm text-gray-600 dark:text-slate-300 disabled:opacity-30" title="Move mapper up" aria-label="Move mapper up" onClick={() => setMappers((current) => { const next = [...current]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; return next })}>↑</button>
+                                                    <button type="button" disabled={i === mappers.length - 1} className="px-2 py-1 text-sm text-gray-600 dark:text-slate-300 disabled:opacity-30" title="Move mapper down" aria-label="Move mapper down" onClick={() => setMappers((current) => { const next = [...current]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; return next })}>↓</button>
                                                     <button type="button" onClick={() => setMappers(mappers.filter((_, j) => j !== i))} className="p-2 text-gray-400 dark:text-slate-500 hover:text-red-600" title="Remove mapper">
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
-                                                <div>
+                                                {writesData(m.mode) && <DataRulesEditor rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
+                                                {m.mode !== 'insert' && <div>
                                                     <div className="flex items-center justify-between mb-1">
                                                         <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
                                                         <button
@@ -692,7 +763,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             <BindingRow
                                                                 key={k}
                                                                 row={row}
-                                                                sources={MAPPER_FILTER_SOURCES}
+                                                                sources={derivedRootKind === 'object' ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
                                                                 keyPlaceholder={filterKeyPlaceholder}
                                                                 targetPathLabel="Collection field"
                                                                 targetPathPlaceholder="_id"
@@ -701,7 +772,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             />
                                                         ))}
                                                     </div>
-                                                </div>
+                                                </div>}
                                             </div>
                                         </div>
                                     ))}

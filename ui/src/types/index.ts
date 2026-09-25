@@ -206,9 +206,15 @@ export interface CollectionQuery {
     filterRules?: CollectionFilter[];
 }
 
+export interface PrimaryResponseMapper extends CollectionQuery {
+    mode?: 'find-one' | 'find-many' | 'update';
+    dataRules?: CollectionFilter[];
+}
+
 export interface NamedQuery extends CollectionQuery {
     outputKey: string;
-    mode: QueryMode;
+    mode: CollectionOpType;
+    dataRules?: CollectionFilter[];
 }
 
 export interface FieldOverride {
@@ -217,7 +223,7 @@ export interface FieldOverride {
 }
 
 export interface CollectionResponseConfig {
-    primary: CollectionQuery;
+    primary: PrimaryResponseMapper;
     additionalMappers?: NamedQuery[];
     overrides?: FieldOverride[];
     templateRef?: string;
@@ -370,6 +376,14 @@ export interface Trace {
     session?: SessionTrace;
     // Collection mapping traces
     collections?: CollectionTrace[];
+    collectionResponseAttempts?: { responseConfigId: string; responseConfigName: string; collectionName: string; mode: QueryMode; matched: boolean; recordCount: number; error?: string }[];
+    collectionResponseRender?: {
+        templateStatusCode?: number;
+        templateSource?: string;
+        primaryMapper?: CollectionTrace;
+        additionalMappers?: CollectionTrace[];
+        warnings?: string[];
+    };
     // Validation rule traces
     validations?: ValidationTrace[];
     // Unified pipeline execution timeline (spec → operation → response)

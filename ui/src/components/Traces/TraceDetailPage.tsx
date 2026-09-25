@@ -618,6 +618,19 @@ export default function TraceDetailPage() {
                         </div>
                     )}
 
+                    {(trace.collectionResponseAttempts?.length || trace.collectionResponseRender) && (
+                        <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
+                            <h3 className="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-slate-200">Collection response</h3>
+                            {trace.collectionResponseAttempts?.map((attempt, i) => <div key={i} className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300">
+                                {attempt.responseConfigName}: {attempt.mode} on {attempt.collectionName} — {attempt.matched ? 'selected' : 'not matched'} ({attempt.recordCount} records)
+                                {attempt.error && <span className="text-red-600 dark:text-red-400"> {attempt.error}</span>}
+                            </div>)}
+                            {trace.collectionResponseRender?.primaryMapper && <CollectionStepRow ct={trace.collectionResponseRender.primaryMapper} idx={0} />}
+                            {trace.collectionResponseRender?.additionalMappers?.map((mapper, i) => <CollectionStepRow key={i} ct={mapper} idx={i + 1} />)}
+                            {trace.collectionResponseRender?.warnings?.map((warning, i) => <p key={i} className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300">{warning}</p>)}
+                        </div>
+                    )}
+
                     {/* Session */}
                     {trace.session && <SessionSection session={trace.session} />}
 

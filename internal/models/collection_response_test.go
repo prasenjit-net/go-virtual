@@ -183,3 +183,41 @@ func TestEffectiveFallbackToExample(t *testing.T) {
 		t.Fatal("explicit false should be honored")
 	}
 }
+
+func TestCollectionResponseWriteValidation(t *testing.T) {
+	rule := CollectionFilter{TargetPath: "name", Value: ValueBinding{Source: ValueSourceLiteral, Value: []byte(`"value"`)}}
+	cases := []struct {
+		name          string
+		mode          CollectionOpType
+		filters, data []CollectionFilter
+		valid         bool
+	}{
+		{"insert", ColOpInsert, nil, []CollectionFilter{rule}, true},
+		{"update", ColOpUpdate, []CollectionFilter{rule}, []CollectionFilter{rule}, true},
+		{"upsert", ColOpUpsert, []CollectionFilter{rule}, []CollectionFilter{rule}, true},
+		{"delete", ColOpDelete, []CollectionFilter{rule}, nil, true},
+		{"insert filters", ColOpInsert, []CollectionFilter{rule}, []CollectionFilter{rule}, false},
+		{"update no filter", ColOpUpdate, nil, []CollectionFilter{rule}, false},
+		{"upsert no data", ColOpUpsert, []CollectionFilter{rule}, nil, false},
+		{"delete data", ColOpDelete, []CollectionFilter{rule}, []CollectionFilter{rule}, false},
+		{"read data", ColOpFindOne, nil, []CollectionFilter{rule}, false},
+		{"duplicate target", ColOpUpdate, []CollectionFilter{rule}, []CollectionFilter{rule, rule}, false},
+		{"unknown mode", "unknown", nil, nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &CollectionResponseConfig{Primary: CollectionQuery{CollectionName: "users"}, AdditionalMappers: []NamedQuery{{OutputKey: "result", Mode: tc.mode, CollectionQuery: CollectionQuery{CollectionName: "users", FilterRules: tc.filters, DataRules: tc.data}}}}
+			if errs := cfg.Validate(); (len(errs) == 0) != tc.valid {
+				t.Fatalf("valid=%v errors=%v", tc.valid, errs)
+			}
+		})
+	}
+	for _, field := range []string{"_id", "profile.name"} {
+		data := rule
+		data.TargetPath = field
+		cfg := &CollectionResponseConfig{Primary: CollectionQuery{CollectionName: "users", Mode: ColOpUpdate, FilterRules: []CollectionFilter{rule}, DataRules: []CollectionFilter{data}}}
+		if len(cfg.Validate()) == 0 {
+			t.Fatalf("update target %s accepted", field)
+		}
+	}
+}

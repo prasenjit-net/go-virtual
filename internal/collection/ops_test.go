@@ -281,3 +281,73 @@ func TestSessionEventsIsolation(t *testing.T) {
 		t.Errorf("sess1 expected 2 docs (base + insert), got %d", len(docs1))
 	}
 }
+
+func TestMutationIdentityAndEventReplay(t *testing.T) {
+	for _, operation := range []string{"update", "upsert"} {
+		t.Run(operation, func(t *testing.T) {
+			for _, fileBacked := range []bool{false, true} {
+				var backend store.CollectionBackend = store.NewMemoryCollectionBackend()
+				if fileBacked {
+					var err error
+					backend, err = store.NewFileCollectionBackend(t.TempDir())
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				backend.SeedInsert("items", map[string]any{"_id": "first", "state": "pending"})
+				backend.SeedInsert("items", map[string]any{"_id": "second", "state": "pending"})
+				sess := store.NewEphemeralSession(nil)
+				ops := NewOps("items", backend, sess)
+				mutate := ops.Update
+				if operation == "upsert" {
+					mutate = ops.Upsert
+				}
+				result, err := mutate(map[string]any{"state": "pending"}, map[string]any{"state": "done"})
+				if err != nil || result["_id"] != "first" || result["state"] != "done" {
+					t.Fatalf("result: %v %v", result, err)
+				}
+				events := store.LoadEvents(sess, "items")
+				if len(events) != 1 || events[0].Op != operation || events[0].Filter["_id"] != "first" {
+					t.Fatalf("event not pinned to identity: %v", events)
+				}
+				docs, err := ops.FindMany(nil)
+				if err != nil || docs[0]["state"] != "done" || docs[1]["state"] != "pending" {
+					t.Fatalf("replay: %v %v", docs, err)
+				}
+			}
+		})
+	}
+}
+
+func TestInsertedIdentitiesStableAcrossReplay(t *testing.T) {
+	for _, upsert := range []bool{false, true} {
+		ops := newTestOps("items")
+		var inserted map[string]any
+		var err error
+		if upsert {
+			inserted, err = ops.Upsert(map[string]any{"key": "value"}, map[string]any{"count": 1})
+		} else {
+			inserted, err = ops.Insert(map[string]any{"key": "value"})
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < 3; i++ {
+			doc, err := ops.FindOne(nil)
+			if err != nil || doc["_id"] != inserted["_id"] {
+				t.Fatalf("identity changed during replay: %v %v", doc, err)
+			}
+		}
+	}
+}
+
+func TestUpdateRejectsAmbiguousIdentityBeforeWriting(t *testing.T) {
+	backend := store.NewMemoryCollectionBackend()
+	backend.SeedInsert("items", map[string]any{"_id": "same", "name": "one"})
+	backend.SeedInsert("items", map[string]any{"_id": "same", "name": "two"})
+	sess := store.NewEphemeralSession(nil)
+	_, err := NewOps("items", backend, sess).Update(map[string]any{"name": "one"}, map[string]any{"name": "updated"})
+	if err == nil || len(store.LoadEvents(sess, "items")) != 0 {
+		t.Fatal("ambiguous identity should fail before writing")
+	}
+}

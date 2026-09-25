@@ -192,3 +192,19 @@ func GetPath(doc any, path string) (any, bool) {
 	}
 	return cur, true
 }
+
+// ResolveRequiredMap rejects absent bindings while preserving explicit JSON null.
+func ResolveRequiredMap(rules []models.CollectionFilter, ctx *BindingContext) (map[string]any, error) {
+	out := make(map[string]any, len(rules))
+	for _, rule := range rules {
+		value, found, err := ResolveValueBinding(rule.Value, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", rule.TargetPath, err)
+		}
+		if !found {
+			return nil, fmt.Errorf("field %q: source value is missing", rule.TargetPath)
+		}
+		out[rule.TargetPath] = value
+	}
+	return out, nil
+}

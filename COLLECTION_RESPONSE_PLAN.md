@@ -1,5 +1,7 @@
 # Collection-Backed Response Plan
 
+The original design below is extended by [Collection response mapper operations](docs/collection-response-operations.md): the main mapper now supports Update after query-based selection, and additional mappers support all six operations. The updated main result supplies rendering; matching remains read-only.
+
 ## Refinement Summary
 
 This revision changes two core semantics from the first draft and adds one capability:

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -1119,7 +1120,7 @@ func (e *Engine) serveMatchedConfig(
 	}
 
 	// Process body — a Collection Response fills its spec-derived template
-	// from the cached primary match (never re-queried); every other kind
+	// from the cached primary match, updated after selection when configured; every other kind
 	// renders Body as a Go template exactly as before.
 	var responseBody string
 	var collResponseRenderTrace *models.CollectionResponseRenderTrace
@@ -1134,7 +1135,21 @@ func (e *Engine) serveMatchedConfig(
 			Headers:     r.Header,
 			Body:        requestBody,
 		}
-		render, renderErr := e.collResponseService.Render(matchedConfig, collMatch, typedReq, renderSess)
+		prepared, executionErr := e.collResponseService.ExecuteSelected(matchedConfig, collMatch, typedReq, renderSess)
+		// Writes can materialize the lazy session even when a later mapper fails.
+		if lazySession != nil && sess == nil {
+			if inner := lazySession.Materialized(); inner != nil {
+				w.Header().Set(e.sessionHeaderName, inner.Info(false).ID)
+				sess = inner
+				sessionIsNew = true
+			}
+		}
+		if executionErr != nil {
+			e.writeRuntimeError(w, matchedRoute, r, requestBody, startTime, executionErr,
+				scriptTraces, validationTraces, collectionTraces, pipelineTrace, collAttempts, proxySkippedReason, prepared.RenderTrace(matchedConfig.StatusCode))
+			return
+		}
+		render, renderErr := e.collResponseService.Render(matchedConfig, prepared, typedReq, renderSess)
 		if renderErr != nil {
 			reqLogger.Error("Failed to render collection response",
 				"event", "collection_response_render_failed",
@@ -1143,7 +1158,7 @@ func (e *Engine) serveMatchedConfig(
 				"error", renderErr,
 			)
 			e.writeRuntimeError(w, matchedRoute, r, requestBody, startTime, renderErr,
-				scriptTraces, validationTraces, collectionTraces, pipelineTrace, collAttempts, proxySkippedReason)
+				scriptTraces, validationTraces, collectionTraces, pipelineTrace, collAttempts, proxySkippedReason, prepared.RenderTrace(matchedConfig.StatusCode))
 			return
 		}
 		responseBody = string(render.Body)
@@ -1151,18 +1166,8 @@ func (e *Engine) serveMatchedConfig(
 			TemplateStatusCode: matchedConfig.StatusCode,
 			TemplateSource:     string(collMatch.Template.Source),
 			AdditionalMappers:  render.AdditionalMapperTraces,
+			PrimaryMapper:      render.PrimaryMapperTrace,
 			Warnings:           render.Warnings,
-		}
-		// An additional mapper read may have touched session-scoped
-		// collection state for the first time; materialise it like every
-		// other write path so the session header is echoed back.
-		if lazySession != nil && sess == nil {
-			if inner := lazySession.Materialized(); inner != nil {
-				info := inner.Info(false)
-				w.Header().Set(e.sessionHeaderName, info.ID)
-				sess = inner
-				sessionIsNew = true
-			}
 		}
 	} else {
 		var renderErr error
@@ -1350,7 +1355,7 @@ func (e *Engine) findMatchingResponseConfig(
 		if err != nil {
 			return nil, nil, attempts, fmt.Errorf("collection response %q: %w", cfg.Name, err)
 		}
-		mode := models.QueryModeFindOne
+		mode := models.QueryMode(models.QueryModeFindOne)
 		if match.RootKind == models.RootKindArray {
 			mode = models.QueryModeFindMany
 		}
@@ -1386,9 +1391,15 @@ func (e *Engine) writeRuntimeError(
 	pipelineTrace []models.PipelineTraceItem,
 	collAttempts []models.CollectionResponseAttempt,
 	proxySkippedReason string,
+	renderTraces ...*models.CollectionResponseRenderTrace,
 ) {
+	var renderTrace *models.CollectionResponseRenderTrace
+	if len(renderTraces) > 0 {
+		renderTrace = renderTraces[0]
+	}
 	statusCode := http.StatusInternalServerError
-	respBody := `{"error":"` + runtimeErr.Error() + `"}`
+	encodedError, _ := json.Marshal(map[string]string{"error": runtimeErr.Error()})
+	respBody := string(encodedError)
 	http.Error(w, respBody, statusCode)
 
 	duration := time.Since(startTime)
@@ -1413,6 +1424,7 @@ func (e *Engine) writeRuntimeError(
 			Collections:                collectionTraces,
 			Pipeline:                   pipelineTrace,
 			CollectionResponseAttempts: collAttempts,
+			CollectionResponseRender:   renderTrace,
 			Request: models.TraceRequest{
 				Method:  r.Method,
 				URL:     r.URL.String(),
