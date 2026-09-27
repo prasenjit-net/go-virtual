@@ -190,6 +190,8 @@ export type QueryMode = 'find-one' | 'find-many';
 export type ValueSource = 'document' | 'mapper' | 'primary' | 'path' | 'query' | 'header' | 'body' | 'literal';
 
 export interface ValueBinding {
+    skipWhenMissing?: boolean;
+    defaultValue?: unknown;
     source: ValueSource | '';
     key?: string;
     /** JSON-typed literal value (any JSON value) — used only when source === 'literal'. */
@@ -207,7 +209,7 @@ export interface CollectionQuery {
 }
 
 export interface PrimaryResponseMapper extends CollectionQuery {
-    mode?: 'find-one' | 'find-many' | 'update';
+    mode?: 'find-one' | 'find-many' | 'insert' | 'update' | 'upsert';
     dataRules?: CollectionFilter[];
 }
 
@@ -572,6 +574,8 @@ export interface SessionTrace {
 export type CollectionOpType = 'insert' | 'find-one' | 'find-many' | 'update' | 'upsert' | 'delete'
 
 export interface FieldMappingRule {
+    skipWhenMissing?: boolean
+    defaultValue?: string
     targetField: string
     sourceType: 'path' | 'query' | 'header' | 'body' | 'session' | 'store' | 'literal'
     sourceKey: string

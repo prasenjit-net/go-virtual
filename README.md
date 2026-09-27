@@ -119,6 +119,12 @@ Conditions are ANDed (or use full AND/OR/NOT trees in validation rules). Support
 
 Supported operators: `eq`, `ne`, `contains`, `notContains`, `startsWith`, `endsWith`, `regex`, `exists`, `notExists`, `gt`, `gte`, `lt`, `lte`, plus date operators (`dateEq`, `dateBefore`, `dateAfter`, `dateBetween`, etc.)
 
+## Collection Responses
+
+Collection responses use a primary query to select a response, optionally update the selected document, and render a JSON template from primary and additional mapper results. Additional mappers support all six collection operations; field overrides select which additional output values appear in the body.
+
+See [Collection responses: selection, mapper operations, and rendering](docs/collection-response-operations.md) for the execution flow, template and status-code selection, a complete Update example, and troubleshooting.
+
 ## Template and Scripting
 
 Response bodies use Go `text/template` helpers. Key template variables:

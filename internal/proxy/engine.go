@@ -1359,6 +1359,9 @@ func (e *Engine) findMatchingResponseConfig(
 		if match.RootKind == models.RootKindArray {
 			mode = models.QueryModeFindMany
 		}
+		if cfg.CollectionResponse.Primary.Mode == models.ColOpInsert || cfg.CollectionResponse.Primary.Mode == models.ColOpUpsert {
+			mode = models.QueryMode(cfg.CollectionResponse.Primary.Mode)
+		}
 		attempts = append(attempts, models.CollectionResponseAttempt{
 			ResponseConfigID:   cfg.ID,
 			ResponseConfigName: cfg.Name,

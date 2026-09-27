@@ -2,6 +2,7 @@ package collectionresponse
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -192,5 +193,111 @@ func TestMainUpdateShapeValidation(t *testing.T) {
 	errs, err := svc.ValidateAgainstOperation(arrayOp, updateConfig())
 	if err != nil || len(errs) == 0 {
 		t.Fatalf("array Update accepted: %v %v", errs, err)
+	}
+}
+
+func TestMainInsertUpsertExecution(t *testing.T) {
+	for _, mode := range []models.CollectionOpType{models.ColOpInsert, models.ColOpUpsert} {
+		for _, existing := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/existing=%v", mode, existing), func(t *testing.T) {
+				svc, op, arrayOp, backend := setupService(t)
+				if existing {
+					backend.SeedInsert("users", map[string]any{"_id": "old", "name": "Alice"})
+				}
+				cfg := updateConfig()
+				cfg.CollectionResponse.Primary.Mode = mode
+				if mode == models.ColOpInsert {
+					cfg.CollectionResponse.Primary.FilterRules = nil
+				}
+				cfg.CollectionResponse.Primary.DataRules = append(cfg.CollectionResponse.Primary.DataRules, literalRule("secret", "hidden"))
+				cfg.CollectionResponse.AdditionalMappers = []models.NamedQuery{{OutputKey: "audit", Mode: models.ColOpInsert, CollectionQuery: models.CollectionQuery{CollectionName: "audit", DataRules: []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourcePrimary, Key: "name"}}}}}}
+				cfg.CollectionResponse.Overrides = []models.FieldOverride{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourceMapper, Key: "audit.name"}}}
+				if errs := cfg.CollectionResponse.Validate(); len(errs) != 0 {
+					t.Fatal(errs)
+				}
+				if errs, err := svc.ValidateAgainstOperation(arrayOp, cfg); err != nil || len(errs) == 0 {
+					t.Fatalf("array accepted: %v %v", errs, err)
+				}
+				sess := store.NewEphemeralSession(nil)
+				match, err := svc.TryMatch(op, cfg, nil, sess)
+				if err != nil || !match.Matched || match.Doc != nil || match.Filter != nil {
+					t.Fatalf("selection: %+v %v", match, err)
+				}
+				preview, err := svc.Render(cfg, match, nil, sess)
+				if err != nil || len(preview.Warnings) < 2 || len(store.LoadEvents(sess, "users")) != 0 {
+					t.Fatalf("preview: %+v %v", preview, err)
+				}
+				result, err := svc.ExecuteSelected(cfg, match, nil, sess)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.primaryTrace.Operation != mode || result.primaryTrace.RecordCount != 1 {
+					t.Fatalf("trace: %+v", result.primaryTrace)
+				}
+				if mode == models.ColOpUpsert && existing && result.Doc["_id"] != "old" {
+					t.Fatal("upsert did not retain existing identity")
+				}
+				for i := 0; i < 2; i++ {
+					rendered, err := svc.Render(cfg, result, nil, sess)
+					if err != nil || !strings.Contains(string(rendered.Body), "Confirmed") || strings.Contains(string(rendered.Body), "secret") || strings.Contains(string(rendered.Body), "_id") {
+						t.Fatalf("render: %+v %v", rendered, err)
+					}
+				}
+				if _, err := svc.ExecuteSelected(cfg, match, nil, sess); err == nil {
+					t.Fatal("repeat execution accepted")
+				}
+				docs, _ := collection.NewOps("users", backend, sess).FindMany(nil)
+				want := 1
+				if mode == models.ColOpInsert && existing {
+					want = 2
+				}
+				if len(docs) != want || len(store.LoadEvents(sess, "users")) != 1 || len(store.LoadEvents(sess, "audit")) != 1 {
+					t.Fatalf("unexpected writes: %v", docs)
+				}
+			})
+		}
+	}
+}
+
+func TestMainUpsertMissingFilterFailsOnlyAfterSelection(t *testing.T) {
+	svc, op, _, _ := setupService(t)
+	cfg := updateConfig()
+	cfg.CollectionResponse.Primary.Mode = models.ColOpUpsert
+	cfg.CollectionResponse.Primary.FilterRules = []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourceBody, Key: "missing"}}}
+	sess := store.NewEphemeralSession(nil)
+	match, err := svc.TryMatch(op, cfg, nil, sess)
+	if err != nil || !match.Matched {
+		t.Fatalf("filter affected selection: %v %v", match, err)
+	}
+	result, err := svc.ExecuteSelected(cfg, match, nil, sess)
+	if err == nil || result.primaryTrace.Error == "" || len(store.LoadEvents(sess, "users")) != 0 {
+		t.Fatalf("missing filter wrote: %+v %v", result, err)
+	}
+}
+
+func TestMainInsertUpsertValidation(t *testing.T) {
+	for _, mode := range []models.CollectionOpType{models.ColOpInsert, models.ColOpUpsert} {
+		cfg := updateConfig().CollectionResponse
+		cfg.Primary.Mode = mode
+		if mode == models.ColOpInsert {
+			cfg.Primary.FilterRules = nil
+		}
+		cfg.Primary.DataRules = nil
+		if len(cfg.Validate()) == 0 {
+			t.Fatal("missing data accepted")
+		}
+		cfg.Primary.DataRules = []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourcePrimary, Key: "name"}}}
+		if len(cfg.Validate()) == 0 {
+			t.Fatal("unavailable primary source accepted")
+		}
+		cfg.Primary.DataRules = []models.CollectionFilter{literalRule("name", "Alice")}
+		if mode == models.ColOpInsert {
+			cfg.Primary.FilterRules = []models.CollectionFilter{literalRule("name", "Alice")}
+		} else {
+			cfg.Primary.FilterRules = nil
+		}
+		if len(cfg.Validate()) == 0 {
+			t.Fatal("invalid filters accepted")
+		}
 	}
 }

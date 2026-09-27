@@ -47,9 +47,11 @@ const (
 // FieldMappingRule, it preserves JSON types (number/bool/null/object/array)
 // for the literal source instead of coercing everything to a string.
 type ValueBinding struct {
-	Source ValueSource     `json:"source"`
-	Key    string          `json:"key,omitempty"`
-	Value  json.RawMessage `json:"value,omitempty"` // literal only
+	SkipWhenMissing bool            `json:"skipWhenMissing,omitempty"`
+	DefaultValue    json.RawMessage `json:"defaultValue,omitempty"`
+	Source          ValueSource     `json:"source"`
+	Key             string          `json:"key,omitempty"`
+	Value           json.RawMessage `json:"value,omitempty"` // literal only
 }
 
 // CollectionFilter binds one collection query field to a request-derived or
@@ -130,10 +132,13 @@ func (c *CollectionResponseConfig) Validate() []string {
 		errs = append(errs, "primary.collectionName is required")
 	}
 	errs = append(errs, validateFilterBindings("primary.filterRules", c.Primary.FilterRules, false)...)
-	if c.Primary.Mode != "" && c.Primary.Mode != ColOpFindOne && c.Primary.Mode != ColOpFindMany && c.Primary.Mode != ColOpUpdate {
-		errs = append(errs, "primary.mode must be find-one, find-many, or update")
+	if c.Primary.Mode != "" && c.Primary.Mode != ColOpFindOne && c.Primary.Mode != ColOpFindMany && c.Primary.Mode != ColOpUpdate && c.Primary.Mode != ColOpInsert && c.Primary.Mode != ColOpUpsert {
+		errs = append(errs, "primary.mode must be find-one, find-many, insert, update, or upsert")
 	}
 	errs = append(errs, validateOperationFields("primary", c.Primary.Mode, c.Primary.FilterRules, c.Primary.DataRules)...)
+	if c.Primary.Mode == ColOpInsert || c.Primary.Mode == ColOpUpsert {
+		errs = append(errs, validateFilterBindings("primary.dataRules", c.Primary.DataRules, false)...)
+	}
 
 	outputKeys := make(map[string]bool, len(c.AdditionalMappers))
 	for i, m := range c.AdditionalMappers {
@@ -226,6 +231,18 @@ func validateFilterBindings(prefix string, filters []CollectionFilter, allowPrim
 }
 
 func validateValueBinding(label string, v ValueBinding, allowed map[ValueSource]bool) []string {
+	if v.SkipWhenMissing && (len(v.DefaultValue) > 0 || v.Source == ValueSourceLiteral) {
+		return []string{label + ": skipWhenMissing requires a nonliteral source and cannot be combined with defaultValue"}
+	}
+	if len(v.DefaultValue) > 0 {
+		if !json.Valid(v.DefaultValue) {
+			return []string{label + ": defaultValue must be valid JSON"}
+		}
+		if v.Source == ValueSourceLiteral {
+			return []string{label + ": defaultValue is not allowed for literal sources"}
+		}
+	}
+
 	if v.Source == "" {
 		return []string{label + ": source is required"}
 	}
@@ -280,4 +297,25 @@ func validateOperationFields(prefix string, mode CollectionOpType, filters, data
 		seen[rule.TargetPath] = true
 	}
 	return errs
+}
+
+// UnmarshalJSON validates defaulted bindings at import as well as API save.
+func (b *ValueBinding) UnmarshalJSON(data []byte) error {
+	type plain ValueBinding
+	var value plain
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if len(value.DefaultValue) > 0 || value.SkipWhenMissing {
+		allowed := map[ValueSource]bool{
+			ValueSourcePath: true, ValueSourceQuery: true, ValueSourceHeader: true,
+			ValueSourceBody: true, ValueSourcePrimary: true, ValueSourceDocument: true,
+			ValueSourceMapper: true, ValueSourceLiteral: true,
+		}
+		if errs := validateValueBinding("binding", ValueBinding(value), allowed); len(errs) > 0 {
+			return fmt.Errorf("%s", strings.Join(errs, "; "))
+		}
+	}
+	*b = ValueBinding(value)
+	return nil
 }

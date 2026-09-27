@@ -1,3 +1,4 @@
+import MappingDefaultInput from '../shared/MappingDefaultInput'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -138,7 +139,7 @@ function RuleEditor({ rules, onChange, label }: {
             )}
             <div className="space-y-1.5">
                 {rules.map((rule, i) => (
-                    <div key={i} className="flex gap-1 items-center">
+                    <div key={i} className="flex flex-wrap gap-1 items-center">
                         <input
                             type="text"
                             value={rule.targetField}
@@ -149,7 +150,7 @@ function RuleEditor({ rules, onChange, label }: {
                         <span className="text-gray-400 text-xs">=</span>
                         <select
                             value={rule.sourceType}
-                            onChange={e => update(i, { sourceType: e.target.value as FieldMappingRule['sourceType'], sourceKey: '' })}
+                            onChange={e => update(i, { sourceType: e.target.value as FieldMappingRule['sourceType'], sourceKey: '', defaultValue: e.target.value === 'literal' ? undefined : rule.defaultValue, skipWhenMissing: e.target.value === 'literal' ? undefined : rule.skipWhenMissing })}
                             className="px-1.5 py-1 text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                         >
                             {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -164,6 +165,7 @@ function RuleEditor({ rules, onChange, label }: {
                         <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-500">
                             <X className="w-3 h-3" />
                         </button>
+                        {rule.sourceType !== 'literal' && <MappingDefaultInput value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
                     </div>
                 ))}
             </div>

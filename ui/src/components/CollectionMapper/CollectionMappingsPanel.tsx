@@ -1,3 +1,4 @@
+import MappingDefaultInput from '../shared/MappingDefaultInput'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -124,7 +125,7 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                         const opts = sourceKeyOptionsFor(rule.sourceType, hints)
                         const dlId = `${idPrefix}-src-${i}`
                         return (
-                            <div key={i} className="flex items-center gap-2">
+                            <div key={i} className="flex flex-wrap items-center gap-2">
                                 <input
                                     type="text" value={rule.targetField} placeholder="e.g. name"
                                     onChange={(e) => update(i, { targetField: e.target.value })}
@@ -132,7 +133,7 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                                 />
                                 <select
                                     value={rule.sourceType}
-                                    onChange={(e) => update(i, { sourceType: e.target.value as FieldMappingRule['sourceType'], sourceKey: '' })}
+                                    onChange={(e) => update(i, { sourceType: e.target.value as FieldMappingRule['sourceType'], sourceKey: '', defaultValue: e.target.value === 'literal' ? undefined : rule.defaultValue, skipWhenMissing: e.target.value === 'literal' ? undefined : rule.skipWhenMissing })}
                                     className="text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 w-28 flex-shrink-0"
                                 >
                                     {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -154,6 +155,7 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                                 <button type="button" onClick={() => remove(i)} className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0 w-6">
                                     <X className="w-3.5 h-3.5" />
                                 </button>
+                                {rule.sourceType !== 'literal' && <MappingDefaultInput value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
                             </div>
                         )
                     })}

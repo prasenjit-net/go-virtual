@@ -50,11 +50,14 @@ func (ctx *fillContext) fillNode(template any, sub any, subFound bool, fullPath 
 			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override error: %s", labelFor(fullPath), err))
 			return nil
 		}
-		if !found {
+		if found {
+			return v
+		}
+		if !ov.Value.SkipWhenMissing {
 			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override source has no value", labelFor(fullPath)))
 			return nil
 		}
-		return v
+		// A skipped override leaves normal template filling in place.
 	}
 
 	switch t := template.(type) {
@@ -142,6 +145,9 @@ func fillIdentity(doc map[string]any, overrides map[string]models.FieldOverride,
 	for path, ov := range overrides {
 		bctx := &collection.BindingContext{Request: request, Document: doc, Mappers: mappers}
 		v, found, err := collection.ResolveValueBinding(ov.Value, bctx)
+		if err == nil && !found && ov.Value.SkipWhenMissing {
+			continue
+		}
 		if err != nil || !found {
 			warnings = append(warnings, fmt.Sprintf("%s: override could not be resolved", labelFor(path)))
 			continue

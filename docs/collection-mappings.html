@@ -289,6 +289,21 @@
     </div>
 
     <!-- Output Key and Status Field -->
+    <div class="section" id="default-values">
+      <h2>Default values for missing sources</h2>
+      <p>Each nonliteral filter or data rule can have an optional <code>defaultValue</code>. Choose <strong>Use default value</strong> under <strong>When source is missing</strong> in either the collection mapping editor or pipeline editor. The default is a string, matching the existing mapper value semantics; an empty string is valid.</p>
+      <pre><code>{
+  "targetField": "status",
+  "sourceType": "query",
+  "sourceKey": "status",
+  "defaultValue": "active"
+}</code></pre>
+      <p>This filter uses <code>active</code> when the request has no <code>status</code> query parameter. An existing empty value, zero, false, or null does not activate the default. Defaults also work for missing path, header, body, session, and store values. Invalid configuration is still rejected.</p>
+      <p>Choosing <strong>Existing behavior</strong> clears the policy; switching to Literal also clears it. Defaults are persisted with mapper configuration. Standalone collection mappings are not included in the current archive format; this existing limitation also applies to their defaults.</p>
+      <p>Choose <strong>Skip mapping</strong> instead to omit the filter or data field when its source/key is absent. This is stored as <code>skipWhenMissing: true</code> and cannot be combined with a default. Explicit empty, null, false, and zero values are kept. Skipped filters no longer constrain the operation; an empty filter retains the existing match-all behavior. Skipped update fields retain their stored values.</p>
+      <p>Collection response bindings support typed JSON defaults, including explicit null, on filters, data rules, and output overrides. See the <a href="collection-response-operations.md">collection response guide</a> for rendering precedence and examples.</p>
+    </div>
+
     <div class="section" id="output-key">
       <h2>Output Key &amp; Status Field</h2>
       <p>Each mapping has an <strong>Output Key</strong> — an alphanumeric identifier that names the result. Results are accessible in templates and conditions as <code>.Collection.&lt;outputKey&gt;</code>.</p>

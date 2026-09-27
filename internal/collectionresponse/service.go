@@ -42,9 +42,9 @@ type MatchResult struct {
 	primaryTrace     *models.CollectionTrace
 }
 
-// TryMatch resolves the template's root kind, runs the primary query, and
-// reports whether the response matches. It performs the query at most once;
-// the result is carried by MatchResult for Render to reuse.
+// TryMatch resolves the template's root kind and reports collection eligibility.
+// Insert/Upsert require no query; other modes query at most once and retain
+// their result for execution and rendering. The caller evaluates conditions.
 //
 // A nil sess (no session-scoped collection state available) never matches —
 // this mirrors how CollectionMapping steps are skipped without a session.
@@ -58,7 +58,7 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 	if err != nil {
 		return nil, err
 	}
-	if (cr.Primary.Mode == models.ColOpUpdate || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
+	if (isMutation(cr.Primary.Mode) || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
 		return nil, fmt.Errorf("primary.mode %s requires an object response root", cr.Primary.Mode)
 	}
 	if cr.Primary.Mode == models.ColOpFindMany && rootKind != models.RootKindArray {
@@ -66,6 +66,13 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 	}
 	res := &MatchResult{RootKind: rootKind, Template: tmpl}
 	if sess == nil {
+		return res, nil
+	}
+
+	// Conditions are evaluated by the response selector. These operations have
+	// no read prerequisite; upsert filters are resolved only after selection.
+	if cr.Primary.Mode == models.ColOpInsert || cr.Primary.Mode == models.ColOpUpsert {
+		res.Matched = true
 		return res, nil
 	}
 
@@ -134,8 +141,8 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 	identity := match.Template.Source == TemplateSourceIdentity
 	var value any
 	var warnings []string
-	if !match.prepared && cr.Primary.Mode == models.ColOpUpdate {
-		warnings = append(warnings, "Preview does not execute the main Update; showing the selected document before changes.")
+	if !match.prepared && isMutation(cr.Primary.Mode) {
+		warnings = append(warnings, "Preview does not execute the main "+string(cr.Primary.Mode)+"; no write result is simulated.")
 	}
 	if !match.prepared {
 		for _, m := range cr.AdditionalMappers {
@@ -223,6 +230,35 @@ func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult
 		if err != nil {
 			trace.Error = err.Error()
 			return &result, err
+		}
+	}
+	if cr.Primary.Mode == models.ColOpInsert || cr.Primary.Mode == models.ColOpUpsert {
+		start := time.Now()
+		trace := &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: cr.Primary.Mode}
+		result.primaryTrace = trace
+		ctx := &collection.BindingContext{Request: req}
+		data, err := collection.ResolveRequiredMap(cr.Primary.DataRules, ctx)
+		if err == nil {
+			ops := collection.NewOps(cr.Primary.CollectionName, s.backend, sess)
+			if cr.Primary.Mode == models.ColOpInsert {
+				result.Doc, err = ops.Insert(data)
+			} else {
+				var filter map[string]any
+				filter, err = collection.ResolveRequiredMap(cr.Primary.FilterRules, ctx)
+				result.Filter = filter
+				if err == nil {
+					result.Doc, err = ops.Upsert(filter, data)
+				}
+			}
+		}
+		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
+		if err != nil {
+			trace.Error = err.Error()
+			return &result, err
+		}
+		if result.Doc != nil {
+			trace.RecordCount = 1
+			result.RecordCount = 1
 		}
 	}
 	outputs, traces, err := s.runAdditionalMappers(cr, &result, req, sess, true)
@@ -360,7 +396,7 @@ func (s *Service) ValidateAgainstOperation(op *models.Operation, cfg *models.Res
 	}
 
 	var errs []string
-	if (cr.Primary.Mode == models.ColOpUpdate || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
+	if (isMutation(cr.Primary.Mode) || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
 		errs = append(errs, "primary.mode requires an object response root")
 	}
 	if cr.Primary.Mode == models.ColOpFindMany && rootKind != models.RootKindArray {

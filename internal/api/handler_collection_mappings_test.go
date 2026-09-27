@@ -329,3 +329,43 @@ func TestDeleteCollectionMapping_NotFound(t *testing.T) {
 		t.Errorf("expected 404, got %d", w.Code)
 	}
 }
+
+func TestMappingDefaultsAPISaveAndUpdate(t *testing.T) {
+	h, s, r := seedResponseConfig(t)
+	r.POST("/operations/:id/responses/:respId/mappings", h.CreateCollectionMapping)
+	r.PUT("/mappings/:mappingId", h.UpdateCollectionMapping)
+	send := func(method, path, raw string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewBufferString(raw))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	for _, value := range []string{`null`, `true`, `42`} {
+		w := send("POST", "/operations/op-1/responses/rc-1/mappings", `{"collectionName":"users","outputKey":"users","operation":"find-one","filterRules":[{"targetField":"id","sourceType":"query","sourceKey":"id","defaultValue":`+value+`}]}`)
+		if w.Code != 400 {
+			t.Fatalf("invalid default accepted: %d %s", w.Code, w.Body.String())
+		}
+	}
+	raw := `{"collectionName":"users","outputKey":"users","operation":"find-one","filterRules":[{"targetField":"id","sourceType":"query","sourceKey":"id","defaultValue":""}]}`
+	w := send("POST", "/operations/op-1/responses/rc-1/mappings", raw)
+	if w.Code != 201 {
+		t.Fatalf("create: %s", w.Body.String())
+	}
+	var mapping models.CollectionMapping
+	if err := json.Unmarshal(w.Body.Bytes(), &mapping); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := s.GetCollectionMapping(mapping.ID)
+	if err != nil || saved.FilterRules[0].DefaultValue == nil || *saved.FilterRules[0].DefaultValue != "" {
+		t.Fatal("empty default not saved")
+	}
+	w = send("PUT", "/mappings/"+mapping.ID, `{"collectionName":"users","outputKey":"users","operation":"find-one","filterRules":[{"targetField":"id","sourceType":"query","sourceKey":"id"}]}`)
+	if w.Code != 200 {
+		t.Fatalf("update: %s", w.Body.String())
+	}
+	saved, err = s.GetCollectionMapping(mapping.ID)
+	if err != nil || saved.FilterRules[0].DefaultValue != nil {
+		t.Fatal("default not removed")
+	}
+}

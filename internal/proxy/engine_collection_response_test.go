@@ -380,3 +380,63 @@ func TestServeHTTP_UpdateFailurePreservesTraceAndSession(t *testing.T) {
 		t.Fatalf("partial diagnostics lost: %+v", render)
 	}
 }
+
+func TestServeHTTP_InsertUpsertConditionOnlySelection(t *testing.T) {
+	for _, mode := range []models.CollectionOpType{models.ColOpInsert, models.ColOpUpsert} {
+		for _, scenario := range []string{"condition-fails", "condition-passes", "unconditional", "higher-priority"} {
+			t.Run(string(mode)+"/"+scenario, func(t *testing.T) {
+				engine, s, _ := setupCollectionTestEngine(t)
+				setupUserSpecAndOperation(t, s)
+				spec, _ := s.GetSpec("spec-1")
+				spec.Tracing = true
+				s.UpdateSpec(spec)
+				cfg := collectionResponseConfig("write", 1)
+				cfg.CollectionResponse.Primary.Mode = mode
+				if mode == models.ColOpInsert {
+					cfg.CollectionResponse.Primary.FilterRules = nil
+				}
+				cfg.CollectionResponse.Primary.DataRules = []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: json.RawMessage(`"Created"`)}}}
+				if scenario != "unconditional" {
+					id := "42"
+					if scenario == "condition-fails" {
+						id = "999"
+					}
+					cfg.Conditions = []models.Condition{{Source: "path", Key: "id", Operator: "eq", Value: id}}
+				}
+				if err := s.CreateResponseConfig(cfg); err != nil {
+					t.Fatal(err)
+				}
+				priority := 2
+				if scenario == "higher-priority" {
+					priority = 0
+				}
+				if err := s.CreateResponseConfig(&models.ResponseConfig{ID: "fallback", OperationID: "op-1", Name: "fallback", StatusCode: 200, Priority: priority, Enabled: true, Body: `{"name":"fallback"}`}); err != nil {
+					t.Fatal(err)
+				}
+				engine.ReloadRoutes()
+				rec := httptest.NewRecorder()
+				engine.ServeHTTP(rec, httptest.NewRequest("GET", "/api/users/42", nil))
+				if rec.Code != 200 {
+					t.Fatalf("response: %d %s", rec.Code, rec.Body.String())
+				}
+				var body map[string]any
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+					t.Fatal(err)
+				}
+				traces := engine.tracingService.GetTraces(&models.TraceFilter{})
+				if len(traces) != 1 {
+					t.Fatalf("traces: %v", traces)
+				}
+				if scenario == "condition-fails" || scenario == "higher-priority" {
+					if body["name"] != "fallback" || traces[0].CollectionResponseRender != nil {
+						t.Fatalf("unselected write executed: %v", body)
+					}
+				} else {
+					if body["name"] != "Created" || body["_id"] != nil || traces[0].CollectionResponseRender.PrimaryMapper.RecordCount != 1 {
+						t.Fatalf("write not rendered: %v", body)
+					}
+				}
+			})
+		}
+	}
+}
