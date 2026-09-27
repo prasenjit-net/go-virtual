@@ -15,12 +15,12 @@ const (
 	RootKindArray  RootKind = "array"
 )
 
-// QueryMode is the collection read operation an additional mapper performs.
+// QueryMode is the read operation used during response selection.
 type QueryMode string
 
 const (
-	QueryModeFindOne  QueryMode = "find-one"
-	QueryModeFindMany QueryMode = "find-many"
+	QueryModeFindOne  = "find-one"
+	QueryModeFindMany = "find-many"
 )
 
 // ValueSource identifies where a ValueBinding's value comes from.
@@ -34,7 +34,7 @@ const (
 	// mapper's result. Valid only in field overrides.
 	ValueSourceMapper ValueSource = "mapper"
 	// ValueSourcePrimary reads a path in the primary result document.
-	// Valid only in additional-mapper filters.
+	// Valid in mapper data bindings and additional-mapper filters.
 	ValueSourcePrimary ValueSource = "primary"
 	ValueSourcePath    ValueSource = "path"
 	ValueSourceQuery   ValueSource = "query"
@@ -47,9 +47,11 @@ const (
 // FieldMappingRule, it preserves JSON types (number/bool/null/object/array)
 // for the literal source instead of coercing everything to a string.
 type ValueBinding struct {
-	Source ValueSource     `json:"source"`
-	Key    string          `json:"key,omitempty"`
-	Value  json.RawMessage `json:"value,omitempty"` // literal only
+	SkipWhenMissing bool            `json:"skipWhenMissing,omitempty"`
+	DefaultValue    json.RawMessage `json:"defaultValue,omitempty"`
+	Source          ValueSource     `json:"source"`
+	Key             string          `json:"key,omitempty"`
+	Value           json.RawMessage `json:"value,omitempty"` // literal only
 }
 
 // CollectionFilter binds one collection query field to a request-derived or
@@ -59,18 +61,20 @@ type CollectionFilter struct {
 	Value      ValueBinding `json:"value"`
 }
 
-// CollectionQuery names a collection and the filters used to select
-// documents from it.
+// CollectionQuery configures a response mapper. An omitted primary Mode is
+// inferred from the response root. DataRules are used by write operations.
 type CollectionQuery struct {
+	Mode           CollectionOpType   `json:"mode,omitempty"`
+	DataRules      []CollectionFilter `json:"dataRules,omitempty"`
 	CollectionName string             `json:"collectionName"`
 	FilterRules    []CollectionFilter `json:"filterRules,omitempty"`
 }
 
-// NamedQuery is an additional, field-filling-only collection query. It never
-// affects response matching.
+// NamedQuery is a named additional read or write operation, executed only after
+// response selection. The historical type name and JSON shape remain compatible.
 type NamedQuery struct {
-	OutputKey string    `json:"outputKey"`
-	Mode      QueryMode `json:"mode"`
+	OutputKey string           `json:"outputKey"`
+	Mode      CollectionOpType `json:"mode"`
 	CollectionQuery
 }
 
@@ -128,6 +132,13 @@ func (c *CollectionResponseConfig) Validate() []string {
 		errs = append(errs, "primary.collectionName is required")
 	}
 	errs = append(errs, validateFilterBindings("primary.filterRules", c.Primary.FilterRules, false)...)
+	if c.Primary.Mode != "" && c.Primary.Mode != ColOpFindOne && c.Primary.Mode != ColOpFindMany && c.Primary.Mode != ColOpUpdate && c.Primary.Mode != ColOpInsert && c.Primary.Mode != ColOpUpsert {
+		errs = append(errs, "primary.mode must be find-one, find-many, insert, update, or upsert")
+	}
+	errs = append(errs, validateOperationFields("primary", c.Primary.Mode, c.Primary.FilterRules, c.Primary.DataRules)...)
+	if c.Primary.Mode == ColOpInsert || c.Primary.Mode == ColOpUpsert {
+		errs = append(errs, validateFilterBindings("primary.dataRules", c.Primary.DataRules, false)...)
+	}
 
 	outputKeys := make(map[string]bool, len(c.AdditionalMappers))
 	for i, m := range c.AdditionalMappers {
@@ -140,8 +151,14 @@ func (c *CollectionResponseConfig) Validate() []string {
 		} else {
 			outputKeys[key] = true
 		}
-		if m.Mode != QueryModeFindOne && m.Mode != QueryModeFindMany {
-			errs = append(errs, p+`.mode must be "find-one" or "find-many"`)
+		switch m.Mode {
+		case ColOpFindOne, ColOpFindMany, ColOpInsert, ColOpUpdate, ColOpUpsert, ColOpDelete:
+		default:
+			errs = append(errs, p+".mode is invalid")
+		}
+		errs = append(errs, validateOperationFields(p, m.Mode, m.FilterRules, m.DataRules)...)
+		if m.CollectionQuery.Mode != "" {
+			errs = append(errs, p+" has conflicting embedded mode")
 		}
 		if strings.TrimSpace(m.CollectionName) == "" {
 			errs = append(errs, p+".collectionName is required")
@@ -214,6 +231,18 @@ func validateFilterBindings(prefix string, filters []CollectionFilter, allowPrim
 }
 
 func validateValueBinding(label string, v ValueBinding, allowed map[ValueSource]bool) []string {
+	if v.SkipWhenMissing && (len(v.DefaultValue) > 0 || v.Source == ValueSourceLiteral) {
+		return []string{label + ": skipWhenMissing requires a nonliteral source and cannot be combined with defaultValue"}
+	}
+	if len(v.DefaultValue) > 0 {
+		if !json.Valid(v.DefaultValue) {
+			return []string{label + ": defaultValue must be valid JSON"}
+		}
+		if v.Source == ValueSourceLiteral {
+			return []string{label + ": defaultValue is not allowed for literal sources"}
+		}
+	}
+
 	if v.Source == "" {
 		return []string{label + ": source is required"}
 	}
@@ -234,5 +263,59 @@ func validateValueBinding(label string, v ValueBinding, allowed map[ValueSource]
 			return []string{label + ": key is required for source " + string(v.Source)}
 		}
 	}
+	return nil
+}
+
+// validateOperationFields validates typed write bindings without altering read behavior.
+func validateOperationFields(prefix string, mode CollectionOpType, filters, data []CollectionFilter) []string {
+	var errs []string
+	writesData := mode == ColOpInsert || mode == ColOpUpdate || mode == ColOpUpsert
+	if writesData && len(data) == 0 {
+		errs = append(errs, prefix+".dataRules is required")
+	}
+	if !writesData && len(data) > 0 {
+		errs = append(errs, prefix+".dataRules is not allowed for this operation")
+	}
+	if mode == ColOpInsert && len(filters) > 0 {
+		errs = append(errs, prefix+".filterRules is not allowed for insert")
+	}
+	if (mode == ColOpUpdate || mode == ColOpUpsert || mode == ColOpDelete) && len(filters) == 0 {
+		errs = append(errs, prefix+".filterRules is required")
+	}
+	errs = append(errs, validateFilterBindings(prefix+".dataRules", data, true)...)
+	seen := map[string]bool{}
+	for _, rule := range data {
+		if strings.Contains(rule.TargetPath, ".") {
+			errs = append(errs, prefix+".dataRules: dotted targets are not supported")
+		}
+		if rule.TargetPath == "_id" && mode != ColOpInsert {
+			errs = append(errs, prefix+".dataRules: _id cannot be changed")
+		}
+		if seen[rule.TargetPath] {
+			errs = append(errs, prefix+".dataRules: duplicate target "+rule.TargetPath)
+		}
+		seen[rule.TargetPath] = true
+	}
+	return errs
+}
+
+// UnmarshalJSON validates defaulted bindings at import as well as API save.
+func (b *ValueBinding) UnmarshalJSON(data []byte) error {
+	type plain ValueBinding
+	var value plain
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if len(value.DefaultValue) > 0 || value.SkipWhenMissing {
+		allowed := map[ValueSource]bool{
+			ValueSourcePath: true, ValueSourceQuery: true, ValueSourceHeader: true,
+			ValueSourceBody: true, ValueSourcePrimary: true, ValueSourceDocument: true,
+			ValueSourceMapper: true, ValueSourceLiteral: true,
+		}
+		if errs := validateValueBinding("binding", ValueBinding(value), allowed); len(errs) > 0 {
+			return fmt.Errorf("%s", strings.Join(errs, "; "))
+		}
+	}
+	*b = ValueBinding(value)
 	return nil
 }

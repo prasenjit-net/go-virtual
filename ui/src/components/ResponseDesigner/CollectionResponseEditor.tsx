@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import MappingDefaultInput, { isValidDefaultJSON } from '../shared/MappingDefaultInput'
+import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
@@ -21,7 +22,8 @@ import type {
     CollectionResponseConfig,
     FieldOverride,
     NamedQuery,
-    QueryMode,
+    CollectionOpType,
+    PrimaryResponseMapper,
     ResponseConfig,
     ResponseConfigInput,
     RootKind,
@@ -47,6 +49,8 @@ interface BindingRowState {
     source: ValueSource | ''
     key: string
     literal: string
+    defaultText?: string
+    skipWhenMissing?: boolean
 }
 
 function literalToText(v: unknown): string {
@@ -76,6 +80,8 @@ function rowFromBinding(targetPath: string, value: ValueBinding): BindingRowStat
     return {
         targetPath,
         source: value.source,
+        skipWhenMissing: value.skipWhenMissing,
+        defaultText: Object.prototype.hasOwnProperty.call(value, 'defaultValue') ? literalToText(value.defaultValue) : undefined,
         key: value.source === 'literal' ? '' : (value.key || ''),
         literal: value.source === 'literal' ? literalToText(value.value) : '',
     }
@@ -93,18 +99,19 @@ function rowToBinding(row: BindingRowState): ValueBinding {
     if (row.source === 'literal') {
         return { source: 'literal', value: parseLiteralInput(row.literal) }
     }
-    return { source: row.source || 'path', key: row.key.trim() }
+    return { skipWhenMissing: row.skipWhenMissing || undefined, source: row.source || 'path', key: row.key.trim(), ...(row.defaultText !== undefined ? { defaultValue: JSON.parse(row.defaultText) } : {}) }
 }
 
 interface MapperRowState {
     outputKey: string
-    mode: QueryMode
+    mode: CollectionOpType
     collectionName: string
     filters: BindingRowState[]
+    data: BindingRowState[]
 }
 
 function emptyMapper(): MapperRowState {
-    return { outputKey: '', mode: 'find-one', collectionName: '', filters: [] }
+    return { outputKey: '', mode: 'find-one', collectionName: '', filters: [], data: [] }
 }
 
 function mappersFromConfig(mappers?: NamedQuery[]): MapperRowState[] {
@@ -113,6 +120,7 @@ function mappersFromConfig(mappers?: NamedQuery[]): MapperRowState[] {
         mode: m.mode,
         collectionName: m.collectionName,
         filters: rowsFromFilters(m.filterRules),
+        data: rowsFromFilters(m.dataRules),
     }))
 }
 
@@ -171,7 +179,7 @@ function BindingRow({
             <div className="w-36 flex-shrink-0">
                 <select
                     value={row.source}
-                    onChange={(e) => onChange({ ...row, source: e.target.value as ValueSource })}
+                    onChange={(e) => onChange({ ...row, source: e.target.value as ValueSource, defaultText: e.target.value === 'literal' ? undefined : row.defaultText, skipWhenMissing: e.target.value === 'literal' ? undefined : row.skipWhenMissing })}
                     className={inputClass}
                 >
                     {sources.map((s) => (
@@ -204,6 +212,7 @@ function BindingRow({
             >
                 <Trash2 className="w-4 h-4" />
             </button>
+            {row.source !== 'literal' && <MappingDefaultInput json value={row.defaultText} skipWhenMissing={row.skipWhenMissing} onChange={(defaultText, skipWhenMissing) => onChange({ ...row, defaultText, skipWhenMissing })} />}
         </div>
     )
 }
@@ -221,6 +230,27 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
     }
 }
 
+const writesData = (mode: CollectionOpType) => ['insert', 'update', 'upsert'].includes(mode)
+
+function DataRulesEditor({ rows, onChange, allowPrimary }: {
+    rows: BindingRowState[]
+    onChange: (rows: BindingRowState[]) => void
+    allowPrimary: boolean
+}) {
+    return <div className="space-y-2">
+        <div className="flex items-center justify-between">
+            <span className={labelClass}>Data fields</span>
+            <button type="button" onClick={() => onChange([...rows, emptyRow('body')])} className="text-xs text-primary-700 dark:text-primary-300 hover:underline">+ Add field</button>
+        </div>
+        {rows.length === 0 && <p className="text-xs text-gray-500 dark:text-slate-400">Add the fields this operation writes.</p>}
+        {rows.map((row, i) => <BindingRow key={i} row={row}
+            sources={allowPrimary ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
+            keyPlaceholder={filterKeyPlaceholder} targetPathLabel="Collection field" targetPathPlaceholder="status"
+            onChange={(next) => onChange(rows.map((r, j) => j === i ? next : r))}
+            onRemove={() => onChange(rows.filter((_, j) => j !== i))} />)}
+    </div>
+}
+
 type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | 'output'
 
 export default function CollectionResponseEditor({ operationId, config, onClose }: CollectionResponseEditorProps) {
@@ -230,7 +260,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
-    const [statusCode, setStatusCode] = useState(config?.statusCode || 200)
     const [priority, setPriority] = useState(config?.priority || 0)
     const [delay, setDelay] = useState(config?.delay || 0)
     const [enabled, setEnabled] = useState(config?.enabled ?? true)
@@ -244,9 +273,14 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     const [matchOnEmpty, setMatchOnEmpty] = useState(cr?.matchOnEmpty ?? false)
     const [fallbackToExample, setFallbackToExample] = useState(cr?.fallbackToExample ?? true)
 
+    const [primaryMode, setPrimaryMode] = useState<PrimaryResponseMapper['mode']>(cr?.primary.mode)
+    const primaryWrites = !!primaryMode && writesData(primaryMode)
+    const conditionOnly = primaryMode === 'insert' || primaryMode === 'upsert'
+    const [primaryData, setPrimaryData] = useState<BindingRowState[]>(() => rowsFromFilters(cr?.primary.dataRules))
     const [primaryCollectionName, setPrimaryCollectionName] = useState(cr?.primary.collectionName || '')
     const [primaryFilters, setPrimaryFilters] = useState<BindingRowState[]>(() => rowsFromFilters(cr?.primary.filterRules))
-    const [templateRef, setTemplateRef] = useState(cr?.templateRef || '')
+    // null preserves the saved/default choice until examples have loaded.
+    const [exampleSelection, setExampleSelection] = useState<string | null>(config ? null : '')
     const [manualRootKind, setManualRootKind] = useState<RootKind>(cr?.rootKind || 'object')
     const [mappers, setMappers] = useState<MapperRowState[]>(() => mappersFromConfig(cr?.additionalMappers))
     const [overrides, setOverrides] = useState<BindingRowState[]>(() => rowsFromOverrides(cr?.overrides))
@@ -258,27 +292,19 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     const { data: tags } = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list })
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
 
-    const { data: specExamples } = useQuery<SpecExample[]>({
+    const { data: specExamples, isPending: examplesLoading, isError: examplesError } = useQuery<SpecExample[]>({
         queryKey: ['specExamples', operationId],
         queryFn: () => operationsApi.getSpecExamples(operationId),
         enabled: !!operationId,
     })
 
-    const matchingExamples = useMemo(
-        () => (specExamples || []).filter((e) => e.statusCode === statusCode),
-        [specExamples, statusCode]
-    )
-    useEffect(() => {
-        // Reset an out-of-range templateRef when the status code changes.
-        if (templateRef && !matchingExamples.some((e) => e.exampleName === templateRef)) {
-            setTemplateRef('')
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [matchingExamples])
-
-    const chosenExample = templateRef
-        ? matchingExamples.find((e) => e.exampleName === templateRef)
-        : matchingExamples[0]
+    const exampleKey = (example: SpecExample) => JSON.stringify([example.statusCode, example.exampleName || ''])
+    const chosenExample = exampleSelection === null
+        ? specExamples?.find((example) => example.statusCode === config?.statusCode
+            && (!cr?.templateRef || example.exampleName === cr.templateRef))
+        : specExamples?.find((example) => exampleKey(example) === exampleSelection)
+    const selectionUnavailable = !examplesLoading && !examplesError && !chosenExample
+        && (exampleSelection === null || exampleSelection !== '')
     const templateValue = useMemo(() => {
         if (!chosenExample?.bodyExample) return undefined
         try {
@@ -292,16 +318,18 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
     const buildCollectionResponse = (): CollectionResponseConfig => ({
         primary: {
+            mode: primaryMode,
+            dataRules: primaryWrites ? primaryData.filter((r) => r.targetPath.trim()).map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })) : undefined,
             collectionName: primaryCollectionName.trim(),
-            filterRules: primaryFilters
+            filterRules: (primaryMode === 'insert' ? [] : primaryFilters)
                 .filter((r) => r.targetPath.trim())
                 .map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })),
         },
         additionalMappers: mappers
-            .filter((m) => m.outputKey.trim() && m.collectionName.trim())
             .map((m) => ({
                 outputKey: m.outputKey.trim(),
                 mode: m.mode,
+                dataRules: writesData(m.mode) ? m.data.filter((r) => r.targetPath.trim()).map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })) : undefined,
                 collectionName: m.collectionName.trim(),
                 filterRules: m.filters
                     .filter((r) => r.targetPath.trim())
@@ -310,7 +338,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
         overrides: overrides
             .filter((r) => r.targetPath.trim())
             .map((r) => ({ targetPath: r.targetPath.trim(), value: rowToBinding(r) })),
-        templateRef: templateRef || undefined,
+        templateRef: chosenExample?.exampleName || undefined,
         rootKind: isIdentityMode ? manualRootKind : undefined,
         matchOnEmpty,
         fallbackToExample,
@@ -340,13 +368,57 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
             setActiveTab('metadata')
             return
         }
+        if (examplesLoading || examplesError || !chosenExample) {
+            setError('Select a response example in Metadata before saving.')
+            setActiveTab('metadata')
+            return
+        }
+        const statusCode = chosenExample.statusCode
         if (!primaryCollectionName.trim()) {
             setError('A primary collection name is required')
             setActiveTab('query')
             return
         }
 
+        const bindingGroups: [EditorTab, BindingRowState[]][] = [
+            ['query', [...(primaryMode === 'insert' ? [] : primaryFilters), ...(primaryWrites ? primaryData : [])]],
+            ['mappers', mappers.flatMap((mapper) => [...mapper.filters, ...mapper.data])],
+            ['output', overrides],
+        ]
+        for (const [tab, rows] of bindingGroups) {
+            if (rows.some((row) => row.source !== 'literal' && !isValidDefaultJSON(row.defaultText))) {
+                setError('Default values must be valid JSON. Put text values in double quotes.')
+                setActiveTab(tab)
+                return
+            }
+        }
         const collectionResponse = buildCollectionResponse()
+        if ((primaryWrites || primaryMode === 'find-one') && derivedRootKind !== 'object'
+            || primaryMode === 'find-many' && derivedRootKind !== 'array') {
+            setError('The main operation must match the response root shape. Insert, Update, and Upsert require an object.')
+            setActiveTab('query')
+            return
+        }
+        if (primaryWrites && (!collectionResponse.primary.dataRules?.length || primaryMode !== 'insert' && !collectionResponse.primary.filterRules?.length)) {
+            setError('Insert requires data fields. Update and Upsert require query filters and data fields.')
+            setActiveTab('query')
+            return
+        }
+        const outputKeys = new Set<string>()
+        for (const mapper of collectionResponse.additionalMappers || []) {
+            if (!mapper.outputKey || !mapper.collectionName || outputKeys.has(mapper.outputKey)) {
+                setError('Each additional mapper needs a collection and a unique output key.')
+                setActiveTab('mappers')
+                return
+            }
+            outputKeys.add(mapper.outputKey)
+            if (writesData(mapper.mode) && !mapper.dataRules?.length
+                || ['update', 'upsert', 'delete'].includes(mapper.mode) && !mapper.filterRules?.length) {
+                setError(`Mapper ${mapper.outputKey}: ${mapper.mode} requires ${writesData(mapper.mode) ? 'data fields' : 'filters'}${['update', 'upsert'].includes(mapper.mode) ? ' and filters' : ''}.`)
+                setActiveTab('mappers')
+                return
+            }
+        }
 
         if (config) {
             updateMutation.mutate({
@@ -489,8 +561,30 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                         </select>
                                     </div>
                                     <div>
-                                        <label className={labelClass}>Status Code</label>
-                                        <input type="number" value={statusCode} onChange={(e) => setStatusCode(parseInt(e.target.value) || 200)} className={inputClass} min={100} max={599} />
+                                        <label htmlFor="collection-response-example" className={labelClass}>Response example *</label>
+                                        <select
+                                            id="collection-response-example"
+                                            required
+                                            value={chosenExample ? exampleKey(chosenExample) : ''}
+                                            onChange={(e) => setExampleSelection(e.target.value)}
+                                            disabled={examplesLoading || examplesError || !specExamples?.length}
+                                            aria-describedby="collection-response-example-help"
+                                            className={inputClass}
+                                        >
+                                            <option value="" disabled>
+                                                {examplesLoading ? 'Loading examples…' : selectionUnavailable ? 'Saved example unavailable — choose an example' : 'Select a response example'}
+                                            </option>
+                                            {(specExamples || []).map((example) => (
+                                                <option key={exampleKey(example)} value={exampleKey(example)}>
+                                                    {example.statusCode} — {example.exampleName || 'Default example'}{example.exampleSummary ? ` — ${example.exampleSummary}` : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <p id="collection-response-example-help" className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                            {examplesError ? 'Could not load response examples. Reopen the editor to retry.'
+                                                : !examplesLoading && !specExamples?.length ? 'No response examples are available. Add a response example to the operation’s spec before saving.'
+                                                : 'Required. Choose from all response examples; the selected example sets the status code and output template.'}
+                                        </p>
                                     </div>
                                 </div>
 
@@ -529,10 +623,10 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     label="Conditions"
                                     value={conditionTree}
                                     onChange={setConditionTree}
-                                    emptyHint="No explicit conditions — this response can match any request whose primary query returns data."
+                                    emptyHint={conditionOnly ? "No conditions — this response is eligible for any request." : "No explicit conditions — this response can match any request whose primary query returns data."}
                                 />
 
-                                <div className="flex items-center justify-between rounded-lg border border-teal-200 dark:border-teal-900/50 bg-teal-50 dark:bg-teal-950/20 px-3 py-2.5">
+                                {conditionOnly ? <p className="text-sm text-gray-600 dark:text-slate-300">Only response conditions determine selection. The main operation runs after this response is selected; Upsert filters do not affect selection.</p> : <div className="flex items-center justify-between rounded-lg border border-teal-200 dark:border-teal-900/50 bg-teal-50 dark:bg-teal-950/20 px-3 py-2.5">
                                     <div>
                                         <div className="text-sm font-medium text-teal-800 dark:text-teal-300">Primary query returns data</div>
                                         <div className="text-xs text-teal-700 dark:text-teal-400">Always required to match, in addition to any conditions above.</div>
@@ -541,7 +635,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                         <input type="checkbox" checked={matchOnEmpty} onChange={(e) => setMatchOnEmpty(e.target.checked)} />
                                         Match even when empty (render null / [])
                                     </label>
-                                </div>
+                                </div>}
                             </div>
                         )}
 
@@ -553,12 +647,23 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                         <input value={primaryCollectionName} onChange={(e) => setPrimaryCollectionName(e.target.value)} className={`${inputClass} font-mono`} placeholder="users" />
                                     </div>
                                     <div>
-                                        <label className={labelClass}>Operation (derived)</label>
-                                        <div className={`${inputClass} bg-gray-50 dark:bg-slate-900 flex items-center gap-2`}>
-                                            <span className="font-mono">{derivedRootKind === 'array' ? 'Find Many' : 'Find One'}</span>
-                                        </div>
-                                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
-                                            {isIdentityMode ? 'No spec body for this status — choose the root shape below.' : `Derived from the spec's ${statusCode} response shape.`}
+                                        <label className={labelClass}>Main operation</label>
+                                        <select className={inputClass} value={primaryMode || 'auto'} onChange={(e) => {
+                                            const mode = e.target.value === 'auto' ? undefined : e.target.value as PrimaryResponseMapper['mode']
+                                            setPrimaryMode(mode)
+                                            if (!mode || !writesData(mode)) setPrimaryData([])
+                                            if (isIdentityMode && mode) setManualRootKind(mode === 'find-many' ? 'array' : 'object')
+                                        }}>
+                                            <option value="auto">Automatic ({derivedRootKind === 'array' ? 'Find Many' : 'Find One'})</option>
+                                            <option value="find-one" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Find One</option>
+                                            <option value="find-many" disabled={!isIdentityMode && derivedRootKind !== 'array'}>Find Many</option>
+                                            <option value="update" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Update</option>
+                                            <option value="insert" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Insert</option>
+                                            <option value="upsert" disabled={!isIdentityMode && derivedRootKind !== 'object'}>Upsert</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                                            {conditionOnly ? 'Only conditions select this response. After selection, Insert creates a document; Upsert uses its filters to update or insert.' : primaryMode === 'update' ? 'Query filters select this response. Then the first matched document is updated and rendered.' : 'The query result determines whether this response is selected.'}
+                                            {derivedRootKind === 'array' && ' Insert, Update, and Upsert require an object response root.'}
                                         </p>
                                     </div>
                                 </div>
@@ -571,11 +676,11 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                 <button
                                                     key={k}
                                                     type="button"
-                                                    onClick={() => setManualRootKind(k)}
+                                                    onClick={() => { setManualRootKind(k); if (primaryMode && k !== manualRootKind) { setPrimaryMode(k === 'array' ? 'find-many' : 'find-one'); setPrimaryData([]) } }}
                                                     className={clsx(
                                                         'px-3 py-1.5 rounded-lg border text-sm',
                                                         manualRootKind === k
-                                                            ? 'bg-primary-50 border-primary-400 text-primary-700 dark:bg-primary-950/40 dark:border-primary-700 dark:text-primary-300'
+                                                            ? 'bg-primary-50 border-primary-400 text-primary-700 dark:bg-primary-900/40 dark:border-primary-700 dark:text-primary-300'
                                                             : 'bg-white border-gray-300 text-gray-600 dark:bg-slate-950 dark:border-slate-700 dark:text-slate-300',
                                                     )}
                                                 >
@@ -586,7 +691,8 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     </div>
                                 )}
 
-                                <div>
+                                {primaryWrites && <DataRulesEditor rows={primaryData} onChange={setPrimaryData} allowPrimary={primaryMode === 'update'} />}
+                                {primaryMode !== 'insert' && <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <label className={labelClass}>Query Filters</label>
                                         <button type="button" onClick={() => setPrimaryFilters([...primaryFilters, emptyRow()])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline">
@@ -610,7 +716,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                             />
                                         ))}
                                     </div>
-                                </div>
+                                </div>}
                             </div>
                         )}
 
@@ -621,7 +727,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     <div>
                                         <div className="text-sm font-medium text-indigo-800 dark:text-indigo-300">Additional data mappers</div>
                                         <div className="text-xs text-indigo-700 dark:text-indigo-400">
-                                            Secondary collection lookups used only to fill Output fields (e.g. via a "Mapper output" override). They never affect whether this response matches — only the primary query on the Query tab does that.
+                                            Run after the main operation, in the order shown, only when this response is selected. Reads and writes expose results through Mapper output overrides. Earlier writes remain if a later operation fails.
                                         </div>
                                     </div>
                                 </div>
@@ -656,11 +762,15 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                         <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Mode</label>
                                                         <select
                                                             value={m.mode}
-                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as QueryMode } : mm)))}
+                                                            onChange={(e) => setMappers(mappers.map((mm, j) => (j === i ? { ...mm, mode: e.target.value as CollectionOpType, filters: e.target.value === 'insert' ? [] : mm.filters, data: writesData(e.target.value as CollectionOpType) ? mm.data : [] } : mm)))}
                                                             className={inputClass}
                                                         >
                                                             <option value="find-one">Find One</option>
                                                             <option value="find-many">Find Many</option>
+                                                            <option value="insert">Insert</option>
+                                                            <option value="update">Update</option>
+                                                            <option value="upsert">Upsert</option>
+                                                            <option value="delete">Delete</option>
                                                         </select>
                                                     </div>
                                                     <div className="flex-1 min-w-[10rem]">
@@ -672,11 +782,14 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             className={`${inputClass} font-mono`}
                                                         />
                                                     </div>
+                                                    <button type="button" disabled={i === 0} className="px-2 py-1 text-sm text-gray-600 dark:text-slate-300 disabled:opacity-30" title="Move mapper up" aria-label="Move mapper up" onClick={() => setMappers((current) => { const next = [...current]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; return next })}>↑</button>
+                                                    <button type="button" disabled={i === mappers.length - 1} className="px-2 py-1 text-sm text-gray-600 dark:text-slate-300 disabled:opacity-30" title="Move mapper down" aria-label="Move mapper down" onClick={() => setMappers((current) => { const next = [...current]; [next[i + 1], next[i]] = [next[i], next[i + 1]]; return next })}>↓</button>
                                                     <button type="button" onClick={() => setMappers(mappers.filter((_, j) => j !== i))} className="p-2 text-gray-400 dark:text-slate-500 hover:text-red-600" title="Remove mapper">
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
-                                                <div>
+                                                {writesData(m.mode) && <DataRulesEditor rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
+                                                {m.mode !== 'insert' && <div>
                                                     <div className="flex items-center justify-between mb-1">
                                                         <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
                                                         <button
@@ -692,7 +805,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             <BindingRow
                                                                 key={k}
                                                                 row={row}
-                                                                sources={MAPPER_FILTER_SOURCES}
+                                                                sources={derivedRootKind === 'object' ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
                                                                 keyPlaceholder={filterKeyPlaceholder}
                                                                 targetPathLabel="Collection field"
                                                                 targetPathPlaceholder="_id"
@@ -701,7 +814,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                             />
                                                         ))}
                                                     </div>
-                                                </div>
+                                                </div>}
                                             </div>
                                         </div>
                                     ))}
@@ -733,21 +846,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                         {activeTab === 'output' && (
                             <div className="p-4 space-y-4">
-                                {matchingExamples.length > 1 && (
-                                    <div className="max-w-2xl">
-                                        <label className={labelClass}>Template (named example)</label>
-                                        <select value={templateRef} onChange={(e) => setTemplateRef(e.target.value)} className={inputClass}>
-                                            <option value="">(default)</option>
-                                            {matchingExamples.filter((e) => e.exampleName).map((e) => (
-                                                <option key={e.exampleName} value={e.exampleName}>{e.exampleName}{e.exampleSummary ? ` — ${e.exampleSummary}` : ''}</option>
-                                            ))}
-                                        </select>
-                                        <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
-                                            The spec's {statusCode} response defines more than one named example — pick which one shapes the output.
-                                        </p>
-                                    </div>
-                                )}
-
                                 <div className="flex items-center justify-between">
                                     <p className="text-xs text-gray-400 dark:text-slate-500 max-w-xl">
                                         Every response field fills automatically from the document field of the same name. Add an override only for fields that need a rename, a lookup, request context, or a literal.

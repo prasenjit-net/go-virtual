@@ -2,6 +2,7 @@ package collection
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 
 	"github.com/prasenjit/go-virtual/internal/store"
 )
@@ -64,70 +65,88 @@ func (o *Ops) FindMany(filter map[string]any) ([]map[string]any, error) {
 
 // Insert appends a new document and returns it (with auto-assigned _id).
 func (o *Ops) Insert(data map[string]any) (map[string]any, error) {
-	if err := store.AppendEvent(o.sess, o.name, store.CollectionEvent{Op: "insert", Data: copyDoc(data)}); err != nil {
-		return nil, err
+	return o.insert(data, "insert")
+}
+
+func (o *Ops) insert(data map[string]any, operation string) (map[string]any, error) {
+	doc := copyDoc(data)
+	if _, ok := doc["_id"]; !ok {
+		doc["_id"] = uuid.New().String()
 	}
-	docs, err := o.load()
+	if doc["_id"] == nil || fmt.Sprint(doc["_id"]) == "" {
+		return nil, fmt.Errorf("document identity is required")
+	}
+	existing, err := o.FindOne(map[string]any{"_id": doc["_id"]})
 	if err != nil {
 		return nil, err
 	}
-	if len(docs) == 0 {
-		return map[string]any{}, nil
+	if existing != nil {
+		return nil, fmt.Errorf("duplicate document identity %v", doc["_id"])
 	}
-	return copyDoc(docs[len(docs)-1]), nil
+	if err := store.AppendEvent(o.sess, o.name, store.CollectionEvent{Op: operation, Filter: map[string]any{"_id": doc["_id"]}, Data: doc}); err != nil {
+		return nil, err
+	}
+	return copyDoc(doc), nil
 }
 
 // Update finds the first document matching filter, merges changes into it, and
 // returns the post-update document. Returns nil if no document matched.
 func (o *Ops) Update(filter, changes map[string]any) (map[string]any, error) {
+	return o.update(filter, changes, "update")
+}
+
+func (o *Ops) update(filter, changes map[string]any, operation string) (map[string]any, error) {
+	if _, changesID := changes["_id"]; changesID {
+		return nil, fmt.Errorf("_id cannot be changed")
+	}
 	docs, err := o.load()
 	if err != nil {
 		return nil, err
 	}
-	var matched map[string]any
 	for _, doc := range docs {
-		if matchesFilter(doc, filter) {
-			matched = doc
-			break
+		if !matchesFilter(doc, filter) {
+			continue
 		}
-	}
-	if matched == nil {
-		return nil, nil
-	}
-	if err := store.AppendEvent(o.sess, o.name, store.CollectionEvent{Op: "update", Filter: filter, Data: changes}); err != nil {
-		return nil, err
-	}
-	updated, err := o.load()
-	if err != nil {
-		return nil, err
-	}
-	for _, doc := range updated {
-		if matchesFilter(doc, filter) {
-			return copyDoc(doc), nil
+		id, ok := doc["_id"]
+		if !ok || id == nil || fmt.Sprint(id) == "" {
+			return nil, fmt.Errorf("update target has no identity")
 		}
+		identity := map[string]any{"_id": id}
+		count := 0
+		for _, candidate := range docs {
+			if matchesFilter(candidate, identity) {
+				count++
+			}
+		}
+		if count != 1 {
+			return nil, fmt.Errorf("update target has ambiguous identity %v", id)
+		}
+		if err := store.AppendEvent(o.sess, o.name, store.CollectionEvent{Op: operation, Filter: identity, Data: copyDoc(changes)}); err != nil {
+			return nil, err
+		}
+		result := copyDoc(doc)
+		for key, value := range changes {
+			result[key] = value
+		}
+		return result, nil
 	}
 	return nil, nil
 }
 
-// Upsert finds the first document matching filter and merges data. If none
-// match, inserts a merged document. Returns the post-upsert document.
+// Upsert updates the first match or inserts a merged document with a stable ID.
 func (o *Ops) Upsert(filter, data map[string]any) (map[string]any, error) {
-	if err := store.AppendEvent(o.sess, o.name, store.CollectionEvent{Op: "upsert", Filter: filter, Data: data}); err != nil {
-		return nil, err
+	if _, changesID := data["_id"]; changesID {
+		return nil, fmt.Errorf("_id cannot be changed")
 	}
-	docs, err := o.load()
-	if err != nil {
-		return nil, err
+	doc, err := o.update(filter, data, "upsert")
+	if err != nil || doc != nil {
+		return doc, err
 	}
-	for _, doc := range docs {
-		if matchesFilter(doc, filter) {
-			return copyDoc(doc), nil
-		}
+	merged := copyDoc(filter)
+	for key, value := range data {
+		merged[key] = value
 	}
-	if len(docs) > 0 {
-		return copyDoc(docs[len(docs)-1]), nil
-	}
-	return nil, nil
+	return o.insert(merged, "upsert")
 }
 
 // Delete removes the first document matching filter and returns it.

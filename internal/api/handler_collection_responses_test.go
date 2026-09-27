@@ -538,3 +538,65 @@ func TestPreviewSession(t *testing.T) {
 		t.Fatal("expected Has(x) to be false after Delete")
 	}
 }
+
+func TestCollectionResponseOperationsRoundTripAndPreview(t *testing.T) {
+	handler, s, r, backend := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
+	r.POST("/responses/:id/clone", handler.CloneResponseConfig)
+	r.POST("/operations/:id/collection-responses/preview", handler.PreviewCollectionResponse)
+	backend.SeedInsert("users", map[string]any{"_id": "42", "id": "42", "name": "Alice"})
+	payload := validCollectionResponsePayload()
+	cr := map[string]any{
+		"primary":           map[string]any{"mode": "update", "collectionName": "users", "filterRules": []any{map[string]any{"targetPath": "_id", "value": map[string]any{"source": "literal", "value": "42"}}}, "dataRules": []any{map[string]any{"targetPath": "name", "value": map[string]any{"source": "literal", "value": "Updated"}}}},
+		"additionalMappers": []any{map[string]any{"mode": "insert", "outputKey": "audit", "collectionName": "audit", "dataRules": []any{map[string]any{"targetPath": "name", "value": map[string]any{"source": "primary", "key": "name"}}}}},
+	}
+	payload["collectionResponse"] = cr
+	request := func(path string, body any) *httptest.ResponseRecorder {
+		raw, _ := json.Marshal(body)
+		req := httptest.NewRequest("POST", path, bytes.NewReader(raw))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w
+	}
+	created := request("/operations/op-user/responses", payload)
+	if created.Code != 201 {
+		t.Fatalf("create: %d %s", created.Code, created.Body.String())
+	}
+	var cfg models.ResponseConfig
+	if err := json.Unmarshal(created.Body.Bytes(), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := s.GetResponseConfig(cfg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.CollectionResponse.Primary.Mode != models.ColOpUpdate || len(stored.CollectionResponse.Primary.DataRules) != 1 || stored.CollectionResponse.AdditionalMappers[0].Mode != models.ColOpInsert || len(stored.CollectionResponse.AdditionalMappers[0].DataRules) != 1 {
+		t.Fatal("operation fields lost during persistence")
+	}
+	clone := request("/responses/"+cfg.ID+"/clone", map[string]any{"name": "clone"})
+	if clone.Code != 201 {
+		t.Fatalf("clone: %s", clone.Body.String())
+	}
+	var cloned models.ResponseConfig
+	json.Unmarshal(clone.Body.Bytes(), &cloned)
+	left, _ := json.Marshal(cfg.CollectionResponse)
+	right, _ := json.Marshal(cloned.CollectionResponse)
+	if !bytes.Equal(left, right) {
+		t.Fatalf("clone lost configuration: %s != %s", left, right)
+	}
+	preview := request("/operations/op-user/collection-responses/preview", map[string]any{"statusCode": 200, "collectionResponse": cr})
+	if preview.Code != 200 {
+		t.Fatalf("preview: %s", preview.Body.String())
+	}
+	var result collectionResponsePreviewResult
+	json.Unmarshal(preview.Body.Bytes(), &result)
+	if !bytes.Contains([]byte(result.Body), []byte("Alice")) || len(result.Warnings) != 2 {
+		t.Fatalf("preview should skip writes: %+v", result)
+	}
+	base, _ := backend.GetAll("users")
+	audits, _ := backend.GetAll("audit")
+	if base[0]["name"] != "Alice" || len(audits) != 0 {
+		t.Fatal("preview or save mutated collections")
+	}
+}

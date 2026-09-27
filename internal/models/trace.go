@@ -85,6 +85,7 @@ type CollectionResponseAttempt struct {
 type CollectionResponseRenderTrace struct {
 	TemplateStatusCode int               `json:"templateStatusCode,omitempty"`
 	TemplateSource     string            `json:"templateSource,omitempty"` // "example" | "schema" | "identity"
+	PrimaryMapper      *CollectionTrace  `json:"primaryMapper,omitempty"`
 	AdditionalMappers  []CollectionTrace `json:"additionalMappers,omitempty"`
 	Warnings           []string          `json:"warnings,omitempty"`
 }

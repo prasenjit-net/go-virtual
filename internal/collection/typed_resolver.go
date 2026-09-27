@@ -43,11 +43,30 @@ type BindingContext struct {
 // ResolveValueBinding resolves one ValueBinding to a native JSON-compatible
 // value (string, float64, bool, nil, map[string]any, or []any).
 //
-// found is false when the referenced source has no value for this request —
+// A configured default is used only when the source is absent.
+// found is false when neither the source nor a default has a value —
 // this is distinguishable from an explicit JSON null, which resolves to
 // (nil, true, nil). err is non-nil only for a malformed binding, such as
 // invalid literal JSON.
 func ResolveValueBinding(b models.ValueBinding, ctx *BindingContext) (any, bool, error) {
+	if b.SkipWhenMissing && (len(b.DefaultValue) > 0 || b.Source == models.ValueSourceLiteral) {
+		return nil, false, fmt.Errorf("skipWhenMissing requires a nonliteral source and cannot be combined with defaultValue")
+	}
+	if b.Source == models.ValueSourceLiteral && len(b.DefaultValue) > 0 {
+		return nil, false, fmt.Errorf("defaultValue is not allowed for literal sources")
+	}
+	value, found, err := resolveBindingSource(b, ctx)
+	if err != nil || found || len(b.DefaultValue) == 0 {
+		return value, found, err
+	}
+	var fallback any
+	if err := json.Unmarshal(b.DefaultValue, &fallback); err != nil {
+		return nil, false, fmt.Errorf("invalid default JSON: %w", err)
+	}
+	return fallback, true, nil
+}
+
+func resolveBindingSource(b models.ValueBinding, ctx *BindingContext) (any, bool, error) {
 	switch b.Source {
 	case models.ValueSourceLiteral:
 		if len(b.Value) == 0 {
@@ -83,11 +102,8 @@ func ResolveValueBinding(b models.ValueBinding, ctx *BindingContext) (any, bool,
 		if ctx == nil || ctx.Request == nil || ctx.Request.Headers == nil {
 			return nil, false, nil
 		}
-		v := ctx.Request.Headers.Get(b.Key)
-		if v == "" {
-			return nil, false, nil
-		}
-		return v, true, nil
+		v, found := headerValue(ctx.Request.Headers, b.Key)
+		return v, found, nil
 
 	case models.ValueSourceBody:
 		if ctx == nil || ctx.Request == nil || ctx.Request.Body == "" {
@@ -129,6 +145,9 @@ func ResolveValueBinding(b models.ValueBinding, ctx *BindingContext) (any, bool,
 		return v, ok, nil
 
 	default:
+		if len(b.DefaultValue) > 0 || b.SkipWhenMissing {
+			return nil, false, fmt.Errorf("invalid binding source %q", b.Source)
+		}
 		return nil, false, nil
 	}
 }
@@ -140,9 +159,12 @@ func ResolveValueBinding(b models.ValueBinding, ctx *BindingContext) (any, bool,
 func ResolveFilterMap(filters []models.CollectionFilter, ctx *BindingContext) (map[string]any, error) {
 	out := make(map[string]any, len(filters))
 	for _, f := range filters {
-		v, _, err := ResolveValueBinding(f.Value, ctx)
+		v, found, err := ResolveValueBinding(f.Value, ctx)
 		if err != nil {
 			return nil, fmt.Errorf("filter %q: %w", f.TargetPath, err)
+		}
+		if !found && f.Value.SkipWhenMissing {
+			continue
 		}
 		out[f.TargetPath] = v
 	}
@@ -191,4 +213,23 @@ func GetPath(doc any, path string) (any, bool) {
 		}
 	}
 	return cur, true
+}
+
+// ResolveRequiredMap rejects absent bindings while preserving explicit JSON null.
+func ResolveRequiredMap(rules []models.CollectionFilter, ctx *BindingContext) (map[string]any, error) {
+	out := make(map[string]any, len(rules))
+	for _, rule := range rules {
+		value, found, err := ResolveValueBinding(rule.Value, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("field %q: %w", rule.TargetPath, err)
+		}
+		if !found && rule.Value.SkipWhenMissing {
+			continue
+		}
+		if !found {
+			return nil, fmt.Errorf("field %q: source value is missing", rule.TargetPath)
+		}
+		out[rule.TargetPath] = value
+	}
+	return out, nil
 }

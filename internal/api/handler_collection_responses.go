@@ -132,8 +132,7 @@ func (h *Handler) PreviewCollectionResponse(c *gin.Context) {
 
 // previewSession is a minimal in-memory session.SessionState used only for
 // preview: it lets the collection ops layer run reads without requiring a
-// real request session, and every write it might make (none, for find-one/
-// find-many) is discarded with the request.
+// real request session. Render skips mutation operations during preview.
 type previewSession map[string]any
 
 func (s previewSession) Get(key string) (any, bool)      { v, ok := s[key]; return v, ok }

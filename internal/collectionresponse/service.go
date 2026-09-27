@@ -3,6 +3,7 @@ package collectionresponse
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/prasenjit/go-virtual/internal/collection"
 	"github.com/prasenjit/go-virtual/internal/models"
@@ -27,18 +28,23 @@ func NewService(s storage.Storage, backend store.CollectionBackend) *Service {
 // MatchResult is the outcome of evaluating a Collection Response's primary
 // query during matching.
 type MatchResult struct {
-	Matched     bool
-	RootKind    models.RootKind
-	Template    *ResolvedTemplate
-	Doc         map[string]any   // object root
-	Docs        []map[string]any // array root
-	Filter      map[string]any
-	RecordCount int
+	Matched          bool
+	RootKind         models.RootKind
+	Template         *ResolvedTemplate
+	Doc              map[string]any   // object root
+	Docs             []map[string]any // array root
+	Filter           map[string]any
+	RecordCount      int
+	executionStarted bool
+	prepared         bool
+	mapperOutputs    map[string]any
+	mapperTraces     []models.CollectionTrace
+	primaryTrace     *models.CollectionTrace
 }
 
-// TryMatch resolves the template's root kind, runs the primary query, and
-// reports whether the response matches. It performs the query at most once;
-// the result is carried by MatchResult for Render to reuse.
+// TryMatch resolves the template's root kind and reports collection eligibility.
+// Insert/Upsert require no query; other modes query at most once and retain
+// their result for execution and rendering. The caller evaluates conditions.
 //
 // A nil sess (no session-scoped collection state available) never matches —
 // this mirrors how CollectionMapping steps are skipped without a session.
@@ -52,13 +58,30 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 	if err != nil {
 		return nil, err
 	}
+	if (isMutation(cr.Primary.Mode) || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
+		return nil, fmt.Errorf("primary.mode %s requires an object response root", cr.Primary.Mode)
+	}
+	if cr.Primary.Mode == models.ColOpFindMany && rootKind != models.RootKindArray {
+		return nil, fmt.Errorf("primary.mode find-many requires an array response root")
+	}
 	res := &MatchResult{RootKind: rootKind, Template: tmpl}
 	if sess == nil {
 		return res, nil
 	}
 
+	// Conditions are evaluated by the response selector. These operations have
+	// no read prerequisite; upsert filters are resolved only after selection.
+	if cr.Primary.Mode == models.ColOpInsert || cr.Primary.Mode == models.ColOpUpsert {
+		res.Matched = true
+		return res, nil
+	}
+
 	bctx := &collection.BindingContext{Request: req}
-	filter, err := collection.ResolveFilterMap(cr.Primary.FilterRules, bctx)
+	resolve := collection.ResolveFilterMap
+	if cr.Primary.Mode == models.ColOpUpdate {
+		resolve = collection.ResolveRequiredMap
+	}
+	filter, err := resolve(cr.Primary.FilterRules, bctx)
 	if err != nil {
 		return nil, err
 	}
@@ -93,16 +116,21 @@ type RenderResult struct {
 	Body                   []byte
 	Warnings               []string
 	AdditionalMapperTraces []models.CollectionTrace
+	PrimaryMapperTrace     *models.CollectionTrace
 }
 
-// Render runs additional mappers and fills the template with the primary
-// match's document(s), returning the JSON-encoded body. Call only after
-// TryMatch reported Matched.
+// Render fills the template from a selected operation result. For preview, an
+// unprepared match runs only additional reads and reports skipped writes.
 func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *collection.TypedRequestContext, sess store.SessionState) (*RenderResult, error) {
 	cr := cfg.CollectionResponse
-	mappers, mapperTraces, err := s.runAdditionalMappers(cr, match, req, sess)
-	if err != nil {
-		return &RenderResult{AdditionalMapperTraces: mapperTraces}, err
+	mappers, mapperTraces := match.mapperOutputs, match.mapperTraces
+	if !match.prepared {
+		// Rendering and preview may read, but never execute configured mutations.
+		var err error
+		mappers, mapperTraces, err = s.runAdditionalMappers(cr, match, req, sess, false)
+		if err != nil {
+			return &RenderResult{AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, err
+		}
 	}
 
 	overrideMap := make(map[string]models.FieldOverride, len(cr.Overrides))
@@ -113,6 +141,16 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 	identity := match.Template.Source == TemplateSourceIdentity
 	var value any
 	var warnings []string
+	if !match.prepared && isMutation(cr.Primary.Mode) {
+		warnings = append(warnings, "Preview does not execute the main "+string(cr.Primary.Mode)+"; no write result is simulated.")
+	}
+	if !match.prepared {
+		for _, m := range cr.AdditionalMappers {
+			if isMutation(m.Mode) {
+				warnings = append(warnings, "Preview skipped mutation mapper: "+m.OutputKey)
+			}
+		}
+	}
 
 	switch match.RootKind {
 	case models.RootKindArray:
@@ -135,69 +173,179 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 		if match.Doc == nil {
 			value = nil
 		} else if identity {
-			value, warnings = fillIdentity(match.Doc, overrideMap, req, mappers)
+			var w []string
+			value, w = fillIdentity(match.Doc, overrideMap, req, mappers)
+			warnings = append(warnings, w...)
 		} else {
-			value, warnings = FillDocument(match.Template.Value, match.Doc, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
+			var w []string
+			value, w = FillDocument(match.Template.Value, match.Doc, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
+			warnings = append(warnings, w...)
 		}
 	}
 
 	body, err := json.Marshal(value)
 	if err != nil {
-		return &RenderResult{AdditionalMapperTraces: mapperTraces}, fmt.Errorf("marshal rendered collection response: %w", err)
+		return &RenderResult{AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, fmt.Errorf("marshal rendered collection response: %w", err)
 	}
-	return &RenderResult{Body: body, Warnings: warnings, AdditionalMapperTraces: mapperTraces}, nil
+	return &RenderResult{Body: body, Warnings: warnings, AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, nil
 }
 
-func (s *Service) runAdditionalMappers(cr *models.CollectionResponseConfig, match *MatchResult, req *collection.TypedRequestContext, sess store.SessionState) (map[string]any, []models.CollectionTrace, error) {
-	if len(cr.AdditionalMappers) == 0 {
-		return nil, nil, nil
+// ExecuteSelected performs operations once after matching. Render remains read-only.
+// The returned snapshot carries partial diagnostics even on failure.
+func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult, req *collection.TypedRequestContext, sess store.SessionState) (*MatchResult, error) {
+	if match.executionStarted || match.prepared {
+		return match, fmt.Errorf("collection response operations already executed")
 	}
-	mappers := make(map[string]any, len(cr.AdditionalMappers))
-	traces := make([]models.CollectionTrace, 0, len(cr.AdditionalMappers))
-
-	for _, m := range cr.AdditionalMappers {
-		bctx := &collection.BindingContext{Request: req, Primary: match.Doc}
-		filter, err := collection.ResolveFilterMap(m.FilterRules, bctx)
-		if err != nil {
-			return mappers, traces, err
-		}
-
-		trace := models.CollectionTrace{MappingName: m.OutputKey, CollectionName: m.CollectionName, OutputKey: m.OutputKey}
-		ops := collection.NewOps(m.CollectionName, s.backend, sess)
-
-		if m.Mode == models.QueryModeFindMany {
-			trace.Operation = models.ColOpFindMany
-			docs, err := ops.FindMany(filter)
-			if err != nil {
-				trace.Error = err.Error()
-				traces = append(traces, trace)
-				return mappers, traces, err
+	match.executionStarted = true
+	result := *match
+	result.prepared = true
+	if !match.Matched || sess == nil {
+		return &result, fmt.Errorf("collection response execution requires a selected response and session")
+	}
+	cr := cfg.CollectionResponse
+	if cr.Primary.Mode == models.ColOpUpdate {
+		start := time.Now()
+		trace := &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: models.ColOpUpdate}
+		result.primaryTrace = trace
+		var err error
+		if match.Doc != nil {
+			var data map[string]any
+			data, err = collection.ResolveRequiredMap(cr.Primary.DataRules, &collection.BindingContext{Request: req, Primary: match.Doc})
+			if err == nil {
+				id, exists := match.Doc["_id"]
+				if !exists || id == nil || fmt.Sprint(id) == "" {
+					err = fmt.Errorf("selected document has no identity")
+				} else {
+					result.Doc, err = collection.NewOps(cr.Primary.CollectionName, s.backend, sess).Update(map[string]any{"_id": id}, data)
+					if err == nil && result.Doc == nil {
+						err = fmt.Errorf("selected update target no longer exists")
+					}
+				}
 			}
-			trace.RecordCount = len(docs)
-			arr := make([]any, len(docs))
-			for i, d := range docs {
-				arr[i] = d
+			if err == nil {
+				trace.RecordCount = 1
 			}
-			mappers[m.OutputKey] = arr
-			traces = append(traces, trace)
-			continue
 		}
-
-		trace.Operation = models.ColOpFindOne
-		doc, err := ops.FindOne(filter)
+		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
 		if err != nil {
 			trace.Error = err.Error()
-			traces = append(traces, trace)
-			return mappers, traces, err
+			return &result, err
 		}
-		if doc != nil {
-			trace.RecordCount = 1
-		}
-		mappers[m.OutputKey] = doc
-		traces = append(traces, trace)
 	}
+	if cr.Primary.Mode == models.ColOpInsert || cr.Primary.Mode == models.ColOpUpsert {
+		start := time.Now()
+		trace := &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: cr.Primary.Mode}
+		result.primaryTrace = trace
+		ctx := &collection.BindingContext{Request: req}
+		data, err := collection.ResolveRequiredMap(cr.Primary.DataRules, ctx)
+		if err == nil {
+			ops := collection.NewOps(cr.Primary.CollectionName, s.backend, sess)
+			if cr.Primary.Mode == models.ColOpInsert {
+				result.Doc, err = ops.Insert(data)
+			} else {
+				var filter map[string]any
+				filter, err = collection.ResolveRequiredMap(cr.Primary.FilterRules, ctx)
+				result.Filter = filter
+				if err == nil {
+					result.Doc, err = ops.Upsert(filter, data)
+				}
+			}
+		}
+		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
+		if err != nil {
+			trace.Error = err.Error()
+			return &result, err
+		}
+		if result.Doc != nil {
+			trace.RecordCount = 1
+			result.RecordCount = 1
+		}
+	}
+	outputs, traces, err := s.runAdditionalMappers(cr, &result, req, sess, true)
+	result.mapperOutputs, result.mapperTraces = outputs, traces
+	return &result, err
+}
 
-	return mappers, traces, nil
+func isMutation(mode models.CollectionOpType) bool {
+	return mode == models.ColOpInsert || mode == models.ColOpUpdate || mode == models.ColOpUpsert || mode == models.ColOpDelete
+}
+
+func (s *Service) runAdditionalMappers(cr *models.CollectionResponseConfig, match *MatchResult, req *collection.TypedRequestContext, sess store.SessionState, executeWrites bool) (map[string]any, []models.CollectionTrace, error) {
+	outputs := make(map[string]any, len(cr.AdditionalMappers))
+	traces := make([]models.CollectionTrace, 0, len(cr.AdditionalMappers))
+	// Preflight bindings before any additional writes. Primary is the main operation result.
+	filters := make([]map[string]any, len(cr.AdditionalMappers))
+	data := make([]map[string]any, len(cr.AdditionalMappers))
+	for i, m := range cr.AdditionalMappers {
+		if isMutation(m.Mode) && !executeWrites {
+			continue
+		}
+		ctx := &collection.BindingContext{Request: req, Primary: match.Doc}
+		resolve := collection.ResolveFilterMap
+		if isMutation(m.Mode) {
+			resolve = collection.ResolveRequiredMap
+		}
+		var err error
+		filters[i], err = resolve(m.FilterRules, ctx)
+		if err == nil {
+			data[i], err = collection.ResolveRequiredMap(m.DataRules, ctx)
+		}
+		if err != nil {
+			traces = append(traces, models.CollectionTrace{MappingName: m.OutputKey, OutputKey: m.OutputKey, CollectionName: m.CollectionName, Operation: m.Mode, Error: err.Error()})
+			return outputs, traces, err
+		}
+	}
+	for i, m := range cr.AdditionalMappers {
+		if isMutation(m.Mode) && !executeWrites {
+			outputs[m.OutputKey] = nil
+			continue
+		}
+		start := time.Now()
+		trace := models.CollectionTrace{MappingName: m.OutputKey, OutputKey: m.OutputKey, CollectionName: m.CollectionName, Operation: m.Mode}
+		ops := collection.NewOps(m.CollectionName, s.backend, sess)
+		var doc map[string]any
+		var err error
+		switch m.Mode {
+		case models.ColOpFindMany:
+			var docs []map[string]any
+			docs, err = ops.FindMany(filters[i])
+			arr := make([]any, len(docs))
+			for j, d := range docs {
+				arr[j] = d
+			}
+			outputs[m.OutputKey] = arr
+			trace.RecordCount = len(docs)
+		case models.ColOpFindOne:
+			doc, err = ops.FindOne(filters[i])
+		case models.ColOpInsert:
+			doc, err = ops.Insert(data[i])
+		case models.ColOpUpdate:
+			doc, err = ops.Update(filters[i], data[i])
+		case models.ColOpUpsert:
+			doc, err = ops.Upsert(filters[i], data[i])
+		case models.ColOpDelete:
+			doc, err = ops.Delete(filters[i])
+		default:
+			err = fmt.Errorf("unsupported mapper operation %q", m.Mode)
+		}
+		if m.Mode != models.ColOpFindMany {
+			if doc != nil {
+				outputs[m.OutputKey] = doc
+				trace.RecordCount = 1
+			} else {
+				outputs[m.OutputKey] = nil
+			}
+		}
+		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
+		if err != nil {
+			trace.Error = err.Error()
+		}
+		traces = append(traces, trace)
+		if err != nil {
+			return outputs, traces, err
+		}
+	}
+	return outputs, traces, nil
 }
 
 // resolveRootKind resolves the operation's spec template for cfg's status
@@ -248,15 +396,21 @@ func (s *Service) ValidateAgainstOperation(op *models.Operation, cfg *models.Res
 	}
 
 	var errs []string
+	if (isMutation(cr.Primary.Mode) || cr.Primary.Mode == models.ColOpFindOne) && rootKind != models.RootKindObject {
+		errs = append(errs, "primary.mode requires an object response root")
+	}
+	if cr.Primary.Mode == models.ColOpFindMany && rootKind != models.RootKindArray {
+		errs = append(errs, "primary.mode find-many requires an array response root")
+	}
 	if tmpl.Source == TemplateSourceIdentity && cr.RootKind == "" {
 		errs = append(errs, "rootKind is required because the operation defines no JSON response body for this status code")
 	}
 	if rootKind == models.RootKindArray {
 		for i, m := range cr.AdditionalMappers {
-			for j, f := range m.FilterRules {
+			for j, f := range append(append([]models.CollectionFilter(nil), m.FilterRules...), m.DataRules...) {
 				if f.Value.Source == models.ValueSourcePrimary {
 					errs = append(errs, fmt.Sprintf(
-						"additionalMappers[%d].filterRules[%d]: source \"primary\" requires the primary query to return a single document (object-rooted template)",
+						"additionalMappers[%d].bindings[%d]: source \"primary\" requires the primary query to return a single document (object-rooted template)",
 						i, j,
 					))
 				}
@@ -275,4 +429,9 @@ func (s *Service) ResolveTemplateFor(op *models.Operation, statusCode int, templ
 		return nil, err
 	}
 	return ResolveTemplate(s.parser, specContent, op, statusCode, templateRef)
+}
+
+// RenderTrace keeps operation diagnostics available when execution or filling fails.
+func (m *MatchResult) RenderTrace(statusCode int) *models.CollectionResponseRenderTrace {
+	return &models.CollectionResponseRenderTrace{TemplateStatusCode: statusCode, TemplateSource: string(m.Template.Source), PrimaryMapper: m.primaryTrace, AdditionalMappers: m.mapperTraces}
 }

@@ -1,5 +1,10 @@
 package models
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 // CollectionOpType identifies the operation a CollectionMapping performs.
 type CollectionOpType string
 
@@ -24,7 +29,9 @@ type FieldMappingRule struct {
 	//   path/query/header/session/store → parameter or key name
 	//   body → dot-notation JSON path (e.g. "user.email")
 	//   literal → the value itself
-	SourceKey string `json:"sourceKey"`
+	SourceKey       string  `json:"sourceKey"`
+	SkipWhenMissing bool    `json:"skipWhenMissing,omitempty"`
+	DefaultValue    *string `json:"defaultValue,omitempty"`
 }
 
 // CollectionMapping attaches collection read/write operations to a Spec,
@@ -86,4 +93,42 @@ type CollectionTrace struct {
 	DurationMs     float64          `json:"durationMs"`
 	RecordCount    int              `json:"recordCount"`
 	Error          string           `json:"error,omitempty"`
+}
+
+// UnmarshalJSON preserves absence versus an empty default and rejects invalid defaults
+// on every JSON entry point, including archives.
+func (r *FieldMappingRule) UnmarshalJSON(data []byte) error {
+	type plain FieldMappingRule
+	var decoded plain
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if raw, exists := fields["defaultValue"]; exists {
+		var value any
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		if _, ok := value.(string); !ok {
+			return fmt.Errorf("defaultValue must be a string")
+		}
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if decoded.SkipWhenMissing && decoded.DefaultValue != nil {
+		return fmt.Errorf("choose either defaultValue or skipWhenMissing")
+	}
+	if decoded.DefaultValue != nil || decoded.SkipWhenMissing {
+		switch decoded.SourceType {
+		case "path", "query", "header", "body", "session", "store":
+		default:
+			return fmt.Errorf("missing-value behavior requires a nonliteral mapping source")
+		}
+		if decoded.SourceKey == "" && decoded.SourceType != "body" {
+			return fmt.Errorf("sourceKey is required for missing-value behavior")
+		}
+	}
+	*r = FieldMappingRule(decoded)
+	return nil
 }
