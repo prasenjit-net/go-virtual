@@ -375,7 +375,13 @@ func TestServeHTTP_UpdateFailurePreservesTraceAndSession(t *testing.T) {
 	if len(traces) != 1 {
 		t.Fatal("missing trace")
 	}
+	if traces[0].MatchedConfigID != cfg.ID || traces[0].MatchedConfig != cfg.Name || traces[0].Session == nil || traces[0].Session.ID != w.Header().Get("X-Session-Id") || traces[0].Response.Body != w.Body.String() {
+		t.Fatalf("failure metadata lost: %+v", traces[0])
+	}
 	render := traces[0].CollectionResponseRender
+	if render != nil && render.Error == "" {
+		t.Fatal("execution error missing from render trace")
+	}
 	if render == nil || render.PrimaryMapper.RecordCount != 1 || len(render.AdditionalMappers) != 1 || render.AdditionalMappers[0].Error == "" {
 		t.Fatalf("partial diagnostics lost: %+v", render)
 	}
@@ -438,5 +444,79 @@ func TestServeHTTP_InsertUpsertConditionOnlySelection(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestCollectionTraceRetainsSelectionAcrossOutcomes(t *testing.T) {
+	for _, scenario := range []string{"read", "example-fallback", "not-found", "condition-fails", "selection-error", "insert"} {
+		t.Run(scenario, func(t *testing.T) {
+			engine, s, backend := setupCollectionTestEngine(t)
+			setupUserSpecAndOperation(t, s)
+			spec, _ := s.GetSpec("spec-1")
+			spec.Tracing = true
+			spec.UseExampleFallback = scenario == "example-fallback"
+			s.UpdateSpec(spec)
+			op, _ := s.GetOperation("op-1")
+			op.ExampleResponse = &models.ExampleResponse{StatusCode: 200, Body: `{"name":"example"}`}
+			s.CreateOperation(op)
+			cfg := collectionResponseConfig("trace-config", 1)
+			switch scenario {
+			case "read":
+				backend.SeedInsert("users", map[string]any{"_id": "42", "id": "42", "name": "Alice"})
+			case "condition-fails":
+				cfg.Conditions = []models.Condition{{Source: "path", Key: "id", Operator: "eq", Value: "999"}}
+			case "selection-error":
+				cfg.CollectionResponse.Primary.Mode = models.ColOpUpdate
+				cfg.CollectionResponse.Primary.FilterRules[0].Value.Key = "missing"
+				cfg.CollectionResponse.Primary.DataRules = []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: json.RawMessage(`"Updated"`)}}}
+			case "insert":
+				cfg.CollectionResponse.Primary.Mode = models.ColOpInsert
+				cfg.CollectionResponse.Primary.FilterRules = nil
+				cfg.CollectionResponse.Primary.DataRules = []models.CollectionFilter{{TargetPath: "name", Value: models.ValueBinding{Source: models.ValueSourceLiteral, Value: json.RawMessage(`"Created"`)}}}
+			}
+			s.CreateResponseConfig(cfg)
+			engine.ReloadRoutes()
+			w := httptest.NewRecorder()
+			engine.ServeHTTP(w, httptest.NewRequest("GET", "/api/users/42", nil))
+			traces := engine.tracingService.GetTraces(&models.TraceFilter{})
+			if len(traces) != 1 {
+				t.Fatalf("trace missing: %d %s", w.Code, w.Body.String())
+			}
+			trace := traces[0]
+			if trace.Response.Body != w.Body.String() || trace.Response.StatusCode != w.Code {
+				t.Fatal("trace differs from wire response")
+			}
+			if len(trace.CollectionResponseAttempts) != 1 {
+				t.Fatalf("attempt missing: %+v", trace)
+			}
+			attempt := trace.CollectionResponseAttempts[0]
+			if attempt.ResponseConfigID != cfg.ID || attempt.Reason == "" {
+				t.Fatalf("attempt: %+v", attempt)
+			}
+			switch scenario {
+			case "read":
+				primary := trace.CollectionResponseRender.PrimaryMapper
+				if !attempt.QueryExecuted || primary == nil || primary.Operation != models.ColOpFindOne || primary.RecordCount != 1 || primary.Filter["_id"] != "42" || primary.Result.(map[string]any)["name"] != "Alice" {
+					t.Fatalf("read trace: %+v", primary)
+				}
+			case "insert":
+				primary := trace.CollectionResponseRender.PrimaryMapper
+				if attempt.QueryExecuted || !attempt.Matched || attempt.Mode != "insert" || primary.Data["name"] != "Created" || primary.Result.(map[string]any)["name"] != "Created" {
+					t.Fatalf("insert trace: %+v %+v", attempt, primary)
+				}
+			case "selection-error":
+				if w.Code != 500 || attempt.Error == "" || attempt.Matched || attempt.QueryExecuted {
+					t.Fatalf("failed attempt: %+v", attempt)
+				}
+			case "condition-fails":
+				if attempt.QueryExecuted || attempt.Matched {
+					t.Fatalf("conditions: %+v", attempt)
+				}
+			default:
+				if !attempt.QueryExecuted || attempt.Matched || attempt.Filter["_id"] != "42" {
+					t.Fatalf("fallback attempt: %+v", attempt)
+				}
+			}
+		})
 	}
 }

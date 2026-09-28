@@ -733,23 +733,24 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				).Observe(duration.Seconds())
 				if matchedRoute.spec.Tracing {
 					e.tracingService.RecordTrace(&models.Trace{
-						SpecID:              matchedRoute.spec.ID,
-						SpecName:            matchedRoute.spec.Name,
-						OperationID:         matchedRoute.operation.ID,
-						OperationPath:       matchedRoute.operation.Path,
-						Timestamp:           startTime,
-						Duration:            duration.Nanoseconds(),
-						ResponseSource:      models.TraceResponseSourceAI,
-						ResponseTier:        models.TraceResponseTierFallback,
-						Signature:           signature,
-						AISkippedReason:     aiSkippedReason,
-						ProxySkippedReason:  proxySkippedReason,
-						AIScenarioRequested: requestedScenarioName,
-						AIScenarioApplied:   aiScenarioName(appliedScenario),
-						Scripts:             scriptTraces,
-						Validations:         validationTraces,
-						Collections:         earlyCollectionTraces,
-						Pipeline:            pipelineTrace,
+						CollectionResponseAttempts: collAttempts,
+						SpecID:                     matchedRoute.spec.ID,
+						SpecName:                   matchedRoute.spec.Name,
+						OperationID:                matchedRoute.operation.ID,
+						OperationPath:              matchedRoute.operation.Path,
+						Timestamp:                  startTime,
+						Duration:                   duration.Nanoseconds(),
+						ResponseSource:             models.TraceResponseSourceAI,
+						ResponseTier:               models.TraceResponseTierFallback,
+						Signature:                  signature,
+						AISkippedReason:            aiSkippedReason,
+						ProxySkippedReason:         proxySkippedReason,
+						AIScenarioRequested:        requestedScenarioName,
+						AIScenarioApplied:          aiScenarioName(appliedScenario),
+						Scripts:                    scriptTraces,
+						Validations:                validationTraces,
+						Collections:                earlyCollectionTraces,
+						Pipeline:                   pipelineTrace,
 						Request: models.TraceRequest{
 							Method:  r.Method,
 							URL:     r.URL.String(),
@@ -811,24 +812,25 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			).Observe(duration.Seconds())
 			if matchedRoute.spec.Tracing {
 				e.tracingService.RecordTrace(&models.Trace{
-					SpecID:              matchedRoute.spec.ID,
-					SpecName:            matchedRoute.spec.Name,
-					OperationID:         matchedRoute.operation.ID,
-					OperationPath:       matchedRoute.operation.Path,
-					Timestamp:           startTime,
-					Duration:            duration.Nanoseconds(),
-					MatchedConfig:       "[ai-generated]",
-					ResponseSource:      models.TraceResponseSourceAI,
-					ResponseTier:        models.TraceResponseTierFallback,
-					Signature:           signature,
-					AISkippedReason:     aiSkippedReason,
-					ProxySkippedReason:  proxySkippedReason,
-					AIScenarioRequested: requestedScenarioName,
-					AIScenarioApplied:   aiScenarioName(appliedScenario),
-					Scripts:             scriptTraces,
-					Validations:         validationTraces,
-					Collections:         earlyCollectionTraces,
-					Pipeline:            pipelineTrace,
+					CollectionResponseAttempts: collAttempts,
+					SpecID:                     matchedRoute.spec.ID,
+					SpecName:                   matchedRoute.spec.Name,
+					OperationID:                matchedRoute.operation.ID,
+					OperationPath:              matchedRoute.operation.Path,
+					Timestamp:                  startTime,
+					Duration:                   duration.Nanoseconds(),
+					MatchedConfig:              "[ai-generated]",
+					ResponseSource:             models.TraceResponseSourceAI,
+					ResponseTier:               models.TraceResponseTierFallback,
+					Signature:                  signature,
+					AISkippedReason:            aiSkippedReason,
+					ProxySkippedReason:         proxySkippedReason,
+					AIScenarioRequested:        requestedScenarioName,
+					AIScenarioApplied:          aiScenarioName(appliedScenario),
+					Scripts:                    scriptTraces,
+					Validations:                validationTraces,
+					Collections:                earlyCollectionTraces,
+					Pipeline:                   pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -891,20 +893,21 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 			if matchedRoute.spec.Tracing {
 				e.tracingService.RecordTrace(&models.Trace{
-					SpecID:             matchedRoute.spec.ID,
-					SpecName:           matchedRoute.spec.Name,
-					OperationID:        matchedRoute.operation.ID,
-					OperationPath:      matchedRoute.operation.Path,
-					Timestamp:          startTime,
-					Duration:           duration.Nanoseconds(),
-					MatchedConfig:      "spec-example",
-					ResponseSource:     models.TraceResponseSourceExample,
-					ResponseTier:       models.TraceResponseTierFallback,
-					ProxySkippedReason: proxySkippedReason,
-					Scripts:            scriptTraces,
-					Validations:        validationTraces,
-					Collections:        earlyCollectionTraces,
-					Pipeline:           pipelineTrace,
+					CollectionResponseAttempts: collAttempts,
+					SpecID:                     matchedRoute.spec.ID,
+					SpecName:                   matchedRoute.spec.Name,
+					OperationID:                matchedRoute.operation.ID,
+					OperationPath:              matchedRoute.operation.Path,
+					Timestamp:                  startTime,
+					Duration:                   duration.Nanoseconds(),
+					MatchedConfig:              "spec-example",
+					ResponseSource:             models.TraceResponseSourceExample,
+					ResponseTier:               models.TraceResponseTierFallback,
+					ProxySkippedReason:         proxySkippedReason,
+					Scripts:                    scriptTraces,
+					Validations:                validationTraces,
+					Collections:                earlyCollectionTraces,
+					Pipeline:                   pipelineTrace,
 					Request: models.TraceRequest{
 						Method:  r.Method,
 						URL:     r.URL.String(),
@@ -928,7 +931,19 @@ func (e *Engine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"event", "response_config_not_found",
 		)
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error": "No matching response configuration for this request"}`))
+		body := `{"error": "No matching response configuration for this request"}`
+		_, _ = w.Write([]byte(body))
+		if matchedRoute.spec.Tracing {
+			e.tracingService.RecordTrace(&models.Trace{
+				SpecID: matchedRoute.spec.ID, SpecName: matchedRoute.spec.Name,
+				OperationID: matchedRoute.operation.ID, OperationPath: matchedRoute.operation.Path,
+				Timestamp: startTime, Duration: time.Since(startTime).Nanoseconds(),
+				ResponseTier: models.TraceResponseTierFallback, CollectionResponseAttempts: collAttempts,
+				Scripts: scriptTraces, Validations: validationTraces, Collections: earlyCollectionTraces, Pipeline: pipelineTrace,
+				Request:  models.TraceRequest{Method: r.Method, URL: r.URL.String(), Path: r.URL.Path, Query: r.URL.Query(), Headers: r.Header, Body: requestBody},
+				Response: models.TraceResponse{StatusCode: http.StatusNotFound, Headers: headersToMap(w.Header()), Body: body},
+			})
+		}
 		return
 	}
 
@@ -1163,11 +1178,13 @@ func (e *Engine) serveMatchedConfig(
 		}
 		responseBody = string(render.Body)
 		collResponseRenderTrace = &models.CollectionResponseRenderTrace{
+			TemplateRef:        collMatch.Template.ExampleName,
 			TemplateStatusCode: matchedConfig.StatusCode,
 			TemplateSource:     string(collMatch.Template.Source),
 			AdditionalMappers:  render.AdditionalMapperTraces,
 			PrimaryMapper:      render.PrimaryMapperTrace,
 			Warnings:           render.Warnings,
+			FieldMappings:      render.FieldMappings,
 		}
 	} else {
 		var renderErr error
@@ -1341,6 +1358,13 @@ func (e *Engine) findMatchingResponseConfig(
 			continue
 		}
 		if !e.evalConditions(cfg.ConditionTree, cfg.Conditions, reqData) {
+			if cfg.IsCollectionResponse() {
+				attempts = append(attempts, models.CollectionResponseAttempt{
+					ResponseConfigID: cfg.ID, ResponseConfigName: cfg.Name,
+					CollectionName: cfg.CollectionResponse.Primary.CollectionName,
+					Mode:           models.QueryMode(cfg.CollectionResponse.Primary.Mode), Reason: "Response conditions did not match",
+				})
+			}
 			continue
 		}
 
@@ -1351,26 +1375,44 @@ func (e *Engine) findMatchingResponseConfig(
 			continue
 		}
 
+		started := time.Now()
 		match, err := e.collResponseService.TryMatch(op, cfg, typedReq, sess)
+		mode := models.QueryMode(cfg.CollectionResponse.Primary.Mode)
+		if mode == "" {
+			mode = models.QueryModeFindOne
+			if match != nil && match.RootKind == models.RootKindArray {
+				mode = models.QueryModeFindMany
+			}
+		}
+		attempt := models.CollectionResponseAttempt{
+			ResponseConfigID: cfg.ID, ResponseConfigName: cfg.Name,
+			CollectionName: cfg.CollectionResponse.Primary.CollectionName, Mode: mode,
+			DurationMs: float64(time.Since(started).Microseconds()) / 1000,
+		}
+		if match != nil {
+			attempt.Filter, attempt.Matched, attempt.RecordCount = match.Filter, match.Matched, match.RecordCount
+			attempt.QueryExecuted = match.QueryExecuted
+			switch {
+			case sess == nil:
+				attempt.Reason = "No session available"
+			case !match.QueryExecuted && match.Matched:
+				attempt.Reason = "Conditions matched; no selection query required"
+			case match.RecordCount > 0:
+				attempt.Reason = "Query returned data"
+			case match.Matched:
+				attempt.Reason = "Empty query result allowed by matchOnEmpty"
+			default:
+				attempt.Reason = "Query returned no data"
+			}
+		}
+		if err != nil {
+			attempt.Error = err.Error()
+			attempt.Reason = "Selection failed"
+		}
+		attempts = append(attempts, attempt)
 		if err != nil {
 			return nil, nil, attempts, fmt.Errorf("collection response %q: %w", cfg.Name, err)
 		}
-		mode := models.QueryMode(models.QueryModeFindOne)
-		if match.RootKind == models.RootKindArray {
-			mode = models.QueryModeFindMany
-		}
-		if cfg.CollectionResponse.Primary.Mode == models.ColOpInsert || cfg.CollectionResponse.Primary.Mode == models.ColOpUpsert {
-			mode = models.QueryMode(cfg.CollectionResponse.Primary.Mode)
-		}
-		attempts = append(attempts, models.CollectionResponseAttempt{
-			ResponseConfigID:   cfg.ID,
-			ResponseConfigName: cfg.Name,
-			CollectionName:     cfg.CollectionResponse.Primary.CollectionName,
-			Mode:               mode,
-			Filter:             match.Filter,
-			Matched:            match.Matched,
-			RecordCount:        match.RecordCount,
-		})
 		if match.Matched {
 			return cfg, match, attempts, nil
 		}
@@ -1399,6 +1441,9 @@ func (e *Engine) writeRuntimeError(
 	var renderTrace *models.CollectionResponseRenderTrace
 	if len(renderTraces) > 0 {
 		renderTrace = renderTraces[0]
+		if renderTrace != nil {
+			renderTrace.Error = runtimeErr.Error()
+		}
 	}
 	statusCode := http.StatusInternalServerError
 	encodedError, _ := json.Marshal(map[string]string{"error": runtimeErr.Error()})
@@ -1411,14 +1456,25 @@ func (e *Engine) writeRuntimeError(
 	metrics.RequestDurationSeconds.WithLabelValues(route.spec.ID, route.operation.Method, route.operation.Path).Observe(duration.Seconds())
 
 	if route.spec.Tracing {
+		selectedID, selectedName := "", "[collection-response-error]"
+		for _, attempt := range collAttempts {
+			if attempt.Matched {
+				selectedID, selectedName = attempt.ResponseConfigID, attempt.ResponseConfigName
+			}
+		}
+		var sessionTrace *models.SessionTrace
+		if id := w.Header().Get(e.sessionHeaderName); id != "" {
+			sessionTrace = &models.SessionTrace{ID: id, IsNew: id != r.Header.Get(e.sessionHeaderName)}
+		}
 		e.tracingService.RecordTrace(&models.Trace{
+			MatchedConfigID: selectedID, Session: sessionTrace,
 			SpecID:                     route.spec.ID,
 			SpecName:                   route.spec.Name,
 			OperationID:                route.operation.ID,
 			OperationPath:              route.operation.Path,
 			Timestamp:                  startTime,
 			Duration:                   duration.Nanoseconds(),
-			MatchedConfig:              "[collection-response-error]",
+			MatchedConfig:              selectedName,
 			ResponseSource:             models.TraceResponseSourceConfig,
 			ResponseTier:               models.TraceResponseTierConfigured,
 			ProxySkippedReason:         proxySkippedReason,
@@ -1439,7 +1495,7 @@ func (e *Engine) writeRuntimeError(
 			Response: models.TraceResponse{
 				StatusCode: statusCode,
 				Headers:    headersToMap(w.Header()),
-				Body:       respBody,
+				Body:       respBody + "\n",
 			},
 		})
 	}

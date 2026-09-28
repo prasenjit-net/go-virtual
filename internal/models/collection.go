@@ -84,6 +84,9 @@ type CollectionMappingInput struct {
 
 // CollectionTrace captures execution of one CollectionMapping within a request.
 type CollectionTrace struct {
+	Filter         map[string]any   `json:"filter,omitempty"`
+	Data           map[string]any   `json:"data,omitempty"`
+	Result         any              `json:"result,omitempty"`
 	MappingID      string           `json:"mappingId"`
 	MappingName    string           `json:"mappingName"`
 	CollectionName string           `json:"collectionName"`
