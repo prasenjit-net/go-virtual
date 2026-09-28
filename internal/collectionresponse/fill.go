@@ -3,6 +3,7 @@ package collectionresponse
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/prasenjit/go-virtual/internal/collection"
@@ -17,6 +18,7 @@ type fillContext struct {
 	mappers           map[string]any
 	fallbackToExample bool
 	warnings          []string
+	mappings          []models.ResponseFieldMappingTrace
 }
 
 // FillDocument fills template using doc as the current result document,
@@ -25,6 +27,11 @@ type fillContext struct {
 // value and any fill warnings (missing paths, shape mismatches, unresolved
 // overrides).
 func FillDocument(template any, doc map[string]any, overrides map[string]models.FieldOverride, request *collection.TypedRequestContext, mappers map[string]any, fallbackToExample bool) (any, []string) {
+	value, warnings, _ := fillDocumentWithTrace(template, doc, overrides, request, mappers, fallbackToExample)
+	return value, warnings
+}
+
+func fillDocumentWithTrace(template any, doc map[string]any, overrides map[string]models.FieldOverride, request *collection.TypedRequestContext, mappers map[string]any, fallbackToExample bool) (any, []string, []models.ResponseFieldMappingTrace) {
 	ctx := &fillContext{
 		rootDoc:           doc,
 		overrides:         overrides,
@@ -38,83 +45,94 @@ func FillDocument(template any, doc map[string]any, overrides map[string]models.
 		sub = doc
 		found = true
 	}
-	result := ctx.fillNode(template, sub, found, "")
-	return result, ctx.warnings
+	result := ctx.fillNode(template, sub, found, "", "", true)
+	return result, ctx.warnings, ctx.mappings
 }
 
-func (ctx *fillContext) fillNode(template any, sub any, subFound bool, fullPath string) any {
-	if ov, ok := ctx.overrides[fullPath]; ok {
-		bctx := &collection.BindingContext{Request: ctx.request, Document: ctx.rootDoc, Mappers: ctx.mappers}
-		v, found, err := collection.ResolveValueBinding(ov.Value, bctx)
-		if err != nil {
-			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override error: %s", labelFor(fullPath), err))
-			return nil
+func (ctx *fillContext) fillNode(template any, sub any, subFound bool, fullPath, concretePath string, resolveSource bool) any {
+	if resolveSource {
+		selected := false
+		ov, hasOverride := ctx.overrides[concretePath]
+		if !hasOverride {
+			ov, hasOverride = ctx.overrides[fullPath]
 		}
-		if found {
-			return v
+		if hasOverride {
+			bctx := &collection.BindingContext{Request: ctx.request, Document: ctx.rootDoc, Mappers: ctx.mappers}
+			v, found, err := collection.ResolveValueBinding(ov.Value, bctx)
+			if err != nil {
+				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override error: %s", labelFor(concretePath), err))
+				return nil
+			}
+			if found {
+				sub, subFound, selected = v, true, true
+				ctx.mappings = append(ctx.mappings, models.ResponseFieldMappingTrace{TargetPath: concretePath, Source: "override", Key: string(ov.Value.Source) + ":" + ov.Value.Key})
+			} else if !ov.Value.SkipWhenMissing {
+				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override source has no value", labelFor(concretePath)))
+				return nil
+			}
 		}
-		if !ov.Value.SkipWhenMissing {
-			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: override source has no value", labelFor(fullPath)))
-			return nil
+		// Automatic additional-mapper matching applies only to root fields.
+		if !selected && fullPath != "" && !strings.Contains(fullPath, ".") && fullPath == concretePath {
+			if value, exists := ctx.mappers[fullPath]; exists {
+				sub, subFound = value, true
+				ctx.mappings = append(ctx.mappings, models.ResponseFieldMappingTrace{TargetPath: concretePath, Source: "mapper", Key: fullPath})
+			} else {
+				ctx.mappings = append(ctx.mappings, models.ResponseFieldMappingTrace{TargetPath: concretePath, Source: "document", Key: fullPath})
+			}
 		}
-		// A skipped override leaves normal template filling in place.
 	}
-
+	if subFound && sub == nil {
+		return nil
+	}
 	switch t := template.(type) {
 	case map[string]any:
-		var subMap map[string]any
-		if subFound {
-			m, ok := sub.(map[string]any)
-			if !ok {
-				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: expected an object in the document but found %T", labelFor(fullPath), sub))
-			} else {
-				subMap = m
-			}
+		subMap, ok := sub.(map[string]any)
+		if subFound && !ok {
+			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: expected an object but found %T", labelFor(concretePath), sub))
+		}
+		if len(t) == 0 && len(subMap) > 0 {
+			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no object fields defined by response schema/example; omitted source fields", labelFor(concretePath)))
 		}
 		result := make(map[string]any, len(t))
-		for k, v := range t {
-			childPath := joinPath(fullPath, k)
-			var childVal any
-			childFound := false
-			if subMap != nil {
-				if cv, ok := subMap[k]; ok {
-					childVal, childFound = cv, true
-				}
-			}
-			result[k] = ctx.fillNode(v, childVal, childFound, childPath)
+		for k, childTemplate := range t {
+			child, found := subMap[k]
+			result[k] = ctx.fillNode(childTemplate, child, found, joinPath(fullPath, k), joinPath(concretePath, k), true)
 		}
 		return result
-
 	case []any:
-		if len(t) == 0 {
-			if arr, ok := sub.([]any); ok {
-				return arr
-			}
-			return []any{}
-		}
-		item := t[0]
 		arr, ok := sub.([]any)
 		if !ok {
 			if subFound {
-				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: expected an array in the document but found %T", labelFor(fullPath), sub))
+				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: expected an array but found %T", labelFor(concretePath), sub))
+			}
+			return []any{}
+		}
+		if len(t) == 0 {
+			if len(arr) > 0 {
+				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no array item shape defined by response schema/example; omitted source items", labelFor(concretePath)))
 			}
 			return []any{}
 		}
 		result := make([]any, 0, len(arr))
-		for _, elem := range arr {
-			result = append(result, ctx.fillNode(item, elem, true, fullPath))
+		for i, elem := range arr {
+			// Do not reapply the parent array override to each individual item.
+			result = append(result, ctx.fillNode(t[0], elem, true, fullPath, joinPath(concretePath, strconv.Itoa(i)), false))
 		}
 		return result
-
 	default:
 		if subFound {
+			switch sub.(type) {
+			case map[string]any, []any:
+				ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: object/array source has no matching response shape; rendered as null", labelFor(concretePath)))
+				return nil
+			}
 			return sub
 		}
 		if ctx.fallbackToExample {
-			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no document value; using template example", labelFor(fullPath)))
+			ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no document value; using template example", labelFor(concretePath)))
 			return template
 		}
-		ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no document value; rendered as null", labelFor(fullPath)))
+		ctx.warnings = append(ctx.warnings, fmt.Sprintf("%s: no document value; rendered as null", labelFor(concretePath)))
 		return nil
 	}
 }
@@ -150,6 +168,11 @@ func fillIdentity(doc map[string]any, overrides map[string]models.FieldOverride,
 		}
 		if err != nil || !found {
 			warnings = append(warnings, fmt.Sprintf("%s: override could not be resolved", labelFor(path)))
+			continue
+		}
+		switch v.(type) {
+		case map[string]any, []any:
+			warnings = append(warnings, fmt.Sprintf("%s: object/array mapping requires a response schema/example; override skipped", labelFor(path)))
 			continue
 		}
 		setPath(m, path, v)

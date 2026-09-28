@@ -378,8 +378,11 @@ export interface Trace {
     session?: SessionTrace;
     // Collection mapping traces
     collections?: CollectionTrace[];
-    collectionResponseAttempts?: { responseConfigId: string; responseConfigName: string; collectionName: string; mode: QueryMode; matched: boolean; recordCount: number; error?: string }[];
+    collectionResponseAttempts?: { responseConfigId: string; responseConfigName: string; collectionName: string; mode: CollectionOpType | ""; queryExecuted?: boolean; reason?: string; durationMs?: number; filter?: Record<string, unknown>; matched: boolean; recordCount: number; error?: string }[];
     collectionResponseRender?: {
+        fieldMappings?: { targetPath: string; source: string; key: string }[];
+        templateRef?: string;
+        error?: string;
         templateStatusCode?: number;
         templateSource?: string;
         primaryMapper?: CollectionTrace;
@@ -608,6 +611,9 @@ export interface CollectionMappingInput {
 }
 
 export interface CollectionTrace {
+    filter?: Record<string, unknown>
+    data?: Record<string, unknown>
+    result?: unknown
     mappingId: string
     mappingName: string
     collectionName: string

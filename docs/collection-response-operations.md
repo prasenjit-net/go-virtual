@@ -41,9 +41,9 @@ In template mode:
 
 In identity mode, choose `rootKind: "object"` or `"array"`. Primary Insert, Update, and Upsert still require an object root. An omitted main mode preserves the existing automatic shape-based choice.
 
-### Current schema-generation limits
+### Response shape resolution
 
-Rendering walks a resolved **example tree**; it is not a complete JSON Schema validator or serializer. In the current parser, an object schema without an example can produce only `{}`, an array schema can produce only `[]`, and a schema with no explicit type can produce no template. Schema-level structured examples also have limited serialization support. For predictable field projection, supply a complete JSON example under the response media type's `example` or named `examples` entry, including representative nested objects and array items.
+Rendering combines the selected example with declared schema properties and array items. Schema definitions fill gaps in incomplete examples, including empty arrays and schema-only responses. References and allOf property definitions are resolved; ambiguous oneOf/anyOf alternatives require a representative example. Recursive schema expansion stops at cycles. Free-form additionalProperties do not authorize copying arbitrary source fields. This is structural projection, not a complete JSON Schema validator.
 
 A missing named example can also leave no matching template. Check the status code, example selection, and trace's template source when output does not have the expected shape.
 
@@ -95,21 +95,22 @@ For an envelope such as `{"person":{"id":"example-id"}}`, either the primary doc
 | Situation | Template-mode behavior |
 | --- | --- |
 | Explicit override exists at a visited target path | Resolve and use that value first |
-| No override and the primary document has the leaf path | Use the document value |
+| No effective override and a root field matches an additional mapper output key | Use the mapper result and project it through that field’s response shape |
+| No matching mapper output and the primary document has the leaf path | Use the document value |
 | Document leaf is absent and `fallbackToExample` is true or omitted | Use the example value and record a warning |
 | Document leaf is absent and `fallbackToExample` is false | Render null and record a warning |
 | Document leaf is explicitly null, false, zero, or an empty string | Preserve it; it is not missing |
 | Explicit override cannot resolve its source and has no default | Render null and record a warning; do not fall back to the example |
 
-Objects are walked recursively. An incompatible object value produces a warning and its template children are still processed. Missing or incompatible array values render as `[]`; a nonempty array example supplies the item projection. An empty array example has no item shape, so an existing document array is passed through.
+Objects are walked recursively. An incompatible object value produces a warning and its template children are still processed. Missing or incompatible array values render as `[]`; a nonempty array example supplies the item projection. For an empty array example, schema items supply the shape. Without an item shape, source items are omitted with a warning; source fields are never copied wholesale.
 
-An override **replaces the target value directly**. If it supplies an entire object or array, that value is not projected again through the target's child template. Prefer leaf overrides when you need strict control over included fields. An override target absent from the template is not visited in template mode.
+An override selects the source value for a target. Objects and arrays are then projected recursively through that target’s response shape, including renamed objects and arrays. Explicit child overrides are applied during projection; `addresses.city` applies to every address and `addresses.0.city` overrides the first item specifically. Overrides cannot add fields absent from the resolved shape. A mapped object/array with no usable shape produces an empty container or null with a diagnostic instead of leaking its fields.
 
-Identity mode behaves differently: it starts with a copy of the entire primary document, allows overrides to add paths, and leaves the document unchanged at an unresolved override path while recording a warning.
+Identity mode retains the primary document and permits scalar overrides. Object/array overrides require a response shape and are skipped with a warning in identity mode. Automatic additional-mapper matching requires template mode.
 
 ## 4. How additional outputs enter the response
 
-Each additional mapper has a unique `outputKey`. Its result is stored under that key for field overrides. Additional results are **not automatically merged** into the primary document or added to the body.
+Each additional mapper has a unique `outputKey`. Its result is stored under that key for field overrides. When an output key matches a response root field, that output automatically supplies the field before the primary document is considered. Only fields already defined by the response shape are eligible; unrelated mapper outputs add no fields. On an array-root response, the convention applies to each primary item using the same additional outputs.
 
 For example, an additional Find One mapper with output key `plan` might return:
 
@@ -125,7 +126,7 @@ Configure this Output override:
 
 The preceding primary/template example now renders `"planLabel": "Professional"`. It does not add a top-level `plan` object, `_id`, or `monthlyPrice`.
 
-Mapper source keys use `<outputKey>.<path>`. For a Find Many output named `plans`, `plans.0.label` reads the first result's label. Bare output keys such as `plans` are not valid override references in the current configuration validator.
+Mapper source keys accept `<outputKey>` for the whole object/array or `<outputKey>.<path>` for a nested value. For example, target `addrs` with key `addresses` projects the whole addresses result through the addrs shape; `addresses.0.city` selects the first address’s city for a leaf override.
 
 Additional mappers execute once per selected response, in list order, even when the primary result is an array. The same additional output map is available while rendering every primary item. These are not per-item joins: `primary` source bindings are rejected for array-root responses, and additional mappers cannot bind to earlier mapper outputs. Later operations can still observe earlier writes by querying the same session collection state.
 
@@ -268,7 +269,7 @@ If `plan` has no result or no `label` field, this override renders `"Free"`. An 
 
 The same setting works for primary query filters, primary Insert/Update/Upsert data, and additional mapper filter/data fields. A missing write binding with a default satisfies the required-value check. A defaulted read/Update query still needs to find real collection data for response selection unless matchOnEmpty is enabled. Upsert filters are used only during execution.
 
-Resolution order is **mapped source → binding default if absent → existing missing-value behavior**. An explicit override with neither a value nor a default still produces null with a warning in template mode, regardless of `fallbackToExample`. That option continues to control convention-filled fields without overrides. Whole-object defaults replace the target directly, just like whole-object mapper overrides.
+Resolution order is **mapped source → binding default if absent → existing missing-value behavior**. An explicit override with neither a value nor a default still produces null with a warning in template mode, regardless of `fallbackToExample`. That option continues to control convention-filled fields without overrides. Object/array defaults are projected through the target shape, just like mapper overrides.
 
 Defaults are preserved in response save/clone/archive operations and are available in read-only preview. Turn the option off to remove the default. Switching the source to Literal removes the unused default.
 
@@ -294,11 +295,11 @@ Defaults are preserved in response save/clone/archive operations and are availab
 | Symptom | What to check |
 | --- | --- |
 | Entire mapper document is returned, including `_id` | Identity mode: check the configured status code, matching JSON response body, and named example |
-| Response is `{}` or lacks expected schema properties | The generated template may be empty; add a complete response media-type example |
-| Additional mapper ran but its fields are missing | Add Mapper output overrides; output keys are not merged into the body automatically |
+| Response is `{}` or lacks expected schema properties | Check declared schema properties/items or supply a representative response example |
+| Additional mapper ran but its fields are missing | Match the output key to a response root field, or add an explicit Mapper output override for a different target |
 | Override has no effect | In template mode, its target must be present in the template; check the exact path |
 | Override returns null | Check output key, source path, result count, and warnings; unresolved overrides do not use example fallback |
-| Nested mapper output includes unwanted fields | Whole-object overrides bypass child projection; use leaf overrides |
+| Nested mapper output includes unwanted fields | Only declared schema/example fields should appear; check the target shape and chosen example |
 | Find Many cannot use primary bindings in additional mappers | Additional mappers run once per response, not once per item |
 | Update succeeds but the next request falls through | The same session now contains updated values that may no longer satisfy the selection filter |
 
@@ -311,3 +312,11 @@ For each nonliteral mapping, **When source is missing** offers **Use default val
 Skip is stored as `skipWhenMissing: true`. It omits an absent filter or write field, and ignores an absent response override so normal document/template filling continues (identity rendering leaves the original field unchanged). It does not remove the response template field. Explicit null, empty strings, false, and zero are present values and are never skipped. A missing source/key is distinct from an invalid binding, which still produces an error.
 
 Omitted filters no longer constrain the operation; if all filters are skipped, the existing empty-filter behavior applies (reads match all documents, single-document writes target the first match). Omitted update data leaves those stored fields unchanged. Defaults and Skip cannot be configured together. Switching to Literal clears both policies.
+
+### Collection response trace details
+
+Selection attempts remain visible when conditions fail, queries return no data, a query fails, or the request falls back to a spec example or 404. Each attempt records the configured operation, whether a query actually ran, resolved filters, record count, duration, and the selection reason or error. Insert/Upsert selection is shown as condition-only rather than a zero-record query.
+
+The selected response includes the resolved template source, status, and named example, plus main and additional mapper diagnostics. Expand **Mapper inputs and output** to inspect resolved filters, write data, and operation results. For Update, the selection attempt shows the original query while execution shows the selected document's identity filter. Partial execution failures retain completed mapper details, selected response identity, session identity, and the error response sent to the client.
+
+Trace **Response field sources** identifies explicit overrides, automatic mapper matches, and primary-document root fields. Warnings report missing shapes and incompatible source values.

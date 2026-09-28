@@ -225,7 +225,7 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
         case 'body': return 'customer.email'
         case 'primary': return 'planId'
         case 'document': return 'profile.name'
-        case 'mapper': return 'plan.label'
+        case 'mapper': return 'addresses or plan.label'
         default: return 'key'
     }
 }
@@ -727,7 +727,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                     <div>
                                         <div className="text-sm font-medium text-indigo-800 dark:text-indigo-300">Additional data mappers</div>
                                         <div className="text-xs text-indigo-700 dark:text-indigo-400">
-                                            Run after the main operation, in the order shown, only when this response is selected. Reads and writes expose results through Mapper output overrides. Earlier writes remain if a later operation fails.
+                                            Run after the main operation, in the order shown, only when this response is selected. Matching output keys fill response root fields automatically. Use Mapper output overrides for other target paths. Earlier writes remain if a later operation fails.
                                         </div>
                                     </div>
                                 </div>
@@ -848,7 +848,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                             <div className="p-4 space-y-4">
                                 <div className="flex items-center justify-between">
                                     <p className="text-xs text-gray-400 dark:text-slate-500 max-w-xl">
-                                        Every response field fills automatically from the document field of the same name. Add an override only for fields that need a rename, a lookup, request context, or a literal.
+                                        Root fields first use additional mapper outputs with matching names, then document fields. Overrides take priority. Use a mapper key such as addresses for its whole output or addresses.0.city for a nested value. Objects and arrays include only fields defined by the response schema/example.
                                     </p>
                                     <button type="button" onClick={() => setOverrides([...overrides, emptyRow('document')])} className="inline-flex items-center gap-1 text-xs font-medium text-primary-700 dark:text-primary-300 hover:underline flex-shrink-0 ml-3">
                                         <Plus className="w-3.5 h-3.5" /> Add override

@@ -106,7 +106,7 @@ func TestCollectionResponseConfigValidate_InvalidLiteralJSON(t *testing.T) {
 	}
 }
 
-func TestCollectionResponseConfigValidate_MapperKeyMissingDot(t *testing.T) {
+func TestCollectionResponseConfigValidate_WholeMapperOutput(t *testing.T) {
 	cr := &CollectionResponseConfig{
 		Primary: CollectionQuery{CollectionName: "users"},
 		AdditionalMappers: []NamedQuery{
@@ -117,8 +117,14 @@ func TestCollectionResponseConfigValidate_MapperKeyMissingDot(t *testing.T) {
 		},
 	}
 	errs := cr.Validate()
-	if len(errs) == 0 {
-		t.Fatal(`expected an error: mapper key must be "<outputKey>.<path>"`)
+	if len(errs) != 0 {
+		t.Fatalf("whole mapper output rejected: %v", errs)
+	}
+	for _, key := range []string{"", ".plan", "plan.", "plan..name", "unknown"} {
+		cr.Overrides[0].Value.Key = key
+		if len(cr.Validate()) == 0 {
+			t.Fatalf("invalid mapper key accepted: %q", key)
+		}
 	}
 }
 
