@@ -1,3 +1,4 @@
+import { MappingHintsProvider, MappingHintControls, SuggestedFieldInput, shapeHints } from '../shared/MappingHints'
 import MappingDefaultInput, { isValidDefaultJSON } from '../shared/MappingDefaultInput'
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -147,16 +148,19 @@ const labelClass = 'block text-sm font-medium text-gray-700 dark:text-slate-300 
 
 // ── Binding row component ───────────────────────────────────────────────────
 
-function BindingRow({
+function BindingRowContent({
     row,
     sources,
     keyPlaceholder,
     targetPathLabel,
     targetPathPlaceholder,
+    topLevel,
     onChange,
     onRemove,
 }: {
     row: BindingRowState
+    collectionName?: string
+    topLevel?: boolean
     sources: { value: ValueSource; label: string }[]
     keyPlaceholder: (source: ValueSource | '') => string
     targetPathLabel: string
@@ -167,7 +171,7 @@ function BindingRow({
     return (
         <div className="flex flex-wrap items-start gap-2 bg-gray-50 dark:bg-slate-900 rounded-lg p-2.5">
             <div className="w-40 flex-shrink-0">
-                <input
+                <SuggestedFieldInput hintSource={targetPathLabel === 'Collection field' ? 'document' : 'target'} topLevel={topLevel || targetPathLabel === 'Collection field'}
                     value={row.targetPath}
                     onChange={(e) => onChange({ ...row, targetPath: e.target.value })}
                     placeholder={targetPathPlaceholder}
@@ -189,14 +193,14 @@ function BindingRow({
             </div>
             <div className="min-w-[10rem] flex-1">
                 {row.source === 'literal' ? (
-                    <input
+                    <SuggestedFieldInput hintSource={targetPathLabel === 'Collection field' ? 'document' : 'target'} valueKey={row.targetPath} jsonValue
                         value={row.literal}
                         onChange={(e) => onChange({ ...row, literal: e.target.value })}
                         placeholder='true, 42, "text", null'
                         className={`${inputClass} font-mono`}
                     />
                 ) : (
-                    <input
+                    <SuggestedFieldInput hintSource={row.source}
                         value={row.key}
                         onChange={(e) => onChange({ ...row, key: e.target.value })}
                         placeholder={keyPlaceholder(row.source)}
@@ -212,9 +216,13 @@ function BindingRow({
             >
                 <Trash2 className="w-4 h-4" />
             </button>
-            {row.source !== 'literal' && <MappingDefaultInput json value={row.defaultText} skipWhenMissing={row.skipWhenMissing} onChange={(defaultText, skipWhenMissing) => onChange({ ...row, defaultText, skipWhenMissing })} />}
+            {row.source !== 'literal' && <MappingDefaultInput hintSource={row.source} valueKey={row.key} json value={row.defaultText} skipWhenMissing={row.skipWhenMissing} onChange={(defaultText, skipWhenMissing) => onChange({ ...row, defaultText, skipWhenMissing })} />}
         </div>
     )
+}
+
+function BindingRow(props: Parameters<typeof BindingRowContent>[0]) {
+    return <MappingHintsProvider collectionName={props.collectionName}><BindingRowContent {...props} /></MappingHintsProvider>
 }
 
 function filterKeyPlaceholder(source: ValueSource | ''): string {
@@ -232,7 +240,8 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
 
 const writesData = (mode: CollectionOpType) => ['insert', 'update', 'upsert'].includes(mode)
 
-function DataRulesEditor({ rows, onChange, allowPrimary }: {
+function DataRulesEditor({ rows, onChange, allowPrimary, collectionName }: {
+    collectionName?: string
     rows: BindingRowState[]
     onChange: (rows: BindingRowState[]) => void
     allowPrimary: boolean
@@ -243,7 +252,7 @@ function DataRulesEditor({ rows, onChange, allowPrimary }: {
             <button type="button" onClick={() => onChange([...rows, emptyRow('body')])} className="text-xs text-primary-700 dark:text-primary-300 hover:underline">+ Add field</button>
         </div>
         {rows.length === 0 && <p className="text-xs text-gray-500 dark:text-slate-400">Add the fields this operation writes.</p>}
-        {rows.map((row, i) => <BindingRow key={i} row={row}
+        {rows.map((row, i) => <BindingRow key={i} row={row} collectionName={collectionName} topLevel
             sources={allowPrimary ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
             keyPlaceholder={filterKeyPlaceholder} targetPathLabel="Collection field" targetPathPlaceholder="status"
             onChange={(next) => onChange(rows.map((r, j) => j === i ? next : r))}
@@ -478,6 +487,12 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     ]
 
     return (
+        <MappingHintsProvider operationId={operationId} scope="response" collectionName={primaryCollectionName} statusCode={chosenExample?.statusCode} templateRef={chosenExample?.exampleName} responseId={config?.id}
+            extra={shapeHints(templateValue, 'target')}
+            collections={[
+                { name: primaryCollectionName, source: 'primary' },
+                ...mappers.map(m => ({ name: m.collectionName, source: 'mapper', prefix: m.outputKey, array: m.mode === 'find-many' })),
+            ]}>
         <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
             {/* ── Top bar ───────────────────────────────────────────────────── */}
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 px-3 h-12 flex-shrink-0">
@@ -619,7 +634,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                         {activeTab === 'conditions' && (
                             <div className="p-4 space-y-4 max-w-2xl">
-                                <ConditionEditor
+                                <MappingHintControls /><ConditionEditor
                                     label="Conditions"
                                     value={conditionTree}
                                     onChange={setConditionTree}
@@ -788,7 +803,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
-                                                {writesData(m.mode) && <DataRulesEditor rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
+                                                {writesData(m.mode) && <DataRulesEditor collectionName={m.collectionName} rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
                                                 {m.mode !== 'insert' && <div>
                                                     <div className="flex items-center justify-between mb-1">
                                                         <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
@@ -803,6 +818,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                     <div className="space-y-2">
                                                         {m.filters.map((row, k) => (
                                                             <BindingRow
+                                                                collectionName={m.collectionName}
                                                                 key={k}
                                                                 row={row}
                                                                 sources={derivedRootKind === 'object' ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
@@ -879,5 +895,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                 </div>
             </div>
         </div>
+        </MappingHintsProvider>
     )
 }

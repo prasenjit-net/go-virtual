@@ -1,3 +1,4 @@
+import { MappingHintsProvider, SuggestedFieldInput } from '../shared/MappingHints'
 import MappingDefaultInput from '../shared/MappingDefaultInput'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -90,7 +91,7 @@ function sourceKeyOptionsFor(t: FieldMappingRule['sourceType'], h: OperationHint
 
 // ─── rule editor ─────────────────────────────────────────────────────────────
 
-function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
+function RuleEditor({ rules, onChange, label, hint, hints }: {
     rules: FieldMappingRule[]
     onChange: (r: FieldMappingRule[]) => void
     label: string; hint: string; hints: OperationHints; idPrefix: string
@@ -123,10 +124,10 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                     </div>
                     {rules.map((rule, i) => {
                         const opts = sourceKeyOptionsFor(rule.sourceType, hints)
-                        const dlId = `${idPrefix}-src-${i}`
+
                         return (
                             <div key={i} className="flex flex-wrap items-center gap-2">
-                                <input
+                                <SuggestedFieldInput hintSource="document" topLevel
                                     type="text" value={rule.targetField} placeholder="e.g. name"
                                     onChange={(e) => update(i, { targetField: e.target.value })}
                                     className="flex-1 min-w-0 text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
@@ -139,23 +140,19 @@ function RuleEditor({ rules, onChange, label, hint, hints, idPrefix }: {
                                     {SOURCE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                                 <div className="flex-1 min-w-0">
-                                    <input
-                                        type="text" list={opts.length > 0 ? dlId : undefined}
+                                    <SuggestedFieldInput hintSource={rule.sourceType === 'literal' ? 'document' : rule.sourceType} valueKey={rule.sourceType === 'literal' ? rule.targetField : undefined} suggestions={opts.map(value => ({ value }))}
+                                        type="text"
                                         value={rule.sourceKey}
                                         placeholder={rule.sourceType === 'literal' ? 'value' : 'key / path'}
                                         onChange={(e) => update(i, { sourceKey: e.target.value })}
                                         className="w-full text-xs px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 font-mono"
                                     />
-                                    {opts.length > 0 && (
-                                        <datalist id={dlId}>
-                                            {opts.map((o) => <option key={o} value={o} />)}
-                                        </datalist>
-                                    )}
+
                                 </div>
                                 <button type="button" onClick={() => remove(i)} className="p-1 text-gray-400 hover:text-red-500 dark:hover:text-red-400 flex-shrink-0 w-6">
                                     <X className="w-3.5 h-3.5" />
                                 </button>
-                                {rule.sourceType !== 'literal' && <MappingDefaultInput value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
+                                {rule.sourceType !== 'literal' && <MappingDefaultInput hintSource={rule.sourceType} valueKey={rule.sourceKey} value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
                             </div>
                         )
                     })}
@@ -175,7 +172,7 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
         onChange({ ...form, [k]: v })
 
     return (
-        <div className="space-y-4">
+        <MappingHintsProvider collectionName={form.collectionName} order={form.order} stepType="collection"><div className="space-y-4">
             <div>
                 <label className="block text-xs font-medium text-gray-700 dark:text-slate-300 mb-1">Name <span className="text-gray-400">(optional)</span></label>
                 <input type="text" value={form.name ?? ''} placeholder="e.g. Create User"
@@ -276,7 +273,7 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
                     </div>
                 </div>
             )}
-        </div>
+        </div></MappingHintsProvider>
     )
 }
 
@@ -406,7 +403,7 @@ function SavedMappingList({ mappings, hints, onRefresh }: {
 
 // ─── panel ───────────────────────────────────────────────────────────────────
 
-export default function CollectionMappingsPanel(props: Props) {
+function CollectionMappingsPanelContent(props: Props) {
     const queryClient = useQueryClient()
 
     // Query key and fetch function differ by scope
@@ -658,4 +655,8 @@ export default function CollectionMappingsPanel(props: Props) {
             )}
         </div>
     )
+}
+
+export default function CollectionMappingsPanel(props: Props) {
+ return <MappingHintsProvider controls scope={props.kind} operationId={props.kind !== "spec" ? props.operationId : undefined} specId={props.kind === "spec" ? props.specId : undefined}><CollectionMappingsPanelContent {...props} /></MappingHintsProvider>
 }

@@ -26,10 +26,10 @@ type RouterConfig struct {
 	StatsCollector    *stats.Collector
 	TracingService    *tracing.Service
 	ProxyEngine       *proxy.Engine
-	GlobalStore       store.GlobalStoreBackend  // optional; nil = Phase 1 mode
-	CollectionBackend store.CollectionBackend   // optional; nil disables collection admin endpoints
-	SessionManager    store.SessionRegistry     // optional; nil = Phase 1 mode
-	ArchiveManager    archive.ArchiveService    // optional; nil disables archive endpoints
+	GlobalStore       store.GlobalStoreBackend // optional; nil = Phase 1 mode
+	CollectionBackend store.CollectionBackend  // optional; nil disables collection admin endpoints
+	SessionManager    store.SessionRegistry    // optional; nil = Phase 1 mode
+	ArchiveManager    archive.ArchiveService   // optional; nil disables archive endpoints
 	Branding          config.BrandingConfig
 	Headless          bool
 	ScriptTimeout     int           // ms; 0 = use default (100)
@@ -129,6 +129,8 @@ func (r *Router) setupRoutes() {
 		api.GET("/operations/:id/signature", r.handler.GetSignatureConfig)
 		api.PUT("/operations/:id/signature", r.handler.UpdateSignatureConfig)
 		api.GET("/operations/:id/spec-examples", r.handler.GetSpecExamples)
+		api.GET("/operations/:id/mapping-hints", r.handler.MappingHints)
+		api.GET("/specs/:id/mapping-hints", r.handler.MappingHints)
 
 		// Response Configs
 		api.GET("/operations/:id/responses", r.handler.ListResponseConfigs)
