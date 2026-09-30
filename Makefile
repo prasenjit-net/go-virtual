@@ -25,7 +25,7 @@ LD_FLAGS   := -s -w \
 	-X github.com/prasenjit/go-virtual/internal/version.BuildDate=$(BUILD_DATE)
 
 .PHONY: all build build-go build-ui \
-        run run-init \
+        run run-init kill \
         dev dev-ui dev-all \
         test test-coverage \
         lint lint-ui fmt \
@@ -71,6 +71,25 @@ run-init: build
 	@echo "› Running $(BINARY) init…"
 	$(BUILD_DIR)/$(BINARY) init \
 		$(if $(CONFIG),--config $(CONFIG),)
+
+## kill: Stop the process listening on the server port (PORT=… or CONFIG=…)
+kill:
+	@command -v lsof >/dev/null 2>&1 || { echo "lsof is required to find the server process"; exit 1; }; \
+	server_port='$(PORT)'; \
+	config_file='$(if $(CONFIG),$(CONFIG),config.yaml)'; \
+	if [ -z "$$server_port" ] && [ -f "$$config_file" ]; then \
+		server_port=$$(awk '/^server:[[:space:]]*($$|\#)/ { in_server=1; next } in_server && /^[^[:space:]#]/ { exit } in_server && /^[[:space:]]+port:/ { gsub(/["\047]/, "", $$2); print $$2; exit }' "$$config_file"); \
+	fi; \
+	server_port=$${server_port:-8080}; \
+	case "$$server_port" in *[!0-9]*|'') echo "Invalid server port: $$server_port"; exit 1;; esac; \
+	if [ "$$server_port" -lt 1 ] || [ "$$server_port" -gt 65535 ]; then echo "Invalid server port: $$server_port"; exit 1; fi; \
+	server_pids=$$(lsof -nP -t -iTCP:$$server_port -sTCP:LISTEN); \
+	if [ -z "$$server_pids" ]; then \
+		echo "No process listening on port $$server_port"; \
+	else \
+		echo "Stopping process(es) on port $$server_port: $$server_pids"; \
+		kill -TERM $$server_pids; \
+	fi
 
 # ── Development ───────────────────────────────────────────────────────────────
 
