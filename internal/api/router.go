@@ -105,6 +105,8 @@ func (r *Router) setupRoutes() {
 		api.GET("/specs", r.handler.ListSpecs)
 		api.POST("/specs", r.handler.CreateSpec)
 		api.GET("/specs/:id", r.handler.GetSpec)
+		api.GET("/specs/:id/workspace", r.handler.GetSpecWorkspace)
+		api.PUT("/specs/:id/workspace", r.handler.SaveSpecWorkspace)
 		api.PUT("/specs/:id", r.handler.UpdateSpec)
 		api.DELETE("/specs/:id", r.handler.DeleteSpec)
 		api.PUT("/specs/:id/enable", r.handler.EnableSpec)

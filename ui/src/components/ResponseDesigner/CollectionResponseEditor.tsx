@@ -38,6 +38,8 @@ interface CollectionResponseEditorProps {
     operationId: string
     config: ResponseConfig | null
     onClose: () => void
+    /** Keep this editor's changes in the designer workspace draft. */
+    onDraftChange?: (config: ResponseConfig) => void
 }
 
 // ── Binding row editing state ───────────────────────────────────────────────
@@ -262,7 +264,7 @@ function DataRulesEditor({ rows, onChange, allowPrimary, collectionName }: {
 
 type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | 'output'
 
-export default function CollectionResponseEditor({ operationId, config, onClose }: CollectionResponseEditorProps) {
+export default function CollectionResponseEditor({ operationId, config, onClose, onDraftChange }: CollectionResponseEditorProps) {
     const cr = config?.collectionResponse
 
     const [activeTab, setActiveTab] = useState<EditorTab>('metadata')
@@ -429,7 +431,28 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
             }
         }
 
-        if (config) {
+        if (onDraftChange) {
+            onDraftChange({
+                ...(config || {} as ResponseConfig),
+                id: config?.id || '',
+                operationId,
+                name: name.trim(),
+                description: description.trim(),
+                tag,
+                statusCode,
+                priority,
+                delay,
+                enabled,
+                conditions: [],
+                conditionTree,
+                headers,
+                body: '',
+                kind: 'collection',
+                collectionResponse,
+                recorded: config?.recorded || false,
+                origin: config?.origin || 'manual',
+            })
+        } else if (config) {
             updateMutation.mutate({
                 collectionResponse,
                 name: name.trim(),
@@ -515,12 +538,12 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                 <div className="ml-auto flex items-center gap-2">
                     <button
                         onClick={handleSave}
-                        disabled={isSaving}
-                        title="Save"
+                        disabled={!onDraftChange && isSaving}
+                        title={onDraftChange ? 'Apply to workspace' : 'Save'}
                         className="px-3 py-1 text-xs bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 inline-flex items-center gap-1.5"
                     >
-                        {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        {isSaving ? 'Saving…' : 'Save'}
+                        {!onDraftChange && isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        {onDraftChange ? 'Apply to workspace' : isSaving ? 'Saving…' : 'Save'}
                     </button>
                 </div>
             </div>
@@ -554,7 +577,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                     <div className="flex-1 min-h-0 overflow-y-auto">
                         {activeTab === 'metadata' && (
-                            <div className="p-4 space-y-4 max-w-2xl">
+                            <div className="p-4 space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClass}>Name *</label>
@@ -633,7 +656,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                         )}
 
                         {activeTab === 'conditions' && (
-                            <div className="p-4 space-y-4 max-w-2xl">
+                            <div className="p-4 space-y-4">
                                 <MappingHintControls /><ConditionEditor
                                     label="Conditions"
                                     value={conditionTree}
@@ -656,7 +679,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                         {activeTab === 'query' && (
                             <div className="p-4 space-y-4">
-                                <div className="grid grid-cols-2 gap-4 max-w-2xl">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClass}>Collection *</label>
                                         <input value={primaryCollectionName} onChange={(e) => setPrimaryCollectionName(e.target.value)} className={`${inputClass} font-mono`} placeholder="users" />
@@ -684,7 +707,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                 </div>
 
                                 {isIdentityMode && (
-                                    <div className="max-w-2xl">
+                                    <div>
                                         <label className={labelClass}>Root shape</label>
                                         <div className="flex gap-2">
                                             {(['object', 'array'] as RootKind[]).map((k) => (
@@ -839,7 +862,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                         )}
 
                         {activeTab === 'headers' && (
-                            <div className="p-4 space-y-2 max-w-2xl">
+                            <div className="p-4 space-y-2">
                                 <div className="flex gap-2 mb-2">
                                     <input value={headerKey} onChange={(e) => setHeaderKey(e.target.value)} placeholder="Header name" className={`${inputClass} flex-1`} />
                                     <input value={headerValue} onChange={(e) => setHeaderValue(e.target.value)} placeholder="Header value" className={`${inputClass} flex-1`} />

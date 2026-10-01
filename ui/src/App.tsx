@@ -11,6 +11,7 @@ import PWAInstallBanner from './components/PWAInstallBanner'
 const Dashboard = lazy(() => import('./components/Dashboard'))
 const SpecList = lazy(() => import('./components/SpecManager/SpecList'))
 const SpecDetail = lazy(() => import('./components/SpecManager/SpecDetail'))
+const SpecDesigner = lazy(() => import('./components/SpecManager/SpecDesigner'))
 const AIScenariosPage = lazy(() => import('./components/SpecManager/AIScenariosPage'))
 const OperationDetail = lazy(() => import('./components/OperationDetail'))
 const OperationRecordedResponsesPage = lazy(() => import('./components/OperationRecordedResponsesPage'))
@@ -46,6 +47,7 @@ function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="specs" element={<SpecList />} />
+                <Route path="specs/:specId/designer" element={<SpecDesigner />} />
                 <Route path="specs/:specId" element={<SpecDetail />} />
                 <Route path="specs/:specId/ai-scenarios" element={<Navigate to="/ai-scenarios" replace />} />
                 <Route path="ai-scenarios" element={<AIScenariosPage />} />

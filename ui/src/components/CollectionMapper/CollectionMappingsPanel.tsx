@@ -277,6 +277,34 @@ function MappingForm({ form, onChange, hints, idPrefix }: {
     )
 }
 
+// Reuses the established mapper controls in composed editors such as the spec
+// designer. The caller owns persistence, so this component only emits changes.
+export function CollectionMappingDraftEditor({ mapping, operation, onChange }: {
+    mapping: CollectionMapping
+    operation?: Operation
+    onChange: (mapping: CollectionMapping) => void
+}) {
+    const form: CollectionMappingInput = {
+        collectionName: mapping.collectionName,
+        name: mapping.name,
+        operation: mapping.operation,
+        filterRules: mapping.filterRules ?? [],
+        dataRules: mapping.dataRules ?? [],
+        outputKey: mapping.outputKey,
+        order: mapping.order,
+        enabled: mapping.enabled,
+    }
+    return (
+        <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center gap-3 border-b border-gray-200 p-5 dark:border-slate-800">
+                <div className="rounded-lg bg-violet-100 p-2 dark:bg-violet-900/30"><Database className="h-5 w-5 text-violet-600 dark:text-violet-400" /></div>
+                <div><h2 className="text-lg font-semibold">Collection Mapping</h2><p className="text-sm text-gray-500 dark:text-slate-400">Changes stay in this workspace until you use the main Save command.</p></div>
+            </div>
+            <div className="p-5"><MappingForm form={form} onChange={(next) => onChange({ ...mapping, ...next })} hints={hintsFromOperation(operation)} idPrefix={`designer-${mapping.id}`} /></div>
+        </section>
+    )
+}
+
 // ─── saved mapping list (shared between all scopes) ──────────────────────────
 
 function SavedMappingList({ mappings, hints, onRefresh }: {

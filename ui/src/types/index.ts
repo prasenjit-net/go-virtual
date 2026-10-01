@@ -30,6 +30,29 @@ export interface Spec {
     operationCount?: number;
 }
 
+export interface SpecWorkspace {
+    revision: string
+    spec: Spec
+    specScripts: ScriptBinding[]
+    specValidations: ValidationRule[]
+    specMappings: CollectionMapping[]
+    operations: SpecWorkspaceOperation[]
+}
+
+export interface SpecWorkspaceOperation {
+    operation: Operation
+    scripts: ScriptBinding[]
+    validations: ValidationRule[]
+    mappings: CollectionMapping[]
+    responses: SpecWorkspaceResponse[]
+}
+
+export interface SpecWorkspaceResponse {
+    response: ResponseConfig
+    scripts: ScriptBinding[]
+    mappings: CollectionMapping[]
+}
+
 export interface SpecInput {
     name?: string;
     content: string;

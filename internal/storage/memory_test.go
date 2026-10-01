@@ -1032,13 +1032,13 @@ func TestGetCollectionMappingsByResponse(t *testing.T) {
 func TestCreateValidationRule(t *testing.T) {
 	s := NewMemoryStorage()
 	rule := &models.ValidationRule{
-		ID:          "vr-1",
-		SpecID:      "spec-1",
-		Name:        "myRule",
-		Enabled:     true,
-		Order:       0,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:        "vr-1",
+		SpecID:    "spec-1",
+		Name:      "myRule",
+		Enabled:   true,
+		Order:     0,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	got, err := s.CreateValidationRule(rule)
 	if err != nil {

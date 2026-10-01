@@ -2,6 +2,7 @@ package api
 
 import (
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prasenjit/go-virtual/internal/ai"
@@ -24,10 +25,10 @@ type HandlerConfig struct {
 	StatsCollector    *stats.Collector
 	TracingService    *tracing.Service
 	ProxyEngine       *proxy.Engine
-	GlobalStore       store.GlobalStoreBackend  // optional; nil = Phase 1 mode
-	CollectionBackend store.CollectionBackend   // optional; nil disables collection admin endpoints
-	SessionManager    store.SessionRegistry     // optional; nil = Phase 1 mode
-	ArchiveManager    archive.ArchiveService    // optional; nil disables archive endpoints
+	GlobalStore       store.GlobalStoreBackend // optional; nil = Phase 1 mode
+	CollectionBackend store.CollectionBackend  // optional; nil disables collection admin endpoints
+	SessionManager    store.SessionRegistry    // optional; nil = Phase 1 mode
+	ArchiveManager    archive.ArchiveService   // optional; nil disables archive endpoints
 	Branding          config.BrandingConfig
 	ScriptTimeout     int           // ms; 0 = use default (100)
 	AIGenerator       *ai.Generator // optional; nil = AI generation disabled
@@ -35,6 +36,7 @@ type HandlerConfig struct {
 
 // Handler handles API requests
 type Handler struct {
+	workspaceMu       sync.Mutex
 	store             storage.Storage
 	statsCollector    *stats.Collector
 	tracingService    *tracing.Service

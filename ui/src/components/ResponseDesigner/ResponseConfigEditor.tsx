@@ -17,6 +17,8 @@ interface ResponseConfigEditorProps {
     onClose: () => void
     variant?: 'modal' | 'page'
     readOnly?: boolean
+    /** Keep changes in a parent workspace draft instead of calling response APIs. */
+    onDraftChange?: (config: ResponseConfig) => void
 }
 
 const templateDocs = {
@@ -167,6 +169,7 @@ function ResponseConfigEditorContent({
     onClose,
     variant = 'modal',
     readOnly = false,
+    onDraftChange,
 }: ResponseConfigEditorProps) {
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
@@ -397,6 +400,19 @@ function ResponseConfigEditorContent({
             body,
         }
 
+        if (onDraftChange) {
+            onDraftChange({
+                ...(config || {} as ResponseConfig),
+                id: config?.id || '',
+                operationId,
+                ...data,
+                kind: config?.kind || 'manual',
+                collectionResponse: config?.collectionResponse,
+                recorded: config?.recorded || false,
+                origin: config?.origin || 'manual',
+            })
+            return
+        }
         if (config) {
             updateMutation.mutate(data)
         } else {
@@ -717,10 +733,10 @@ function ResponseConfigEditorContent({
                     {!readOnly && (
                         <button
                             onClick={handleSubmit}
-                            disabled={createMutation.isPending || updateMutation.isPending}
+                            disabled={!onDraftChange && (createMutation.isPending || updateMutation.isPending)}
                             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
                         >
-                            {createMutation.isPending || updateMutation.isPending
+                            {onDraftChange ? 'Apply to workspace' : createMutation.isPending || updateMutation.isPending
                                 ? 'Saving...'
                                 : config
                                     ? 'Update'
@@ -886,7 +902,7 @@ function ResponseConfigEditorContent({
             </div>
         </div>
         {/* Response-scope pipeline: scripts + collections interleaved */}
-        {!isModal && config?.id && !readOnly && (
+        {!isModal && config?.id && !readOnly && !onDraftChange && (
             <PipelinePanel
                 scope="response"
                 scopeId={config.id}

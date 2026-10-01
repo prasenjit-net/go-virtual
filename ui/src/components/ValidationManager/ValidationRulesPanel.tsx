@@ -104,9 +104,11 @@ interface RuleModalProps {
     onClose: () => void
     isSaving: boolean
     saveError: string | null
+    embedded?: boolean
+    saveLabel?: string
 }
 
-function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProps) {
+function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = false, saveLabel }: RuleModalProps) {
     const [name, setName] = useState(rule?.name ?? '')
     const [description, setDescription] = useState(rule?.description ?? '')
     const [order, setOrder] = useState(rule?.order ?? 0)
@@ -124,8 +126,8 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-slate-700">
+        <div className={embedded ? 'w-full' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4'}>
+            <div className={clsx('bg-white dark:bg-slate-800 rounded-xl w-full flex flex-col border border-gray-200 dark:border-slate-700', embedded ? 'max-w-none shadow-sm' : 'max-w-2xl shadow-2xl max-h-[90vh]')}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
                     <div className="flex items-center gap-2">
@@ -258,12 +260,29 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                         className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-60 flex items-center gap-1.5"
                     >
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        {rule ? 'Update' : 'Create'}
+                        {saveLabel || (rule ? 'Update' : 'Create')}
                     </button>
                 </div>
             </div>
         </div>
     )
+}
+
+// The designer owns one complete draft, so this keeps the existing validation
+// editor while replacing its per-rule network save with an in-memory change.
+export function ValidationRuleDraftEditor({ rule, onChange }: {
+    rule: ValidationRule
+    onChange: (rule: ValidationRule) => void
+}) {
+    return <RuleModal
+        embedded
+        rule={rule}
+        onClose={() => undefined}
+        isSaving={false}
+        saveError={null}
+        saveLabel="Apply to workspace"
+        onSave={(input) => onChange({ ...rule, ...input })}
+    />
 }
 
 // ---- Main Panel ----

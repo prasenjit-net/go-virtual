@@ -22,6 +22,26 @@ export const specsApi = {
         return handleResponse<Spec>(response);
     },
 
+    getWorkspace: async (id: string) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/workspace`, { cache: 'no-store' });
+        return handleResponse<import('../types').SpecWorkspace>(response);
+    },
+
+    saveWorkspace: async (id: string, workspace: import('../types').SpecWorkspace) => {
+        const response = await fetch(`${API_BASE}/specs/${id}/workspace`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'If-Match': `"${workspace.revision}"` },
+            body: JSON.stringify(workspace),
+        });
+        if (!response.ok) {
+            const payload = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+            const error = new Error(payload.error || `HTTP ${response.status}`) as Error & { status: number };
+            error.status = response.status;
+            throw error;
+        }
+        return response.json() as Promise<{ workspace: import('../types').SpecWorkspace; idMap: Record<string, string> }>;
+    },
+
     create: async (data: { name?: string; content: string; basePath: string; description?: string }) => {
         const response = await fetch(`${API_BASE}/specs`, {
             method: 'POST',
