@@ -1,7 +1,7 @@
 import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
+import { X, Trash2, AlertCircle, FileJson, Wand2, Zap } from 'lucide-react'
 import type * as Monaco from 'monaco-editor'
 import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { ConditionNode, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
@@ -446,16 +446,21 @@ function ResponseConfigEditorContent({
         <>
         <div className={wrapperClass}>
             <div className={containerClass}>
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">
-                        {config ? 'Edit Response Configuration' : 'New Response Configuration'}
-                    </h2>
+                <div className="flex h-12 items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
+                    <FileJson className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400" />
+                    <span className="max-w-xs truncate text-sm font-semibold text-gray-800 dark:text-slate-200">
+                        {name || (config ? 'Response configuration' : 'New response')}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                        Manual
+                    </span>
                     {isModal && (
                         <button
                             onClick={onClose}
-                            className="p-2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
+                            className="ml-auto rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                            aria-label="Close response editor"
                         >
-                            <X className="w-5 h-5" />
+                            <X className="h-4 w-4" />
                         </button>
                     )}
                 </div>

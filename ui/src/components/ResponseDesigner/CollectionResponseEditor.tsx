@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
-    ArrowLeft,
     Database,
     FileJson,
     GitBranch,
@@ -519,14 +518,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose,
         <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
             {/* ── Top bar ───────────────────────────────────────────────────── */}
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 px-3 h-12 flex-shrink-0">
-                <button
-                    onClick={onClose}
-                    className="p-1.5 rounded-md text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Back"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                </button>
-                <div className="w-px h-5 bg-gray-200 dark:bg-slate-700" />
                 <Database className="w-4 h-4 text-teal-600 dark:text-teal-400 flex-shrink-0" />
                 <span className="text-sm font-semibold text-gray-800 dark:text-slate-200 truncate max-w-xs">
                     {name || (config ? 'Collection Response' : 'New Collection Response')}
