@@ -109,6 +109,14 @@ func TestAdditionalOperationsOrderedResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	for _, trace := range result.mapperTraces {
+		if trace.Error == "" && trace.RecordCount > 0 && trace.Result == nil {
+			t.Fatalf("mapper output missing from trace: %+v", trace)
+		}
+		if trace.Operation == models.ColOpInsert && len(trace.Data) == 0 {
+			t.Fatalf("write data missing from trace: %+v", trace)
+		}
+	}
 	outputs := result.mapperOutputs
 	inserted := outputs["inserted"].(map[string]any)
 	if inserted["_id"] == nil || inserted["enabled"] != false || inserted["count"] != float64(0) || inserted["nullable"] != nil {

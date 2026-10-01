@@ -1,0 +1,578 @@
+openapi: 3.0.3
+info:
+  title: Employee API
+  version: 1.0.0
+  description: |
+    Manage employee records, reporting relationships, and US mailing addresses.
+
+    Employee identifiers are caller-assigned, unique, and immutable. An employee
+    may have multiple addresses or no addresses. A null managerId means the
+    employee has no assigned manager. A non-null managerId must identify another
+    existing employee; self-management and reporting cycles are not allowed.
+
+    PUT replaces all mutable attributes of an existing employee. PATCH changes
+    only supplied attributes; a supplied addresses array replaces the entire
+    array. Neither PUT nor PATCH creates a missing employee.
+
+    Examples use fictional employees and illustrative addresses. Successful
+    response examples include every Employee attribute for response mapping.
+servers:
+  - url: http://localhost:9090
+    description: Local development and virtual API server
+  - url: https://employee-api.example.com
+    description: Illustrative production endpoint
+tags:
+  - name: Employees
+    description: Create, browse, retrieve, replace, partially update, and delete employees.
+paths:
+  /employees:
+    get:
+      tags: [Employees]
+      operationId: listEmployees
+      summary: List employees
+      description: |
+        Returns employees ordered by employeeId ascending. Optional department
+        and managerId filters use exact, case-sensitive matching and are combined
+        with AND. Offset and limit are applied after filtering. An empty result
+        is a successful response containing an empty array.
+      parameters:
+        - name: department
+          in: query
+          description: Return employees in this department only.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          example: Engineering
+        - name: managerId
+          in: query
+          description: Return direct reports of this employee. Omit to include all reporting relationships.
+          schema:
+            $ref: '#/components/schemas/EmployeeId'
+          example: EMP-1001
+        - name: limit
+          in: query
+          description: Maximum number of records to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 20
+        - name: offset
+          in: query
+          description: Number of matching records to skip.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+          example: 0
+      responses:
+        '200':
+          description: Matching employees, including an empty array when no records match.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Employee'
+              examples:
+                employees:
+                  summary: A manager and an employee with two US addresses
+                  value:
+                    - employeeId: EMP-1001
+                      name: Morgan Reed
+                      department: Engineering
+                      managerId: null
+                      addresses:
+                        - addressLine1: 100 Example Avenue
+                          city: Seattle
+                          state: WA
+                          postalCode: '98101'
+                          country: US
+                    - employeeId: EMP-1002
+                      name: Avery Chen
+                      department: Engineering
+                      managerId: EMP-1001
+                      addresses:
+                        - addressLine1: 200 Sample Street
+                          addressLine2: Apt 4B
+                          city: Boston
+                          state: MA
+                          postalCode: '02108'
+                          country: US
+                        - addressLine1: 300 Demo Boulevard
+                          addressLine2: Suite 500
+                          city: Austin
+                          state: TX
+                          postalCode: '78701-1234'
+                          country: US
+                no-results:
+                  summary: No employees match the filters
+                  value: []
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags: [Employees]
+      operationId: createEmployee
+      summary: Create an employee
+      description: |
+        Creates an employee with a unique caller-assigned employeeId. All five
+        Employee attributes are required; use null for no manager and [] for no
+        addresses. The referenced manager must exist before this operation.
+      requestBody:
+        required: true
+        description: Complete employee record to create.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Employee'
+            examples:
+              with-manager:
+                $ref: '#/components/examples/EmployeeWithManager'
+              without-manager:
+                $ref: '#/components/examples/EmployeeWithoutManager'
+      responses:
+        '201':
+          description: Employee created successfully.
+          headers:
+            Location:
+              description: Relative URL of the newly created employee.
+              schema:
+                type: string
+              example: /employees/EMP-1002
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+              examples:
+                created-employee:
+                  $ref: '#/components/examples/EmployeeWithManager'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  /employees/{employeeId}:
+    parameters:
+      - $ref: '#/components/parameters/EmployeeIdPath'
+    get:
+      tags: [Employees]
+      operationId: getEmployee
+      summary: Retrieve an employee
+      description: Returns the complete employee record for the supplied identifier.
+      responses:
+        '200':
+          description: Employee found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+              examples:
+                employee:
+                  $ref: '#/components/examples/EmployeeWithManager'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    put:
+      tags: [Employees]
+      operationId: replaceEmployee
+      summary: Replace an employee's mutable attributes
+      description: |
+        Replaces name, department, managerId, and addresses on an existing
+        employee. All four attributes must be supplied. The employeeId comes
+        from the path and cannot be changed. An empty addresses array clears
+        all addresses; a null managerId removes the reporting relationship.
+      requestBody:
+        required: true
+        description: Complete replacement of the employee's mutable attributes.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeReplacement'
+            examples:
+              transfer-department:
+                summary: Transfer an employee and replace their mailing addresses
+                value:
+                  name: Avery Chen
+                  department: Operations
+                  managerId: null
+                  addresses:
+                    - addressLine1: 400 Example Road
+                      city: Denver
+                      state: CO
+                      postalCode: '80202'
+                      country: US
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedEmployee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags: [Employees]
+      operationId: updateEmployee
+      summary: Partially update an employee
+      description: |
+        Applies only supplied attributes; omitted attributes keep their current
+        values. Supply at least one mutable attribute. employeeId is immutable.
+        A supplied addresses array replaces all addresses rather than merging
+        individual entries. Only managerId accepts null.
+      requestBody:
+        required: true
+        description: Attributes to change on the existing employee.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeePatch'
+            examples:
+              department-only:
+                summary: Change department while preserving all other fields
+                value:
+                  department: Operations
+              clear-manager:
+                summary: Remove the manager relationship
+                value:
+                  managerId: null
+              clear-addresses:
+                summary: Remove all addresses
+                value:
+                  addresses: []
+      responses:
+        '200':
+          $ref: '#/components/responses/UpdatedEmployee'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags: [Employees]
+      operationId: deleteEmployee
+      summary: Delete an employee
+      description: |
+        Permanently removes an existing employee. Reassign or clear the managerId
+        on their direct reports first; deletion is rejected while employees still
+        report to this employee. Repeating a successful deletion returns 404.
+      responses:
+        '204':
+          description: Employee deleted. No response body is returned.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalError'
+components:
+  parameters:
+    EmployeeIdPath:
+      name: employeeId
+      in: path
+      required: true
+      description: Immutable identifier of the employee to retrieve, update, or delete.
+      schema:
+        $ref: '#/components/schemas/EmployeeId'
+      example: EMP-1002
+  schemas:
+    EmployeeId:
+      type: string
+      description: Caller-assigned identifier beginning with EMP- followed by 4 to 10 digits.
+      pattern: '^EMP-[0-9]{4,10}$'
+      example: EMP-1002
+    ManagerId:
+      type: string
+      nullable: true
+      description: Existing manager's employeeId, or null when no manager is assigned. Self-reference and reporting cycles are invalid.
+      pattern: '^EMP-[0-9]{4,10}$'
+      example: EMP-1001
+    EmployeeName:
+      type: string
+      description: Employee's full display name. Must contain at least one non-whitespace character.
+      minLength: 1
+      maxLength: 200
+      pattern: '\S'
+      example: Avery Chen
+    Department:
+      type: string
+      description: Department name. Values are case-sensitive and must contain a non-whitespace character.
+      minLength: 1
+      maxLength: 100
+      pattern: '\S'
+      example: Engineering
+    Addresses:
+      type: array
+      description: Employee's US mailing addresses. An empty array means no addresses are recorded.
+      maxItems: 10
+      items:
+        $ref: '#/components/schemas/Address'
+    Address:
+      type: object
+      additionalProperties: false
+      description: |
+        US mailing address. Postal codes are strings to preserve leading zeros.
+        The state field accepts the 50 states, District of Columbia, inhabited
+        US territories, and military postal region codes. Syntax validation does
+        not establish postal deliverability or validate city/state/ZIP consistency.
+      required: [addressLine1, city, state, postalCode, country]
+      properties:
+        addressLine1:
+          type: string
+          description: Street number and name, PO Box, or military delivery address.
+          minLength: 1
+          maxLength: 200
+          pattern: '\S'
+          example: 200 Sample Street
+        addressLine2:
+          type: string
+          description: Optional apartment, suite, unit, or additional delivery information.
+          maxLength: 100
+          example: Apt 4B
+        city:
+          type: string
+          description: City name, or APO/FPO/DPO for military mail.
+          minLength: 1
+          maxLength: 100
+          pattern: '\S'
+          example: Boston
+        state:
+          type: string
+          description: Two-letter uppercase state, territory, or military postal abbreviation.
+          enum: [AL, AK, AZ, AR, CA, CO, CT, DE, DC, FL, GA, HI, ID, IL, IN, IA, KS, KY, LA, ME, MD, MA, MI, MN, MS, MO, MT, NE, NV, NH, NJ, NM, NY, NC, ND, OH, OK, OR, PA, RI, SC, SD, TN, TX, UT, VT, VA, WA, WV, WI, WY, AS, GU, MP, PR, VI, AA, AE, AP]
+          example: MA
+        postalCode:
+          type: string
+          description: Five-digit ZIP code or ZIP+4, including any leading zeros.
+          pattern: '^[0-9]{5}(-[0-9]{4})?$'
+          example: '02108'
+        country:
+          type: string
+          description: Fixed country code for US addresses.
+          enum: [US]
+          example: US
+      example:
+        addressLine1: 200 Sample Street
+        addressLine2: Apt 4B
+        city: Boston
+        state: MA
+        postalCode: '02108'
+        country: US
+    Employee:
+      type: object
+      additionalProperties: false
+      description: Complete employee record. All attributes are returned, including an empty addresses array or null managerId.
+      required: [employeeId, name, addresses, department, managerId]
+      properties:
+        employeeId:
+          $ref: '#/components/schemas/EmployeeId'
+        name:
+          $ref: '#/components/schemas/EmployeeName'
+        addresses:
+          $ref: '#/components/schemas/Addresses'
+        department:
+          $ref: '#/components/schemas/Department'
+        managerId:
+          $ref: '#/components/schemas/ManagerId'
+    EmployeeReplacement:
+      type: object
+      additionalProperties: false
+      description: All mutable employee attributes; employeeId is supplied exclusively in the URL.
+      required: [name, addresses, department, managerId]
+      properties:
+        name:
+          $ref: '#/components/schemas/EmployeeName'
+        addresses:
+          $ref: '#/components/schemas/Addresses'
+        department:
+          $ref: '#/components/schemas/Department'
+        managerId:
+          $ref: '#/components/schemas/ManagerId'
+    EmployeePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: One or more mutable fields. Omitted fields are unchanged; arrays are replaced as a whole.
+      properties:
+        name:
+          $ref: '#/components/schemas/EmployeeName'
+        addresses:
+          $ref: '#/components/schemas/Addresses'
+        department:
+          $ref: '#/components/schemas/Department'
+        managerId:
+          $ref: '#/components/schemas/ManagerId'
+    Error:
+      type: object
+      additionalProperties: false
+      description: Consistent error response with optional field-level details.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          example: VALIDATION_FAILED
+        message:
+          type: string
+          description: Human-readable explanation of the failure.
+          example: One or more employee fields are invalid.
+        details:
+          type: array
+          description: Field-level failures when available; omitted for errors without field details.
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, message]
+            properties:
+              field:
+                type: string
+                description: Field path or parameter name associated with the error.
+                example: addresses[0].postalCode
+              message:
+                type: string
+                description: Explanation of the field error.
+                example: Must be a five-digit ZIP code or ZIP+4.
+  examples:
+    EmployeeWithManager:
+      summary: Employee with a manager and two US addresses
+      description: Includes an apartment address with a leading-zero ZIP and a business address with ZIP+4.
+      value:
+        employeeId: EMP-1002
+        name: Avery Chen
+        department: Engineering
+        managerId: EMP-1001
+        addresses:
+          - addressLine1: 200 Sample Street
+            addressLine2: Apt 4B
+            city: Boston
+            state: MA
+            postalCode: '02108'
+            country: US
+          - addressLine1: 300 Demo Boulevard
+            addressLine2: Suite 500
+            city: Austin
+            state: TX
+            postalCode: '78701-1234'
+            country: US
+    EmployeeWithoutManager:
+      summary: Employee without a manager or addresses
+      description: Create this manager before creating an employee who references EMP-1001.
+      value:
+        employeeId: EMP-1001
+        name: Morgan Reed
+        department: Engineering
+        managerId: null
+        addresses: []
+  responses:
+    UpdatedEmployee:
+      description: Complete employee record after the requested changes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Employee'
+          examples:
+            updated-employee:
+              summary: Employee after a department transfer and address replacement
+              value:
+                employeeId: EMP-1002
+                name: Avery Chen
+                department: Operations
+                managerId: null
+                addresses:
+                  - addressLine1: 400 Example Road
+                    city: Denver
+                    state: CO
+                    postalCode: '80202'
+                    country: US
+    BadRequest:
+      description: Malformed JSON, invalid employee identifier, or invalid query parameter.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid-request:
+              summary: Invalid request syntax
+              value:
+                code: BAD_REQUEST
+                message: The request contains malformed JSON or invalid parameters.
+    NotFound:
+      description: No employee exists with the supplied identifier.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            employee-not-found:
+              summary: Unknown employee
+              value:
+                code: EMPLOYEE_NOT_FOUND
+                message: Employee EMP-9999 was not found.
+    Conflict:
+      description: Employee identifier already exists, or deletion is blocked by direct reports.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            duplicate-employee:
+              summary: Creation conflicts with an existing identifier
+              value:
+                code: EMPLOYEE_ALREADY_EXISTS
+                message: Employee EMP-1002 already exists.
+            has-direct-reports:
+              summary: Manager cannot be deleted while direct reports remain
+              value:
+                code: EMPLOYEE_HAS_DIRECT_REPORTS
+                message: Reassign EMP-1001's direct reports before deleting this employee.
+    ValidationError:
+      description: Valid JSON that fails schema validation or reporting-relationship rules.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid-address:
+              summary: Invalid ZIP code
+              value:
+                code: VALIDATION_FAILED
+                message: One or more employee fields are invalid.
+                details:
+                  - field: addresses[0].postalCode
+                    message: Must be a five-digit ZIP code or ZIP+4.
+            invalid-manager:
+              summary: Manager does not exist
+              value:
+                code: INVALID_MANAGER
+                message: The assigned manager must be an existing employee.
+                details:
+                  - field: managerId
+                    message: Employee EMP-9999 does not exist.
+    InternalError:
+      description: Unexpected server error. Internal implementation details are not exposed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            internal-error:
+              summary: Unexpected failure
+              value:
+                code: INTERNAL_ERROR
+                message: The request could not be completed. Try again later.

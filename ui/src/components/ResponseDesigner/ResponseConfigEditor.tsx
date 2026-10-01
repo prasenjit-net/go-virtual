@@ -1,3 +1,4 @@
+import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { X, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
@@ -160,7 +161,7 @@ const templateDocs = {
     ],
 }
 
-export default function ResponseConfigEditor({
+function ResponseConfigEditorContent({
     operationId,
     config,
     onClose,
@@ -575,7 +576,7 @@ export default function ResponseConfigEditor({
                     </div>
 
                     {/* Conditions */}
-                    <ConditionEditor
+                    <MappingHintControls /><ConditionEditor
                         label="Conditions"
                         value={conditionTree}
                         onChange={readOnly ? () => {} : setConditionTree}
@@ -901,4 +902,8 @@ export default function ResponseConfigEditor({
         )}
         </>
     )
+}
+
+export default function ResponseConfigEditor(props: ResponseConfigEditorProps) {
+ return <MappingHintsProvider operationId={props.operationId} scope="response"><ResponseConfigEditorContent {...props} /></MappingHintsProvider>
 }

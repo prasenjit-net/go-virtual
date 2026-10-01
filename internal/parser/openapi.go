@@ -346,13 +346,14 @@ func (p *Parser) ExtractExampleResponse(content string, method, pathPattern stri
 // SpecResponseDef holds spec-defined response information for a single status code.
 // When a response has multiple named examples, one SpecResponseDef is emitted per example.
 type SpecResponseDef struct {
-	StatusCode     int    `json:"statusCode"`
-	Description    string `json:"description"`
-	ContentType    string `json:"contentType,omitempty"`    // e.g. "application/json"
-	BodyExample    string `json:"bodyExample,omitempty"`    // JSON string or schema-derived example
-	SchemaHint     string `json:"schemaHint,omitempty"`     // Human-readable schema summary
-	ExampleName    string `json:"exampleName,omitempty"`    // Named example key from the spec
-	ExampleSummary string `json:"exampleSummary,omitempty"` // Human-readable summary of the named example
+	Schema         *openapi3.Schema `json:"-"`
+	StatusCode     int              `json:"statusCode"`
+	Description    string           `json:"description"`
+	ContentType    string           `json:"contentType,omitempty"`    // e.g. "application/json"
+	BodyExample    string           `json:"bodyExample,omitempty"`    // JSON string or schema-derived example
+	SchemaHint     string           `json:"schemaHint,omitempty"`     // Human-readable schema summary
+	ExampleName    string           `json:"exampleName,omitempty"`    // Named example key from the spec
+	ExampleSummary string           `json:"exampleSummary,omitempty"` // Human-readable summary of the named example
 }
 
 // ParamDef describes a single path or query parameter.
@@ -589,6 +590,9 @@ func (p *Parser) ExtractAllResponses(content string, method, pathPattern string)
 				continue
 			}
 			def.ContentType = mediaType
+			if mt.Schema != nil {
+				def.Schema = mt.Schema.Value
+			}
 
 			if mt.Example != nil {
 				// Single inline example

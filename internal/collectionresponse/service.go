@@ -28,6 +28,7 @@ func NewService(s storage.Storage, backend store.CollectionBackend) *Service {
 // MatchResult is the outcome of evaluating a Collection Response's primary
 // query during matching.
 type MatchResult struct {
+	QueryExecuted    bool
 	Matched          bool
 	RootKind         models.RootKind
 	Template         *ResolvedTemplate
@@ -83,15 +84,30 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 	}
 	filter, err := resolve(cr.Primary.FilterRules, bctx)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	res.Filter = filter
 
+	res.QueryExecuted = true
+	started := time.Now()
+	res.primaryTrace = &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: models.ColOpFindOne, Filter: filter}
+	if rootKind == models.RootKindArray {
+		res.primaryTrace.Operation = models.ColOpFindMany
+	}
+	defer func() {
+		res.primaryTrace.DurationMs = float64(time.Since(started).Microseconds()) / 1000
+		res.primaryTrace.RecordCount = res.RecordCount
+		if rootKind == models.RootKindArray {
+			res.primaryTrace.Result = res.Docs
+		} else {
+			res.primaryTrace.Result = res.Doc
+		}
+	}()
 	ops := collection.NewOps(cr.Primary.CollectionName, s.backend, sess)
 	if rootKind == models.RootKindArray {
 		docs, err := ops.FindMany(filter)
 		if err != nil {
-			return nil, err
+			return res, err
 		}
 		res.Docs = docs
 		res.RecordCount = len(docs)
@@ -101,7 +117,7 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 
 	doc, err := ops.FindOne(filter)
 	if err != nil {
-		return nil, err
+		return res, err
 	}
 	res.Doc = doc
 	if doc != nil {
@@ -113,6 +129,7 @@ func (s *Service) TryMatch(op *models.Operation, cfg *models.ResponseConfig, req
 
 // RenderResult is a rendered Collection Response body plus diagnostics.
 type RenderResult struct {
+	FieldMappings          []models.ResponseFieldMappingTrace
 	Body                   []byte
 	Warnings               []string
 	AdditionalMapperTraces []models.CollectionTrace
@@ -141,6 +158,7 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 	identity := match.Template.Source == TemplateSourceIdentity
 	var value any
 	var warnings []string
+	var mappings []models.ResponseFieldMappingTrace
 	if !match.prepared && isMutation(cr.Primary.Mode) {
 		warnings = append(warnings, "Preview does not execute the main "+string(cr.Primary.Mode)+"; no write result is simulated.")
 	}
@@ -156,13 +174,18 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 	case models.RootKindArray:
 		item := match.Template.ItemTemplate()
 		items := make([]any, 0, len(match.Docs))
-		for _, d := range match.Docs {
+		for itemIndex, d := range match.Docs {
 			var v any
 			var w []string
 			if identity {
 				v, w = fillIdentity(d, overrideMap, req, mappers)
 			} else {
-				v, w = FillDocument(item, d, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
+				var fields []models.ResponseFieldMappingTrace
+				v, w, fields = fillDocumentWithTrace(item, d, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
+				for i := range fields {
+					fields[i].TargetPath = fmt.Sprintf("%d.%s", itemIndex, fields[i].TargetPath)
+				}
+				mappings = append(mappings, fields...)
 			}
 			items = append(items, v)
 			warnings = append(warnings, w...)
@@ -178,7 +201,7 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 			warnings = append(warnings, w...)
 		} else {
 			var w []string
-			value, w = FillDocument(match.Template.Value, match.Doc, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
+			value, w, mappings = fillDocumentWithTrace(match.Template.Value, match.Doc, overrideMap, req, mappers, cr.EffectiveFallbackToExample())
 			warnings = append(warnings, w...)
 		}
 	}
@@ -187,7 +210,7 @@ func (s *Service) Render(cfg *models.ResponseConfig, match *MatchResult, req *co
 	if err != nil {
 		return &RenderResult{AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, fmt.Errorf("marshal rendered collection response: %w", err)
 	}
-	return &RenderResult{Body: body, Warnings: warnings, AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, nil
+	return &RenderResult{Body: body, Warnings: warnings, FieldMappings: mappings, AdditionalMapperTraces: mapperTraces, PrimaryMapperTrace: match.primaryTrace}, nil
 }
 
 // ExecuteSelected performs operations once after matching. Render remains read-only.
@@ -205,18 +228,20 @@ func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult
 	cr := cfg.CollectionResponse
 	if cr.Primary.Mode == models.ColOpUpdate {
 		start := time.Now()
-		trace := &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: models.ColOpUpdate}
+		trace := &models.CollectionTrace{MappingName: "Primary mapper", CollectionName: cr.Primary.CollectionName, Operation: models.ColOpUpdate, Filter: match.Filter}
 		result.primaryTrace = trace
 		var err error
 		if match.Doc != nil {
 			var data map[string]any
 			data, err = collection.ResolveRequiredMap(cr.Primary.DataRules, &collection.BindingContext{Request: req, Primary: match.Doc})
+			trace.Data = data
 			if err == nil {
 				id, exists := match.Doc["_id"]
 				if !exists || id == nil || fmt.Sprint(id) == "" {
 					err = fmt.Errorf("selected document has no identity")
 				} else {
-					result.Doc, err = collection.NewOps(cr.Primary.CollectionName, s.backend, sess).Update(map[string]any{"_id": id}, data)
+					trace.Filter = map[string]any{"_id": id}
+					result.Doc, err = collection.NewOps(cr.Primary.CollectionName, s.backend, sess).Update(trace.Filter, data)
 					if err == nil && result.Doc == nil {
 						err = fmt.Errorf("selected update target no longer exists")
 					}
@@ -226,6 +251,7 @@ func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult
 				trace.RecordCount = 1
 			}
 		}
+		trace.Result = result.Doc
 		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
 		if err != nil {
 			trace.Error = err.Error()
@@ -238,6 +264,7 @@ func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult
 		result.primaryTrace = trace
 		ctx := &collection.BindingContext{Request: req}
 		data, err := collection.ResolveRequiredMap(cr.Primary.DataRules, ctx)
+		trace.Data = data
 		if err == nil {
 			ops := collection.NewOps(cr.Primary.CollectionName, s.backend, sess)
 			if cr.Primary.Mode == models.ColOpInsert {
@@ -246,11 +273,13 @@ func (s *Service) ExecuteSelected(cfg *models.ResponseConfig, match *MatchResult
 				var filter map[string]any
 				filter, err = collection.ResolveRequiredMap(cr.Primary.FilterRules, ctx)
 				result.Filter = filter
+				trace.Filter = filter
 				if err == nil {
 					result.Doc, err = ops.Upsert(filter, data)
 				}
 			}
 		}
+		trace.Result = result.Doc
 		trace.DurationMs = float64(time.Since(start).Microseconds()) / 1000
 		if err != nil {
 			trace.Error = err.Error()
@@ -301,7 +330,7 @@ func (s *Service) runAdditionalMappers(cr *models.CollectionResponseConfig, matc
 			continue
 		}
 		start := time.Now()
-		trace := models.CollectionTrace{MappingName: m.OutputKey, OutputKey: m.OutputKey, CollectionName: m.CollectionName, Operation: m.Mode}
+		trace := models.CollectionTrace{MappingName: m.OutputKey, OutputKey: m.OutputKey, CollectionName: m.CollectionName, Operation: m.Mode, Filter: filters[i], Data: data[i]}
 		ops := collection.NewOps(m.CollectionName, s.backend, sess)
 		var doc map[string]any
 		var err error
@@ -340,6 +369,7 @@ func (s *Service) runAdditionalMappers(cr *models.CollectionResponseConfig, matc
 		if err != nil {
 			trace.Error = err.Error()
 		}
+		trace.Result = outputs[m.OutputKey]
 		traces = append(traces, trace)
 		if err != nil {
 			return outputs, traces, err
@@ -433,5 +463,5 @@ func (s *Service) ResolveTemplateFor(op *models.Operation, statusCode int, templ
 
 // RenderTrace keeps operation diagnostics available when execution or filling fails.
 func (m *MatchResult) RenderTrace(statusCode int) *models.CollectionResponseRenderTrace {
-	return &models.CollectionResponseRenderTrace{TemplateStatusCode: statusCode, TemplateSource: string(m.Template.Source), PrimaryMapper: m.primaryTrace, AdditionalMappers: m.mapperTraces}
+	return &models.CollectionResponseRenderTrace{TemplateRef: m.Template.ExampleName, TemplateStatusCode: statusCode, TemplateSource: string(m.Template.Source), PrimaryMapper: m.primaryTrace, AdditionalMappers: m.mapperTraces}
 }

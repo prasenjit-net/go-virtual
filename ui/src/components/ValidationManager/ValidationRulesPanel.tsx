@@ -1,3 +1,4 @@
+import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -207,12 +208,12 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                             When condition is <strong>true</strong> → onPass properties injected.
                             When <strong>false</strong> → onFail properties injected.
                         </p>
-                        <ConditionEditor
+                        <MappingHintsProvider order={order} stepId={rule?.id} stepType="validation"><MappingHintControls /><ConditionEditor
                             label="Condition (when does this rule pass?)"
                             value={conditionTree}
                             onChange={setConditionTree}
                             emptyHint="No condition — rule always passes."
-                        />
+                        /></MappingHintsProvider>
                     </div>
 
                     {/* OnSuccess / OnFailure */}
@@ -267,7 +268,7 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
 
 // ---- Main Panel ----
 
-export default function ValidationRulesPanel(props: Props) {
+function ValidationRulesPanelContent(props: Props) {
     const queryClient = useQueryClient()
     const [modalOpen, setModalOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<ValidationRule | null>(null)
@@ -500,4 +501,8 @@ export default function ValidationRulesPanel(props: Props) {
             )}
         </div>
     )
+}
+
+export default function ValidationRulesPanel(props: Props) {
+ return <MappingHintsProvider controls scope={props.scope} operationId={props.scope === "operation" ? props.operationId : undefined} specId={props.scope === "spec" ? props.specId : undefined}><ValidationRulesPanelContent {...props} /></MappingHintsProvider>
 }

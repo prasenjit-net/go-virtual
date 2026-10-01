@@ -70,6 +70,9 @@ type Trace struct {
 // CollectionResponseAttempt captures one Collection Response's primary query
 // during matching.
 type CollectionResponseAttempt struct {
+	QueryExecuted      bool           `json:"queryExecuted"`
+	Reason             string         `json:"reason,omitempty"`
+	DurationMs         float64        `json:"durationMs"`
 	ResponseConfigID   string         `json:"responseConfigId"`
 	ResponseConfigName string         `json:"responseConfigName"`
 	CollectionName     string         `json:"collectionName"`
@@ -82,12 +85,21 @@ type CollectionResponseAttempt struct {
 
 // CollectionResponseRenderTrace describes how a Collection Response's body
 // was rendered after it won matching.
+type ResponseFieldMappingTrace struct {
+	TargetPath string `json:"targetPath"`
+	Source     string `json:"source"`
+	Key        string `json:"key"`
+}
+
 type CollectionResponseRenderTrace struct {
-	TemplateStatusCode int               `json:"templateStatusCode,omitempty"`
-	TemplateSource     string            `json:"templateSource,omitempty"` // "example" | "schema" | "identity"
-	PrimaryMapper      *CollectionTrace  `json:"primaryMapper,omitempty"`
-	AdditionalMappers  []CollectionTrace `json:"additionalMappers,omitempty"`
-	Warnings           []string          `json:"warnings,omitempty"`
+	FieldMappings      []ResponseFieldMappingTrace `json:"fieldMappings,omitempty"`
+	TemplateRef        string                      `json:"templateRef,omitempty"`
+	Error              string                      `json:"error,omitempty"`
+	TemplateStatusCode int                         `json:"templateStatusCode,omitempty"`
+	TemplateSource     string                      `json:"templateSource,omitempty"` // "example" | "schema" | "identity"
+	PrimaryMapper      *CollectionTrace            `json:"primaryMapper,omitempty"`
+	AdditionalMappers  []CollectionTrace           `json:"additionalMappers,omitempty"`
+	Warnings           []string                    `json:"warnings,omitempty"`
 }
 
 // PipelineTraceItem is one step in the unified pipeline execution timeline.

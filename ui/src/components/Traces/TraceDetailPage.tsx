@@ -223,7 +223,7 @@ function CollectionStepRow({ ct, idx, aborted }: { ct: CollectionTrace; idx: num
             {ct.mappingName && ct.mappingName !== ct.collectionName && (
                 <span className="text-xs text-gray-400 dark:text-slate-500 truncate">({ct.mappingName})</span>
             )}
-            <span className="text-xs text-gray-400 dark:text-slate-500 font-mono flex-1">→ .{ct.outputKey}</span>
+            <span className="text-xs text-gray-400 dark:text-slate-500 font-mono flex-1">{ct.outputKey ? `→ .${ct.outputKey}` : ct.mappingName === 'Primary mapper' ? '→ primary document' : ''}</span>
             {ct.error ? (
                 <span className="text-xs text-red-600 dark:text-red-400 font-medium shrink-0">{ct.error}</span>
             ) : (
@@ -232,6 +232,12 @@ function CollectionStepRow({ ct, idx, aborted }: { ct: CollectionTrace; idx: num
                 </span>
             )}
             <span className="text-xs text-gray-400 dark:text-slate-500 shrink-0">{ct.durationMs}ms</span>
+            {(ct.filter !== undefined || ct.data !== undefined || ct.result !== undefined) && (
+                <details className="w-full text-xs text-gray-700 dark:text-slate-300">
+                    <summary className="cursor-pointer">Mapper inputs and output</summary>
+                    <pre className="mt-2 overflow-x-auto rounded bg-gray-50 dark:bg-slate-950 p-3">{JSON.stringify({ filter: ct.filter, data: ct.data, result: ct.result }, null, 2)}</pre>
+                </details>
+            )}
         </div>
     )
 }
@@ -622,11 +628,23 @@ export default function TraceDetailPage() {
                         <div className="bg-white dark:bg-slate-900 rounded-lg border border-gray-200 dark:border-slate-800 overflow-hidden">
                             <h3 className="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-slate-200">Collection response</h3>
                             {trace.collectionResponseAttempts?.map((attempt, i) => <div key={i} className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300">
-                                {attempt.responseConfigName}: {attempt.mode} on {attempt.collectionName} — {attempt.matched ? 'selected' : 'not matched'} ({attempt.recordCount} records)
+                                {attempt.responseConfigName}: {attempt.mode || 'automatic'} on {attempt.collectionName} — {attempt.matched ? 'selected' : 'not matched'}
+                                {attempt.queryExecuted !== false && ` (${attempt.recordCount} records)`}
+                                {attempt.reason && <p className="text-xs mt-1">{attempt.reason}</p>}
+                                {attempt.filter !== undefined && <pre className="mt-1 text-xs overflow-x-auto">{JSON.stringify(attempt.filter, null, 2)}</pre>}
                                 {attempt.error && <span className="text-red-600 dark:text-red-400"> {attempt.error}</span>}
                             </div>)}
+                            {trace.collectionResponseRender && <div className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300">
+                                Template: {trace.collectionResponseRender.templateSource || 'unknown'} · Status {trace.collectionResponseRender.templateStatusCode}
+                                {trace.collectionResponseRender.templateRef && ` · ${trace.collectionResponseRender.templateRef}`}
+                                {trace.collectionResponseRender.error && <p className="text-red-600 dark:text-red-400">{trace.collectionResponseRender.error}</p>}
+                            </div>}
                             {trace.collectionResponseRender?.primaryMapper && <CollectionStepRow ct={trace.collectionResponseRender.primaryMapper} idx={0} />}
                             {trace.collectionResponseRender?.additionalMappers?.map((mapper, i) => <CollectionStepRow key={i} ct={mapper} idx={i + 1} />)}
+                            {!!trace.collectionResponseRender?.fieldMappings?.length && <details className="px-4 py-2 text-sm text-gray-600 dark:text-slate-300">
+                                <summary className="cursor-pointer">Response field sources</summary>
+                                {trace.collectionResponseRender.fieldMappings.map((mapping, i) => <p key={i} className="text-xs font-mono mt-1">{mapping.targetPath || '(root)'} ← {mapping.source}: {mapping.key}</p>)}
+                            </details>}
                             {trace.collectionResponseRender?.warnings?.map((warning, i) => <p key={i} className="px-4 py-2 text-xs text-amber-700 dark:text-amber-300">{warning}</p>)}
                         </div>
                     )}

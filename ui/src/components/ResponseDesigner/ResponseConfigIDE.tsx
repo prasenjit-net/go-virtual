@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type Monaco } from '@monaco-editor/react'
 import type * as monacoEditor from 'monaco-editor'
@@ -409,7 +410,7 @@ function registerTemplateCompletions(monaco: Monaco) {
     })
 }
 
-export default function ResponseConfigIDE({
+function ResponseConfigIDEContent({
     operationId,
     config,
     onSaved,
@@ -965,6 +966,7 @@ export default function ResponseConfigIDE({
 
                             {ideActiveTab === 'conditions' && (
                                 <div className="p-3">
+                                    <MappingHintControls />
                                     <ConditionEditor
                                         label="Conditions"
                                         value={conditionTree}
@@ -1087,4 +1089,8 @@ export default function ResponseConfigIDE({
         )}
         </>
     )
+}
+
+export default function ResponseConfigIDE(props: ResponseConfigIDEProps) {
+    return <MappingHintsProvider operationId={props.operationId} scope="response"><ResponseConfigIDEContent {...props} /></MappingHintsProvider>
 }

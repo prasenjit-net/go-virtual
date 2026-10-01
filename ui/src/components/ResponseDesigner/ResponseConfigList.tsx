@@ -41,6 +41,7 @@ import clsx from 'clsx'
 import { responsesApi, responseScriptBindingsApi } from '../../services/api'
 import type { ResponseConfig, ScriptBinding } from '../../types'
 import { serializeResponseForClipboard } from './responseTransfer'
+import CollectionResponseSummary from './CollectionResponseSummary'
 
 interface ResponseConfigListProps {
     operationId: string
@@ -252,6 +253,9 @@ function ResponseRow({
 
             {!isDragOverlay && expandedConfig === config.id && (
                 <div className="mt-4 ml-16 space-y-4">
+                    {config.kind === 'collection' && config.collectionResponse && (
+                        <CollectionResponseSummary response={config.collectionResponse} />
+                    )}
                     {config.conditions.length > 0 && (
                         <div>
                             <h4 className="text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Conditions</h4>

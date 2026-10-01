@@ -30,7 +30,7 @@ const (
 	// ValueSourceDocument reads a path in the current result document.
 	// Valid only in field overrides.
 	ValueSourceDocument ValueSource = "document"
-	// ValueSourceMapper reads "<outputKey>.<path>" from an additional
+	// ValueSourceMapper reads "<outputKey>" or "<outputKey>.<path>" from an additional
 	// mapper's result. Valid only in field overrides.
 	ValueSourceMapper ValueSource = "mapper"
 	// ValueSourcePrimary reads a path in the primary result document.
@@ -255,8 +255,10 @@ func validateValueBinding(label string, v ValueBinding, allowed map[ValueSource]
 			return []string{label + ": literal value must be valid JSON"}
 		}
 	case ValueSourceMapper:
-		if v.Key == "" || !strings.Contains(v.Key, ".") {
-			return []string{label + `: mapper key must be "<outputKey>.<path>"`}
+		for _, part := range strings.Split(v.Key, ".") {
+			if strings.TrimSpace(part) == "" {
+				return []string{label + `: mapper key must be "<outputKey>" or "<outputKey>.<path>" with nonempty segments`}
+			}
 		}
 	default: // document, primary, path, query, header, body
 		if strings.TrimSpace(v.Key) == "" {

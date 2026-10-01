@@ -600,3 +600,27 @@ func TestCollectionResponseOperationsRoundTripAndPreview(t *testing.T) {
 		t.Fatal("preview or save mutated collections")
 	}
 }
+
+func TestCreateCollectionResponseWholeMapperOutput(t *testing.T) {
+	handler, _, r, _ := setupCollectionResponseTestHandler(t)
+	r.POST("/operations/:id/responses", handler.CreateResponseConfig)
+	payload := validCollectionResponsePayload()
+	cr := payload["collectionResponse"].(map[string]any)
+	cr["additionalMappers"] = []any{map[string]any{"outputKey": "addresses", "mode": "find-many", "collectionName": "address"}}
+	cr["overrides"] = []any{map[string]any{"targetPath": "addresses", "value": map[string]any{"source": "mapper", "key": "addresses"}}}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/operations/op-user/responses", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("whole-output override rejected: %d %s", w.Code, w.Body.String())
+	}
+	var saved models.ResponseConfig
+	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.CollectionResponse.Overrides[0].Value.Key != "addresses" {
+		t.Fatal("whole-output reference lost")
+	}
+}
