@@ -72,6 +72,10 @@ func TestSaveSpecWorkspaceAndRejectStaleRevision(t *testing.T) {
 	if err := json.Unmarshal(loaded.Body.Bytes(), &workspace); err != nil {
 		t.Fatal(err)
 	}
+	// Response configuration is carried by the workspace's Responses collection.
+	// The operation endpoint may also hydrate this derived field, and it must not
+	// be treated as an attempted OpenAPI-contract edit during workspace saving.
+	workspace.Operations[0].Operation.Responses = []models.ResponseConfig{{ID: "derived-response", OperationID: "op-user", Name: "Derived"}}
 	workspace.Spec.Name = "Edited in designer"
 	draftResponseID := "draft-response-new"
 	draftMappingID := "draft-mapping-new"

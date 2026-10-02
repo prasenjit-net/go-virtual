@@ -99,10 +99,8 @@ func (h *Handler) normalizeWorkspaceDraft(draft, current *models.SpecWorkspace) 
 			return nil, fmt.Errorf("workspace contains an unknown or duplicate operation")
 		}
 		seenOps[op.ID] = true
-		provided := *op
-		stored := *currentOps[op.ID]
-		provided.SignatureConfig = nil
-		stored.SignatureConfig = nil
+		provided := normalizedWorkspaceOperation(*op)
+		stored := normalizedWorkspaceOperation(*currentOps[op.ID])
 		if !reflect.DeepEqual(provided, stored) {
 			return nil, fmt.Errorf("operation %s is part of the read-only OpenAPI contract", op.ID)
 		}
@@ -369,6 +367,37 @@ func (h *Handler) normalizeWorkspaceDraft(draft, current *models.SpecWorkspace) 
 		}
 	}
 	return idMap, nil
+}
+
+// normalizedWorkspaceOperation removes values which are configured through
+// other workspace collections. Response configs are returned separately in a
+// workspace bundle, but a storage implementation may also populate
+// Operation.Responses for the normal operation endpoint. That derived list
+// must never make an otherwise valid workspace draft look like a contract edit.
+func normalizedWorkspaceOperation(operation models.Operation) models.Operation {
+	operation.SignatureConfig = nil
+	operation.Responses = nil
+	if len(operation.Tags) == 0 {
+		operation.Tags = nil
+	}
+	if len(operation.DeclaredPathParams) == 0 {
+		operation.DeclaredPathParams = nil
+	}
+	if len(operation.DeclaredQueryParams) == 0 {
+		operation.DeclaredQueryParams = nil
+	}
+	if len(operation.DeclaredHeaderParams) == 0 {
+		operation.DeclaredHeaderParams = nil
+	}
+	if len(operation.DeclaredBodyFields) == 0 {
+		operation.DeclaredBodyFields = nil
+	}
+	if operation.ExampleResponse != nil && len(operation.ExampleResponse.Headers) == 0 {
+		example := *operation.ExampleResponse
+		example.Headers = nil
+		operation.ExampleResponse = &example
+	}
+	return operation
 }
 
 func isDraftWorkspaceID(id string) bool {

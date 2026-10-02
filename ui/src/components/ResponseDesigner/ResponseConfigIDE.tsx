@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { type Monaco } from '@monaco-editor/react'
 import type * as monacoEditor from 'monaco-editor'
 import {
-    ArrowLeft, Save, CheckCircle, XCircle, Loader2, BookOpen,
+    Save, CheckCircle, XCircle, Loader2, BookOpen,
     Trash2, AlertCircle, Wand2, X, Settings, Code2,
     GitBranch, Zap, List, Layers
 } from 'lucide-react'
@@ -21,8 +21,10 @@ interface ResponseConfigIDEProps {
     operationId: string
     config: ResponseConfig | null
     onSaved: () => void
-    onBack: () => void
+    onBack?: () => void
     readOnly?: boolean
+    /** Keep changes in a parent workspace draft instead of calling response APIs. */
+    onDraftChange?: (config: ResponseConfig) => void
 }
 
 const templateDocs = {
@@ -414,9 +416,10 @@ function ResponseConfigIDEContent({
     operationId,
     config,
     onSaved,
-    onBack,
     readOnly = false,
+    onDraftChange,
 }: ResponseConfigIDEProps) {
+    const isWorkspaceDraft = Boolean(onDraftChange)
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
     const [statusCode, setStatusCode] = useState(config?.statusCode || 200)
@@ -443,6 +446,9 @@ function ResponseConfigIDEContent({
     const monacoRef = useRef<Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const handleSaveRef = useRef<() => void | Promise<void>>(() => undefined)
+    const draftChangeRef = useRef(onDraftChange)
+    const draftConfigRef = useRef(config)
+    const draftInitializedRef = useRef(false)
 
     const queryClient = useQueryClient()
 
@@ -452,6 +458,9 @@ function ResponseConfigIDEContent({
     })
 
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
+
+    useEffect(() => { draftChangeRef.current = onDraftChange }, [onDraftChange])
+    useEffect(() => { draftConfigRef.current = config }, [config])
 
     const parseTemplateErrorLine = (message: string) => {
         const match = message.match(/:(\d+):/)
@@ -630,15 +639,60 @@ function ResponseConfigIDEContent({
         setIsDirty(false)
     }, [config])
 
+    useEffect(() => {
+        if (!isWorkspaceDraft) return
+        if (!draftInitializedRef.current) {
+            draftInitializedRef.current = true
+            return
+        }
+        const current = draftConfigRef.current
+        const nextDraft: ResponseConfig = {
+            ...(current || {} as ResponseConfig),
+            id: current?.id || '',
+            operationId,
+            name,
+            description,
+            tag,
+            statusCode,
+            priority,
+            delay,
+            enabled,
+            conditions: current?.conditions || [],
+            conditionTree,
+            headers,
+            body,
+            kind: current?.kind || 'manual',
+            collectionResponse: current?.collectionResponse,
+            recorded: current?.recorded || false,
+            origin: current?.origin || 'manual',
+        }
+        if (current && JSON.stringify(nextDraft) === JSON.stringify(current)) return
+        draftChangeRef.current?.(nextDraft)
+    }, [body, conditionTree, delay, description, enabled, headers, isWorkspaceDraft, name, operationId, priority, statusCode, tag])
+
     const handleSave = useCallback(async () => {
         setError('')
         if (!name.trim()) { setError('Name is required'); return }
         if (isValidating) { setError('Wait for template validation'); return }
         if (!(await validateBodyTemplate(body))) { setError('Fix template errors before saving'); return }
         const data: ResponseConfigInput = { name, description, tag, statusCode, priority, delay, enabled, conditions: [], conditionTree, headers, body }
+        if (onDraftChange) {
+            onDraftChange({
+                ...(config || {} as ResponseConfig),
+                id: config?.id || '',
+                operationId,
+                ...data,
+                kind: config?.kind || 'manual',
+                collectionResponse: config?.collectionResponse,
+                recorded: config?.recorded || false,
+                origin: config?.origin || 'manual',
+            })
+            setIsDirty(false)
+            return
+        }
         if (config) updateMutation.mutate(data)
         else createMutation.mutate(data)
-    }, [body, conditionTree, config, createMutation, delay, description, enabled, headers, isValidating, name, priority, statusCode, tag, updateMutation, validateBodyTemplate])
+    }, [body, conditionTree, config, createMutation, delay, description, enabled, headers, isValidating, name, onDraftChange, operationId, priority, statusCode, tag, updateMutation, validateBodyTemplate])
 
     const addHeader = () => {
         if (headerKey.trim()) {
@@ -674,16 +728,8 @@ function ResponseConfigIDEContent({
 
     return (
         <>
-        <div className="hidden md:flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
+        <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 px-3 h-12 flex-shrink-0">
-                <button
-                    onClick={onBack}
-                    className="p-1.5 rounded-md text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Back"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                </button>
-                <div className="w-px h-5 bg-gray-200 dark:bg-slate-700" />
                 <span className="text-sm font-semibold text-gray-800 dark:text-slate-200 truncate max-w-xs">
                     {name || (config ? 'Response' : 'New Response')}
                 </span>
@@ -741,17 +787,15 @@ function ResponseConfigIDEContent({
                         <BookOpen className="w-3.5 h-3.5" />
                         Reference
                     </button>
-                    {!readOnly && (
-                        <button
-                            onClick={() => void handleSave()}
-                            disabled={isSaving}
-                            title="Save (Ctrl+S)"
-                            className="px-3 py-1 text-xs bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 inline-flex items-center gap-1.5"
-                        >
-                            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                            {isSaving ? 'Saving…' : 'Save'}
-                        </button>
-                    )}
+                    {!readOnly && !onDraftChange && <button
+                        onClick={() => void handleSave()}
+                        disabled={isSaving}
+                        title="Save (Ctrl+S)"
+                        className="px-3 py-1 text-xs bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 inline-flex items-center gap-1.5"
+                    >
+                        {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        {isSaving ? 'Saving…' : 'Save'}
+                    </button>}
                 </div>
             </div>
 

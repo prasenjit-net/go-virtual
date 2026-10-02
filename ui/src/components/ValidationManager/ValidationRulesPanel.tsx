@@ -1,5 +1,5 @@
 import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Plus, Trash2, Edit2, ToggleLeft, ToggleRight, ChevronDown, ChevronRight,
@@ -106,9 +106,10 @@ interface RuleModalProps {
     saveError: string | null
     embedded?: boolean
     saveLabel?: string
+    autoSave?: boolean
 }
 
-function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = false, saveLabel }: RuleModalProps) {
+function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = false, saveLabel, autoSave = false }: RuleModalProps) {
     const [name, setName] = useState(rule?.name ?? '')
     const [description, setDescription] = useState(rule?.description ?? '')
     const [order, setOrder] = useState(rule?.order ?? 0)
@@ -117,6 +118,18 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = fals
     const [onSuccess, setOnSuccess] = useState<Record<string, string>>(rule?.onSuccess ?? {})
     const [onFailure, setOnFailure] = useState<Record<string, string>>(rule?.onFailure ?? {})
     const [nameError, setNameError] = useState<string | null>(null)
+    const saveRef = useRef(onSave)
+    const draftInitializedRef = useRef(false)
+
+    useEffect(() => { saveRef.current = onSave }, [onSave])
+    useEffect(() => {
+        if (!autoSave) return
+        if (!draftInitializedRef.current) {
+            draftInitializedRef.current = true
+            return
+        }
+        saveRef.current({ name, description, order, enabled, conditionTree, onSuccess, onFailure })
+    }, [autoSave, conditionTree, description, enabled, name, onFailure, onSuccess, order])
 
     const handleSubmit = () => {
         if (!name.trim()) { setNameError('Name is required'); return }
@@ -245,7 +258,7 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = fals
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-slate-700">
+                {!autoSave && <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={onClose}
@@ -263,6 +276,7 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = fals
                         {saveLabel || (rule ? 'Update' : 'Create')}
                     </button>
                 </div>
+                }
             </div>
         </div>
     )
@@ -280,7 +294,7 @@ export function ValidationRuleDraftEditor({ rule, onChange }: {
         onClose={() => undefined}
         isSaving={false}
         saveError={null}
-        saveLabel="Apply to workspace"
+        autoSave
         onSave={(input) => onChange({ ...rule, ...input })}
     />
 }

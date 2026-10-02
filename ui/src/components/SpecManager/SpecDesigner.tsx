@@ -1,21 +1,22 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Braces, ChevronDown, ChevronRight, Database, FileCode2, FileCog, Fingerprint, GitBranch, Loader2, Plus, Redo2, Reply, Route, Save, Search, Settings2, ShieldCheck, Trash2, Undo2, Workflow, X } from 'lucide-react'
+import { ArrowLeft, Bot, Braces, ChevronDown, ChevronRight, Database, FileCode2, FileCog, Fingerprint, Loader2, Network, Plus, Redo2, Reply, Route, Save, Search, Settings2, ShieldCheck, Trash2, Undo2, Workflow, X } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi, specsApi } from '../../services/api'
 import type { CollectionMapping, Operation, ResponseConfig, Script, ScriptBinding, SignatureConfig, SpecMode, SpecWorkspace, ValidationRule } from '../../types'
-import ResponseConfigEditor from '../ResponseDesigner/ResponseConfigEditor'
+import ResponseConfigIDE from '../ResponseDesigner/ResponseConfigIDE'
 import CollectionResponseEditor from '../ResponseDesigner/CollectionResponseEditor'
 import { CollectionMappingDraftEditor } from '../CollectionMapper/CollectionMappingsPanel'
 import { ValidationRuleDraftEditor } from '../ValidationManager/ValidationRulesPanel'
 
-type NodeKind = 'spec' | 'operation' | 'signature' | 'response' | 'validation' | 'script' | 'mapping'
+type NodeKind = 'spec' | 'specSignature' | 'proxy' | 'ai' | 'group' | 'operation' | 'signature' | 'response' | 'validation' | 'script' | 'mapping'
 type NodeRef = { kind: NodeKind; id?: string; operationId?: string; responseId?: string }
-type NavNode = { key: string; label: string; kind: NodeKind; ref: NodeRef; detail?: string; children?: NavNode[] }
+type NavNode = { key: string; label: string; kind: NodeKind; ref: NodeRef; detail?: string; group?: 'pipeline' | 'responses'; children?: NavNode[] }
 type RecoveryDraft = { schema: 1; revision: string; workspace: SpecWorkspace; updatedAt: number }
 type DraftState = { workspace: SpecWorkspace | null; past: SpecWorkspace[]; future: SpecWorkspace[] }
 type DraftAction = { type: 'edit'; update: (workspace: SpecWorkspace) => SpecWorkspace } | { type: 'undo' } | { type: 'redo' } | { type: 'replace'; workspace: SpecWorkspace }
+type ToastNotice = { tone: 'success' | 'error'; message: string }
 
 function clone<T>(value: T): T { return structuredClone(value) }
 function reducer(state: DraftState, action: DraftAction): DraftState {
@@ -66,27 +67,35 @@ async function clearRecovery(id: string): Promise<void> {
 }
 
 function buildNodes(workspace: SpecWorkspace): NavNode[] {
-    const nodes: NavNode[] = [{ key: 'spec', label: 'Spec settings', kind: 'spec', ref: { kind: 'spec' }, detail: workspace.spec.name }]
-    const children: NavNode[] = []
-    for (const entry of workspace.specValidations) children.push({ key: `validation:spec:${entry.id}`, label: entry.name || 'Unnamed validation', kind: 'validation', ref: { kind: 'validation', id: entry.id }, detail: entry.enabled ? 'Enabled' : 'Disabled' })
-    for (const entry of workspace.specScripts) children.push({ key: `script:spec:${entry.id}`, label: entry.outputKey || entry.scriptName || 'Script binding', kind: 'script', ref: { kind: 'script', id: entry.id }, detail: `order ${entry.order}` })
-    for (const entry of workspace.specMappings) children.push({ key: `mapping:spec:${entry.id}`, label: entry.name || entry.outputKey || 'Collection mapping', kind: 'mapping', ref: { kind: 'mapping', id: entry.id }, detail: `${entry.operation} · ${entry.collectionName}` })
-    nodes.push({ key: 'group:spec-pipeline', label: 'Spec pipeline and mappings', kind: 'spec', ref: { kind: 'spec' }, children })
+    const nodes: NavNode[] = [
+        { key: 'spec', label: 'Spec overview', kind: 'spec', ref: { kind: 'spec' }, detail: workspace.spec.name },
+        { key: 'spec-signature', label: 'Signature config', kind: 'specSignature', ref: { kind: 'specSignature' }, detail: `${workspace.spec.signatureHeaders?.length || 0} default headers` },
+        { key: 'spec-proxy', label: 'Proxy', kind: 'proxy', ref: { kind: 'proxy' }, detail: workspace.spec.modePolicy.proxy.enabled ? 'Enabled' : 'Disabled' },
+        { key: 'spec-ai', label: 'AI', kind: 'ai', ref: { kind: 'ai' }, detail: workspace.spec.modePolicy.ai.enabled ? 'Enabled' : 'Disabled' },
+    ]
+    const specPipeline: NavNode[] = [
+        ...workspace.specValidations.map(entry => ({ key: `validation:spec:${entry.id}`, label: entry.name || 'Unnamed validation', kind: 'validation' as const, ref: { kind: 'validation' as const, id: entry.id }, detail: entry.enabled ? 'Enabled' : 'Disabled' })),
+        ...workspace.specMappings.map(entry => ({ key: `mapping:spec:${entry.id}`, label: entry.name || entry.outputKey || 'Collection mapping', kind: 'mapping' as const, ref: { kind: 'mapping' as const, id: entry.id }, detail: `${entry.operation} · ${entry.collectionName}` })),
+        ...workspace.specScripts.map(entry => ({ key: `script:spec:${entry.id}`, label: entry.outputKey || entry.scriptName || 'Script binding', kind: 'script' as const, ref: { kind: 'script' as const, id: entry.id }, detail: `order ${entry.order}` })),
+    ]
+    nodes.push({ key: 'group:spec-pipeline', label: 'Pipeline', kind: 'group', group: 'pipeline', ref: { kind: 'group' }, children: specPipeline })
     for (const entry of workspace.operations) {
         const op = entry.operation
         const opChildren: NavNode[] = [
             { key: `signature:${op.id}`, label: 'Request signature', kind: 'signature', ref: { kind: 'signature', operationId: op.id }, detail: 'Settings' },
-            ...entry.responses.map(({ response, scripts, mappings }) => ({
-                key: `response:${response.id}`, label: response.name || `${response.statusCode} response`, kind: 'response' as const,
-                ref: { kind: 'response' as const, id: response.id, operationId: op.id }, detail: `${response.statusCode} · ${response.kind || 'manual'}`,
-                children: [
-                    ...scripts.map(binding => ({ key: `script:response:${response.id}:${binding.id}`, label: binding.outputKey || binding.scriptName || 'Script binding', kind: 'script' as const, ref: { kind: 'script' as const, id: binding.id, operationId: op.id, responseId: response.id }, detail: `order ${binding.order}` })),
-                    ...mappings.map(mapping => ({ key: `mapping:response:${response.id}:${mapping.id}`, label: mapping.name || mapping.outputKey || 'Collection mapping', kind: 'mapping' as const, ref: { kind: 'mapping' as const, id: mapping.id, operationId: op.id, responseId: response.id }, detail: `${mapping.operation} · ${mapping.collectionName}` })),
+            {
+                key: `group:pipeline:${op.id}`, label: 'Pipeline', kind: 'group', group: 'pipeline', ref: { kind: 'group', operationId: op.id }, children: [
+                    ...entry.validations.map(v => ({ key: `validation:${op.id}:${v.id}`, label: v.name || 'Unnamed validation', kind: 'validation' as const, ref: { kind: 'validation' as const, id: v.id, operationId: op.id }, detail: v.enabled ? 'Enabled' : 'Disabled' })),
+                    ...entry.mappings.map(m => ({ key: `mapping:${op.id}:${m.id}`, label: m.name || m.outputKey || 'Collection mapping', kind: 'mapping' as const, ref: { kind: 'mapping' as const, id: m.id, operationId: op.id }, detail: `${m.operation} · ${m.collectionName}` })),
+                    ...entry.scripts.map(s => ({ key: `script:${op.id}:${s.id}`, label: s.outputKey || s.scriptName || 'Script binding', kind: 'script' as const, ref: { kind: 'script' as const, id: s.id, operationId: op.id }, detail: `order ${s.order}` })),
                 ],
-            })),
-            ...entry.validations.map(v => ({ key: `validation:${op.id}:${v.id}`, label: v.name || 'Unnamed validation', kind: 'validation' as const, ref: { kind: 'validation' as const, id: v.id, operationId: op.id }, detail: v.enabled ? 'Enabled' : 'Disabled' })),
-            ...entry.scripts.map(s => ({ key: `script:${op.id}:${s.id}`, label: s.outputKey || s.scriptName || 'Script binding', kind: 'script' as const, ref: { kind: 'script' as const, id: s.id, operationId: op.id }, detail: `order ${s.order}` })),
-            ...entry.mappings.map(m => ({ key: `mapping:${op.id}:${m.id}`, label: m.name || m.outputKey || 'Collection mapping', kind: 'mapping' as const, ref: { kind: 'mapping' as const, id: m.id, operationId: op.id }, detail: `${m.operation} · ${m.collectionName}` })),
+            },
+            {
+                key: `group:responses:${op.id}`, label: 'Responses', kind: 'group', group: 'responses', ref: { kind: 'group', operationId: op.id }, children: entry.responses.map(({ response }) => ({
+                    key: `response:${response.id}`, label: response.name || `${response.statusCode} response`, kind: 'response' as const,
+                    ref: { kind: 'response' as const, id: response.id, operationId: op.id }, detail: `${response.statusCode} · ${response.kind || 'manual'}`,
+                })),
+            },
         ]
         nodes.push({ key: `operation:${op.id}`, label: `${op.method} ${op.path}`, kind: 'operation', ref: { kind: 'operation', id: op.id }, detail: op.summary, children: opChildren })
     }
@@ -103,7 +112,7 @@ function filterNodes(nodes: NavNode[], term: string): NavNode[] {
 }
 
 function objectFor(workspace: SpecWorkspace, ref: NodeRef): unknown {
-    if (ref.kind === 'spec') return workspace.spec
+    if (ref.kind === 'spec' || ref.kind === 'specSignature' || ref.kind === 'proxy' || ref.kind === 'ai') return workspace.spec
     if ((ref.kind === 'validation' || ref.kind === 'script' || ref.kind === 'mapping') && !ref.operationId) {
         const list = ref.kind === 'validation' ? workspace.specValidations : ref.kind === 'script' ? workspace.specScripts : workspace.specMappings
         return list.find(item => item.id === ref.id) || null
@@ -127,7 +136,7 @@ function objectFor(workspace: SpecWorkspace, ref: NodeRef): unknown {
 
 function patchObject(workspace: SpecWorkspace, ref: NodeRef, value: unknown): SpecWorkspace {
     const next = clone(workspace)
-    if (ref.kind === 'spec') { next.spec = { ...next.spec, ...(value as Partial<SpecWorkspace['spec']>), id: next.spec.id, content: next.spec.content, version: next.spec.version, createdAt: next.spec.createdAt }; return next }
+    if (ref.kind === 'spec' || ref.kind === 'specSignature' || ref.kind === 'proxy' || ref.kind === 'ai') { next.spec = { ...next.spec, ...(value as Partial<SpecWorkspace['spec']>), id: next.spec.id, content: next.spec.content, version: next.spec.version, createdAt: next.spec.createdAt }; return next }
     if ((ref.kind === 'validation' || ref.kind === 'script' || ref.kind === 'mapping') && !ref.operationId) {
         const list = ref.kind === 'validation' ? next.specValidations : ref.kind === 'script' ? next.specScripts : next.specMappings
         const item = list.find(entry => entry.id === ref.id)
@@ -194,6 +203,19 @@ function SignatureDraftEditor({ operation, onChange }: { operation: Operation; o
     return <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="border-b border-gray-200 p-5 dark:border-slate-800"><h2 className="text-lg font-semibold">Signature Configuration</h2><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Choose which request values identify a configured response.</p></div><div className="space-y-6 p-5">{chips('Path parameters', operation.declaredPathParams, 'pathParams')}{chips('Query parameters', operation.declaredQueryParams, 'queryParams')}<div><div className="mb-2 flex items-center justify-between"><div className="text-sm font-medium">Headers</div><button type="button" onClick={() => update({ headersConfigured: !config.headersConfigured, headers: config.headersConfigured ? [] : config.headers })} className="rounded border px-2 py-1 text-xs dark:border-slate-700">{config.headersConfigured ? 'Use defaults' : 'Customize headers'}</button></div>{config.headersConfigured ? chips('Declared headers', operation.declaredHeaderParams, 'headers') : <p className="text-sm text-gray-500 dark:text-slate-400">Uses the spec defaults until you customize this operation.</p>}</div><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={config.includeBody === true} disabled={!operation.hasRequestBody} onChange={event => update({ includeBody: event.target.checked, bodyJsonPaths: event.target.checked ? config.bodyJsonPaths : [] })} />Include request body</label></div></section>
 }
 
+function SpecSignatureDraftEditor({ headers, onChange }: { headers: string[]; onChange: (headers: string[]) => void }) {
+    const [value, setValue] = useState(headers.join(', '))
+    useEffect(() => setValue(headers.join(', ')), [headers])
+    return <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="border-b border-gray-200 p-5 dark:border-slate-800"><h2 className="text-lg font-semibold">Default signature headers</h2><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">These headers are included in response matching unless an operation customizes its signature.</p></div><div className="p-5"><label className="text-sm font-medium">Headers<input value={value} onChange={event => setValue(event.target.value)} onBlur={() => onChange(value.split(',').map(header => header.trim()).filter(Boolean))} placeholder="X-Tenant-Id, X-Region" className="mt-2 w-full rounded border border-gray-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-slate-700" /></label><p className="mt-2 text-xs text-gray-500 dark:text-slate-400">Use a comma-separated list. Changes apply to this workspace draft.</p></div></section>
+}
+
+function SpecModeDraftEditor({ mode, spec, onChange }: { mode: 'proxy' | 'ai'; spec: SpecWorkspace['spec']; onChange: (patch: Partial<SpecWorkspace['spec']>) => void }) {
+    const policy = spec.modePolicy[mode]
+    const enable = (enabled: boolean) => onChange({ mode: enabled ? mode : 'standard', modePolicy: { ...spec.modePolicy, [mode]: { ...policy, enabled } } })
+    const label = mode === 'proxy' ? 'Proxy' : 'AI'
+    return <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="border-b border-gray-200 p-5 dark:border-slate-800"><h2 className="text-lg font-semibold">{label} mode</h2><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Configure this spec’s {label.toLowerCase()} response behavior.</p></div><div className="space-y-5 p-5"><label className="flex items-center gap-2 text-sm font-medium"><input type="checkbox" checked={policy.enabled} onChange={event => enable(event.target.checked)} />Enable {label} mode</label>{mode === 'proxy' && <label className="block text-sm font-medium">Backend URI<input value={spec.backendUri} onChange={event => onChange({ backendUri: event.target.value })} placeholder="https://service.internal" className="mt-2 w-full rounded border border-gray-300 bg-transparent px-3 py-2 font-mono text-sm dark:border-slate-700" /></label>}<p className="text-xs text-gray-500 dark:text-slate-400">{policy.enabled ? `${label} mode is enabled for this draft.` : `${label} mode is disabled for this draft.`}</p></div></section>
+}
+
 function ScriptBindingDraftEditor({ binding, onChange }: { binding: ScriptBinding; onChange: (binding: ScriptBinding) => void }) {
     const { data: scripts = [] } = useQuery<Script[]>({ queryKey: ['scripts'], queryFn: scriptsApi.list, staleTime: 60_000 })
     return <section className="rounded-xl border border-gray-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="border-b border-gray-200 p-5 dark:border-slate-800"><h2 className="text-lg font-semibold">Script Binding</h2><p className="mt-1 text-sm text-gray-500 dark:text-slate-400">This binding runs in the selected pipeline scope when the workspace is saved.</p></div><div className="grid gap-4 p-5 sm:grid-cols-2"><label className="text-sm">Script<select value={binding.scriptId} onChange={e => { const script = scripts.find(item => item.id === e.target.value); onChange({ ...binding, scriptId: e.target.value, scriptName: script?.name || '' }) }} className="mt-1 w-full rounded border border-gray-300 bg-transparent px-3 py-2 dark:border-slate-700"><option value="">Select a script…</option>{scripts.map(script => <option key={script.id} value={script.id} disabled={!script.enabled}>{script.name}{script.enabled ? '' : ' (disabled)'}</option>)}</select></label><label className="text-sm">Output key<input value={binding.outputKey} onChange={e => onChange({ ...binding, outputKey: e.target.value.replace(/[^A-Za-z0-9_]/g, '') })} className="mt-1 w-full rounded border border-gray-300 bg-transparent px-3 py-2 font-mono dark:border-slate-700" /></label><label className="text-sm">Order<input type="number" min="0" value={binding.order} onChange={e => onChange({ ...binding, order: Number(e.target.value) || 0 })} className="mt-1 w-full rounded border border-gray-300 bg-transparent px-3 py-2 dark:border-slate-700" /></label><label className="mt-6 flex items-center gap-2 text-sm"><input type="checkbox" checked={binding.enabled} onChange={e => onChange({ ...binding, enabled: e.target.checked })} />Enabled</label></div></section>
@@ -211,9 +233,13 @@ export default function SpecDesigner() {
     const [restorePrompt, setRestorePrompt] = useState(false)
     const [selected, setSelected] = useState(searchParams.get('item') || 'spec')
     const [search, setSearch] = useState('')
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+    const [addMenu, setAddMenu] = useState<string | null>(null)
+    const addMenuRef = useRef<HTMLDivElement | null>(null)
     const [treeCollapsed, setTreeCollapsed] = useState(() => localStorage.getItem('spec-designer-tree-collapsed') === 'true')
     const [contextOpen, setContextOpen] = useState(() => localStorage.getItem('spec-designer-context-open') === 'true')
     const [error, setError] = useState('')
+    const [toast, setToast] = useState<ToastNotice | null>(null)
     const closingAfterSave = useRef(false)
     const [mobilePane, setMobilePane] = useState<'tree' | 'editor' | 'context'>('editor')
     const recoveryWrite = useRef<number | undefined>(undefined)
@@ -228,6 +254,28 @@ export default function SpecDesigner() {
         ? workspace.operations.find(item => item.operation.id === (selectedNode.ref.operationId || (selectedNode.kind === 'operation' ? selectedNode.ref.id : undefined)))
         : undefined
     const contextAvailable = !!selectedOperation && ['response', 'mapping', 'signature'].includes(selectedNode?.kind || '')
+
+    useEffect(() => {
+        if (!toast) return
+        const timer = window.setTimeout(() => setToast(null), toast.tone === 'success' ? 3_500 : 8_000)
+        return () => window.clearTimeout(timer)
+    }, [toast])
+
+    useEffect(() => {
+        if (!addMenu) return
+        const dismiss = (event: PointerEvent) => {
+            if (!addMenuRef.current?.contains(event.target as Node)) setAddMenu(null)
+        }
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setAddMenu(null)
+        }
+        document.addEventListener('pointerdown', dismiss)
+        document.addEventListener('keydown', onKeyDown)
+        return () => {
+            document.removeEventListener('pointerdown', dismiss)
+            document.removeEventListener('keydown', onKeyDown)
+        }
+    }, [addMenu])
 
     useEffect(() => {
         if (!workspaceQuery.data || workspaceQuery.data.spec.id !== specId || initializedSpec === specId) return
@@ -284,6 +332,7 @@ export default function SpecDesigner() {
             setRecovery(null)
             setRestorePrompt(false)
             setError('')
+            setToast({ tone: 'success', message: 'Workspace saved.' })
             let selectedKey = selected
             for (const [draftID, serverID] of Object.entries(result.idMap)) selectedKey = selectedKey.split(draftID).join(serverID)
             if (selectedKey !== selected) { setSelected(selectedKey); setSearchParams({ item: selectedKey }, { replace: true }) }
@@ -296,10 +345,24 @@ export default function SpecDesigner() {
                 navigate('/specs')
             }
         },
-        onError: (e: Error & { status?: number }) => { closingAfterSave.current = false; setError(e.status === 409 ? 'The server workspace changed. Your local draft is preserved; reload the server copy or copy your work before resolving the conflict.' : e.message) },
+        onError: (e: Error & { status?: number }) => {
+            closingAfterSave.current = false
+            const message = e.status === 409 ? 'The server workspace changed. Your local draft is preserved; reload the server copy or copy your work before resolving the conflict.' : e.message
+            setError(message)
+            setToast({ tone: 'error', message: `Save failed: ${message}` })
+        },
     })
 
     const selectNode = (node: NavNode) => {
+        if (node.kind === 'group') {
+            setCollapsedGroups(current => {
+                const next = new Set(current)
+                if (next.has(node.key)) next.delete(node.key)
+                else next.add(node.key)
+                return next
+            })
+            return
+        }
         setSelected(node.key)
         setSearchParams({ item: node.key }, { replace: true })
         setMobilePane('editor')
@@ -312,9 +375,9 @@ export default function SpecDesigner() {
     function updateSpecField<K extends keyof SpecWorkspace['spec']>(key: K, value: SpecWorkspace['spec'][K]) {
         dispatch({ type: 'edit', update: current => ({ ...current, spec: { ...current.spec, [key]: value } }) })
     }
-    const addResponse = (opId: string) => {
+    const addResponse = (opId: string, kind: 'manual' | 'collection' = 'manual') => {
         const id = `draft-${crypto.randomUUID()}`
-        const response = { id, operationId: opId, name: 'New response', description: '', tag: 'default', priority: 0, conditions: [], statusCode: 200, headers: {}, body: '', delay: 0, enabled: false, recorded: false, origin: 'manual' as const, kind: 'manual' as const }
+        const response: ResponseConfig = { id, operationId: opId, name: kind === 'collection' ? 'New collection response' : 'New response', description: '', tag: 'default', priority: 0, conditions: [], statusCode: 200, headers: {}, body: '', delay: 0, enabled: false, recorded: false, origin: 'manual', kind, ...(kind === 'collection' ? { collectionResponse: { primary: { collectionName: '', mode: 'find-one' }, additionalMappers: [], overrides: [], rootKind: 'object' } } : {}) }
         dispatch({ type: 'edit', update: current => ({ ...current, operations: current.operations.map(item => item.operation.id === opId ? { ...item, responses: [...item.responses, { response, scripts: [], mappings: [] }] } : item) }) })
         const key = `response:${id}`; setSelected(key); setSearchParams({ item: key }, { replace: true })
     }
@@ -330,11 +393,17 @@ export default function SpecDesigner() {
         dispatch({ type: 'edit', update: current => opId ? { ...current, operations: current.operations.map(item => item.operation.id === opId ? { ...item, mappings: [...item.mappings, mapping] } : item) } : { ...current, specMappings: [...current.specMappings, mapping] } })
         const key = opId ? `mapping:${opId}:${id}` : `mapping:spec:${id}`; setSelected(key); setSearchParams({ item: key }, { replace: true })
     }
-    const removeSelected = () => {
-        if (!workspace || !selectedNode || !['response', 'validation', 'script', 'mapping'].includes(selectedNode.kind)) return
-        if (!window.confirm(`Delete ${selectedNode.label} from this draft? It will be removed from the server when you save.`)) return
-        dispatch({ type: 'edit', update: current => removeObject(current, selectedNode.ref) })
-        const nextKey = selectedNode.ref.operationId ? `operation:${selectedNode.ref.operationId}` : 'spec'
+    const addScript = (opId?: string) => {
+        const id = `draft-${crypto.randomUUID()}`
+        const script: ScriptBinding = { id, ...(opId ? { operationId: opId } : { specId }), scriptId: '', scriptName: '', outputKey: 'result', order: 0, enabled: false }
+        dispatch({ type: 'edit', update: current => opId ? { ...current, operations: current.operations.map(item => item.operation.id === opId ? { ...item, scripts: [...item.scripts, script] } : item) } : { ...current, specScripts: [...current.specScripts, script] } })
+        const key = opId ? `script:${opId}:${id}` : `script:spec:${id}`; setSelected(key); setSearchParams({ item: key }, { replace: true })
+    }
+    const removeNode = (node: NavNode) => {
+        if (!workspace || !['response', 'validation', 'script', 'mapping'].includes(node.kind)) return
+        if (!window.confirm(`Delete ${node.label} from this draft? It will be removed from the server when you save.`)) return
+        dispatch({ type: 'edit', update: current => removeObject(current, node.ref) })
+        const nextKey = node.ref.operationId ? `operation:${node.ref.operationId}` : 'spec'
         setSelected(nextKey); setSearchParams({ item: nextKey }, { replace: true })
     }
     const close = () => {
@@ -356,14 +425,18 @@ export default function SpecDesigner() {
     if (workspaceQuery.isLoading || initializedSpec !== specId || !workspace) return <div className="h-full grid place-items-center"><div className="flex items-center gap-3 text-sm text-gray-500 dark:text-slate-400"><Loader2 className="h-5 w-5 animate-spin" />Loading spec workspace…</div></div>
 
     const renderTree = (node: NavNode, depth = 0) => {
-        const NodeIcon = node.key === 'group:spec-pipeline'
-            ? Workflow
+        const NodeIcon = node.kind === 'group'
+            ? node.group === 'responses' ? Reply : Workflow
             : node.kind === 'spec'
                 ? FileCog
+                : node.kind === 'specSignature' || node.kind === 'signature'
+                    ? Fingerprint
+                    : node.kind === 'proxy'
+                        ? Network
+                        : node.kind === 'ai'
+                            ? Bot
                 : node.kind === 'operation'
                     ? Route
-                    : node.kind === 'signature'
-                        ? Fingerprint
                         : node.kind === 'response'
                             ? (node.detail?.includes('collection') ? Database : Reply)
                             : node.kind === 'validation'
@@ -379,36 +452,34 @@ export default function SpecDesigner() {
                     ? 'text-violet-600 dark:text-violet-400'
                     : 'text-gray-400 dark:text-slate-500'
 
+        const hasChildren = !!node.children?.length
+        const isCollapsed = node.kind === 'group' && collapsedGroups.has(node.key) && !search.trim()
         return <div key={node.key}>
             <div className="group flex items-center gap-1">
-                <button type="button" onClick={() => selectNode(node)} className={clsx('min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs', selected === node.key ? 'bg-primary-50 text-primary-800 dark:bg-primary-900/30 dark:text-primary-200' : 'text-gray-700 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800')} style={{ paddingLeft: `${8 + depth * 10}px` }} title={node.detail}>
-                    <span className="flex items-center gap-2 truncate"><NodeIcon className={clsx('h-3.5 w-3.5 shrink-0', iconClass)} /><span className="truncate">{node.label}</span></span>
+                <button type="button" onClick={() => selectNode(node)} className={clsx('min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-xs', node.kind === 'group' && 'font-semibold uppercase tracking-wide text-[10px]', selected === node.key ? 'bg-primary-50 text-primary-800 dark:bg-primary-900/30 dark:text-primary-200' : 'text-gray-700 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800')} style={{ paddingLeft: `${8 + depth * 10}px` }} title={node.detail} aria-expanded={node.kind === 'group' ? !isCollapsed : undefined}>
+                    <span className="flex items-center gap-2 truncate">{node.kind === 'group' && <ChevronDown className={clsx('h-3 w-3 shrink-0 transition-transform', isCollapsed && '-rotate-90')} />}<NodeIcon className={clsx('h-3.5 w-3.5 shrink-0', iconClass)} /><span className="truncate">{node.label}</span></span>
                     {node.detail && <span className="ml-4 block truncate text-[10px] opacity-60">{node.detail}</span>}
                 </button>
-                {node.kind === 'operation' && <button title="Add response" onClick={() => addResponse(node.ref.id!)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-slate-700"><Plus className="h-3 w-3" /></button>}
+                {node.kind === 'group' && <div className="relative" ref={addMenu === node.key ? addMenuRef : undefined}><button type="button" title={`Add to ${node.label.toLowerCase()}`} onClick={() => setAddMenu(current => current === node.key ? null : node.key)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-slate-700"><Plus className="h-3.5 w-3.5" /></button>{addMenu === node.key && <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-gray-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">{node.group === 'pipeline' ? <><button type="button" onClick={() => { setAddMenu(null); addValidation(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><ShieldCheck className="h-3.5 w-3.5 text-violet-500" />Validation</button><button type="button" onClick={() => { setAddMenu(null); addMapping(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection mapper</button><button type="button" onClick={() => { setAddMenu(null); addScript(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><FileCode2 className="h-3.5 w-3.5 text-indigo-500" />Script</button></> : <><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Reply className="h-3.5 w-3.5 text-primary-500" />Manual response</button><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!, 'collection') }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection response</button></>}</div>}</div>}
+                {['response', 'validation', 'script', 'mapping'].includes(node.kind) && <button type="button" onClick={() => removeNode(node)} title={`Delete ${node.label} from draft`} className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-red-950/40 dark:hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>}
             </div>
-            {!!node.children?.length && <div className="ml-2 border-l border-gray-200 dark:border-slate-800">{node.children.map(child => renderTree(child, depth + 1))}</div>}
+            {hasChildren && !isCollapsed && <div className="ml-2 border-l border-gray-200 dark:border-slate-800">{node.children!.map(child => renderTree(child, depth + 1))}</div>}
         </div>
     }
-    const addButtons = (operationId?: string) => <div className="my-2 flex gap-1 px-2">
-        <button onClick={() => addValidation(operationId)} className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800"><GitBranch className="h-3 w-3" />Validation</button>
-        <button onClick={() => addMapping(operationId)} className="flex items-center gap-1 rounded px-2 py-1 text-[10px] text-gray-500 hover:bg-gray-100 dark:text-slate-400 dark:hover:bg-slate-800"><Database className="h-3 w-3" />Mapping</button>
-    </div>
-
     return <div className="relative flex h-full min-h-[calc(100vh-3.5rem)] flex-col bg-gray-50 dark:bg-slate-950 lg:min-h-screen">
         <header className="z-10 flex min-h-14 flex-wrap items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900">
             <button onClick={close} className="rounded-md p-2 hover:bg-gray-100 dark:hover:bg-slate-800" aria-label="Close designer"><ArrowLeft className="h-4 w-4" /></button>
-            <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{workspace.spec.name || 'Untitled spec'}</div><div className="text-[10px] text-gray-500 dark:text-slate-400">{dirty ? 'Unsaved changes' : 'All changes saved'}{workspaceQuery.isFetching ? ' · refreshing' : ''}</div></div>
+            <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold">{workspace.spec.name || 'Untitled spec'}</div><div className="mt-0.5 flex items-center gap-1.5 text-[10px]">{saveMutation.isPending ? <span className="font-medium text-primary-600 dark:text-primary-300">Saving changes…</span> : dirty ? <span className="rounded-full bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">Unsaved changes · save required</span> : <span className="text-emerald-700 dark:text-emerald-300">All changes saved</span>}{workspaceQuery.isFetching ? <span className="text-gray-500 dark:text-slate-400">· refreshing</span> : null}</div></div>
             <button disabled={!state.past.length} onClick={() => dispatch({ type: 'undo' })} className="rounded p-2 disabled:opacity-30" title="Undo (Ctrl/Cmd+Z)"><Undo2 className="h-4 w-4" /></button>
             <button disabled={!state.future.length} onClick={() => dispatch({ type: 'redo' })} className="rounded p-2 disabled:opacity-30" title="Redo (Ctrl/Cmd+Shift+Z)"><Redo2 className="h-4 w-4" /></button>
             <button onClick={() => { setTreeCollapsed(v => !v); localStorage.setItem('spec-designer-tree-collapsed', String(!treeCollapsed)) }} className="hidden rounded p-2 hover:bg-gray-100 dark:hover:bg-slate-800 lg:block" title="Collapse navigation"><ChevronDown className={clsx('h-4 w-4 transition-transform', treeCollapsed && '-rotate-90')} /></button>
             {contextAvailable && <button onClick={() => { setContextOpen(v => !v); localStorage.setItem('spec-designer-context-open', String(!contextOpen)) }} className="hidden rounded p-2 hover:bg-gray-100 dark:hover:bg-slate-800 lg:block" title="Toggle context panel"><Settings2 className="h-4 w-4" /></button>}
             <button onClick={() => { if (treeCollapsed) { setTreeCollapsed(false); localStorage.setItem('spec-designer-tree-collapsed', 'false') } setMobilePane('tree') }} className="rounded px-2 py-1 text-xs lg:hidden">Navigate</button>
             {contextAvailable && <button onClick={() => { setContextOpen(true); setMobilePane('context') }} className="rounded px-2 py-1 text-xs lg:hidden">Context</button>}
-            {['response', 'validation', 'script', 'mapping'].includes(selectedNode?.kind || '') && <button onClick={removeSelected} className="flex items-center gap-1 rounded-md border border-red-200 px-2 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40" title={`Delete ${selectedNode?.label} from draft`}><Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">Delete</span></button>}
             <button disabled={!dirty || saveMutation.isPending} onClick={() => saveMutation.mutate()} className="flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"><Save className="h-4 w-4" />{saveMutation.isPending ? 'Saving…' : 'Save'}</button>
         </header>
         {error && <div role="alert" className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"><span>{error}</span><button onClick={() => setError('')}><X className="h-4 w-4" /></button></div>}
+        {toast && <div role="status" aria-live="polite" className={clsx('fixed right-4 top-20 z-50 flex max-w-md items-start gap-3 rounded-lg border px-4 py-3 text-sm shadow-lg', toast.tone === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/90 dark:text-emerald-200' : 'border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/90 dark:text-red-200')}><span className="flex-1">{toast.message}</span><button type="button" onClick={() => setToast(null)} aria-label="Dismiss notification" className="-mr-1 rounded p-0.5 hover:bg-black/10"><X className="h-4 w-4" /></button></div>}
         <div className="flex min-h-0 flex-1">
             <aside className={clsx('min-h-0 shrink-0 border-r border-gray-200 bg-white transition-[width] dark:border-slate-800 dark:bg-slate-900', treeCollapsed ? 'w-0 overflow-hidden lg:w-12 lg:p-1' : 'w-full lg:w-72', mobilePane !== 'tree' && 'hidden lg:block')}>
                 <div className={clsx('flex h-full min-h-0 flex-col', treeCollapsed && 'lg:items-center')}>
@@ -416,7 +487,6 @@ export default function SpecDesigner() {
                         <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2 dark:border-slate-800"><span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">Workspace</span><button onClick={close} className="rounded p-1 lg:hidden"><X className="h-4 w-4" /></button></div>
                         <label className="mx-2 my-2 flex items-center gap-2 rounded-md border border-gray-200 px-2 dark:border-slate-700"><Search className="h-3 w-3 text-gray-400" /><input value={search} onChange={e => setSearch(e.target.value)} className="min-w-0 flex-1 bg-transparent py-1.5 text-xs outline-none" placeholder="Find an operation or item" /></label>
                         <div className="min-h-0 flex-1 overflow-y-auto p-2">{matchingNodes.map(node => renderTree(node))}</div>
-                        <div className="border-t border-gray-100 py-1 dark:border-slate-800">{addButtons()}</div>
                     </>}
                 </div>
             </aside>
@@ -434,9 +504,12 @@ export default function SpecDesigner() {
                         <label className="text-xs sm:col-span-2">Enabled tags (comma separated)<input value={(workspace.spec.enabledTags || []).join(', ')} onChange={e => updateSpecField('enabledTags', e.target.value.split(',').map(tag => tag.trim()).filter(Boolean))} className="mt-1 w-full rounded border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-slate-700" /></label>
                         <div className="text-xs text-gray-500 dark:text-slate-400 sm:col-span-2">Imported OpenAPI contract · {workspace.spec.version} · {workspace.operations.length} operations. Contract paths, schemas, and examples are read-only.</div>
                     </section>}
+                    {selectedNode.kind === 'specSignature' && <SpecSignatureDraftEditor headers={workspace.spec.signatureHeaders || []} onChange={headers => updateSpecField('signatureHeaders', headers)} />}
+                    {selectedNode.kind === 'proxy' && <SpecModeDraftEditor mode="proxy" spec={workspace.spec} onChange={updateSelected as (patch: Partial<SpecWorkspace['spec']>) => void} />}
+                    {selectedNode.kind === 'ai' && <SpecModeDraftEditor mode="ai" spec={workspace.spec} onChange={updateSelected as (patch: Partial<SpecWorkspace['spec']>) => void} />}
                     {selectedNode.kind === 'operation' && selectedOperation && <OperationOverview operation={selectedOperation.operation} onOpenSignature={() => { const key = `signature:${selectedOperation.operation.id}`; setSelected(key); setSearchParams({ item: key }, { replace: true }) }} onAddResponse={() => addResponse(selectedOperation.operation.id)} onAddValidation={() => addValidation(selectedOperation.operation.id)} onAddMapping={() => addMapping(selectedOperation.operation.id)} />}
                     {selectedNode.kind === 'signature' && selectedOperation && <SignatureDraftEditor operation={selectedOperation.operation} onChange={(signatureConfig) => updateSelected(signatureConfig)} />}
-                    {selectedNode.kind === 'response' && selectedObject !== null && selectedOperation && ((selectedObject as ResponseConfig).kind === 'collection' ? <CollectionResponseEditor key={selectedNode.key} operationId={selectedOperation.operation.id} config={selectedObject as ResponseConfig} onClose={() => selectNode({ key: `operation:${selectedOperation.operation.id}`, label: 'Operation', kind: 'operation', ref: { kind: 'operation', id: selectedOperation.operation.id } })} onDraftChange={updateSelected} /> : <ResponseConfigEditor key={selectedNode.key} operationId={selectedOperation.operation.id} config={selectedObject as ResponseConfig} variant="page" onClose={() => selectNode({ key: `operation:${selectedOperation.operation.id}`, label: 'Operation', kind: 'operation', ref: { kind: 'operation', id: selectedOperation.operation.id } })} onDraftChange={updateSelected} />)}
+                    {selectedNode.kind === 'response' && selectedObject !== null && selectedOperation && ((selectedObject as ResponseConfig).kind === 'collection' ? <CollectionResponseEditor key={selectedNode.key} operationId={selectedOperation.operation.id} config={selectedObject as ResponseConfig} onClose={() => selectNode({ key: `operation:${selectedOperation.operation.id}`, label: 'Operation', kind: 'operation', ref: { kind: 'operation', id: selectedOperation.operation.id } })} onDraftChange={updateSelected} /> : <ResponseConfigIDE key={selectedNode.key} operationId={selectedOperation.operation.id} config={selectedObject as ResponseConfig} onSaved={() => undefined} onDraftChange={updateSelected} />)}
                     {selectedNode.kind === 'validation' && selectedObject !== null && <ValidationRuleDraftEditor key={selectedNode.key} rule={selectedObject as ValidationRule} onChange={updateSelected as (rule: ValidationRule) => void} />}
                     {selectedNode.kind === 'mapping' && selectedObject !== null && <CollectionMappingDraftEditor key={selectedNode.key} mapping={selectedObject as CollectionMapping} operation={selectedOperation?.operation} onChange={updateSelected as (mapping: CollectionMapping) => void} />}
                     {selectedNode.kind === 'script' && selectedObject !== null && <ScriptBindingDraftEditor key={selectedNode.key} binding={selectedObject as ScriptBinding} onChange={updateSelected as (binding: ScriptBinding) => void} />}

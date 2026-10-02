@@ -1,6 +1,6 @@
 import { MappingHintsProvider, MappingHintControls, SuggestedFieldInput, shapeHints } from '../shared/MappingHints'
 import MappingDefaultInput, { isValidDefaultJSON } from '../shared/MappingDefaultInput'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
@@ -101,7 +101,7 @@ function rowToBinding(row: BindingRowState): ValueBinding {
     if (row.source === 'literal') {
         return { source: 'literal', value: parseLiteralInput(row.literal) }
     }
-    return { skipWhenMissing: row.skipWhenMissing || undefined, source: row.source || 'path', key: row.key.trim(), ...(row.defaultText !== undefined ? { defaultValue: JSON.parse(row.defaultText) } : {}) }
+    return { skipWhenMissing: row.skipWhenMissing || undefined, source: row.source || 'path', key: row.key.trim(), ...(row.defaultText !== undefined && isValidDefaultJSON(row.defaultText) ? { defaultValue: JSON.parse(row.defaultText) } : {}) }
 }
 
 interface MapperRowState {
@@ -265,6 +265,7 @@ type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | '
 
 export default function CollectionResponseEditor({ operationId, config, onClose, onDraftChange }: CollectionResponseEditorProps) {
     const cr = config?.collectionResponse
+    const isWorkspaceDraft = Boolean(onDraftChange)
 
     const [activeTab, setActiveTab] = useState<EditorTab>('metadata')
 
@@ -296,11 +297,17 @@ export default function CollectionResponseEditor({ operationId, config, onClose,
     const [overrides, setOverrides] = useState<BindingRowState[]>(() => rowsFromOverrides(cr?.overrides))
 
     const [error, setError] = useState('')
+    const draftChangeRef = useRef(onDraftChange)
+    const draftConfigRef = useRef(config)
+    const draftInitializedRef = useRef(false)
 
     const queryClient = useQueryClient()
 
     const { data: tags } = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list })
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
+
+    useEffect(() => { draftChangeRef.current = onDraftChange }, [onDraftChange])
+    useEffect(() => { draftConfigRef.current = config }, [config])
 
     const { data: specExamples, isPending: examplesLoading, isError: examplesError } = useQuery<SpecExample[]>({
         queryKey: ['specExamples', operationId],
@@ -353,6 +360,37 @@ export default function CollectionResponseEditor({ operationId, config, onClose,
         matchOnEmpty,
         fallbackToExample,
     })
+
+    useEffect(() => {
+        if (!isWorkspaceDraft || examplesLoading || exampleSelection === null && !chosenExample) return
+        if (!draftInitializedRef.current) {
+            draftInitializedRef.current = true
+            return
+        }
+        const current = draftConfigRef.current
+        const nextDraft: ResponseConfig = {
+            ...(current || {} as ResponseConfig),
+            id: current?.id || '',
+            operationId,
+            name,
+            description,
+            tag,
+            statusCode: chosenExample?.statusCode || current?.statusCode || 200,
+            priority,
+            delay,
+            enabled,
+            conditions: current?.conditions || [],
+            conditionTree,
+            headers,
+            body: '',
+            kind: 'collection',
+            collectionResponse: buildCollectionResponse(),
+            recorded: current?.recorded || false,
+            origin: current?.origin || 'manual',
+        }
+        if (current && JSON.stringify(nextDraft) === JSON.stringify(current)) return
+        draftChangeRef.current?.(nextDraft)
+    }, [chosenExample?.statusCode, conditionTree, delay, description, enabled, exampleSelection, examplesLoading, fallbackToExample, headers, isWorkspaceDraft, manualRootKind, matchOnEmpty, mappers, name, operationId, overrides, primaryCollectionName, primaryData, primaryFilters, primaryMode, priority, tag])
 
     const createMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
@@ -527,15 +565,15 @@ export default function CollectionResponseEditor({ operationId, config, onClose,
                 </span>
 
                 <div className="ml-auto flex items-center gap-2">
-                    <button
+                    {!isWorkspaceDraft && <button
                         onClick={handleSave}
-                        disabled={!onDraftChange && isSaving}
-                        title={onDraftChange ? 'Apply to workspace' : 'Save'}
+                        disabled={isSaving}
+                        title="Save"
                         className="px-3 py-1 text-xs bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50 inline-flex items-center gap-1.5"
                     >
-                        {!onDraftChange && isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        {onDraftChange ? 'Apply to workspace' : isSaving ? 'Saving…' : 'Save'}
-                    </button>
+                        {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                        {isSaving ? 'Saving…' : 'Save'}
+                    </button>}
                 </div>
             </div>
 
