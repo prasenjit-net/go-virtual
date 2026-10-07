@@ -177,6 +177,7 @@
         <li><a href="#navigation">Navigation &amp; Theme</a></li>
         <li><a href="#dashboard">Dashboard</a></li>
         <li><a href="#specs-ui">Specifications</a></li>
+        <li><a href="#spec-designer">Spec Designer</a></li>
         <li><a href="#spec-detail">Spec Detail &amp; Operations</a></li>
         <li><a href="#responses-ui">Response Configuration</a></li>
         <li><a href="#template-ref">Template Variable Reference</a></li>
@@ -367,7 +368,21 @@
         </table>
       </div>
 
-      <p>Click the spec name to navigate to the <strong>Spec Detail</strong> page.</p>
+      <p>Click the spec name to open its complete workspace in the <strong>Spec Designer</strong>.</p>
+    </div>
+
+    <!-- Spec designer -->
+    <div class="section" id="spec-designer">
+      <h2>Spec Designer</h2>
+      <p>The Spec Designer is the workspace editor for a single uploaded spec. It keeps edits to the spec settings, operation configuration, responses, script bindings, validation rules, and collection mappings in a local draft until you explicitly save them together.</p>
+      <ol class="steps">
+        <li><strong>Open a spec by clicking its name.</strong> The left workspace tree groups spec settings and each imported operation.</li>
+        <li><strong>Select an item in the tree.</strong> Add manual or collection responses under an operation; add scripts, validation rules, and collection mappings under its pipeline. The spec pipeline supports the same three step types.</li>
+        <li><strong>Use the context panel when available.</strong> It shows imported path, query, header, and body fields for the selected operation. The uploaded OpenAPI contract remains read-only.</li>
+        <li><strong>Save the workspace.</strong> All draft changes are validated and committed together. <strong>Reset</strong> discards the current unsaved draft; Undo and Redo retain up to 40 local edits.</li>
+      </ol>
+      <div class="callout info"><span class="callout-icon">ℹ️</span><div class="callout-body"><strong>Draft recovery and concurrent editing.</strong> The browser keeps a local recovery draft. If you reopen the designer after an interruption, you can restore it. Saving uses a revision check: if somebody else changed the workspace, reload and reconcile the conflict rather than overwriting their changes.</div></div>
+      <p>Use the designer for related changes that should land together. The individual Spec Detail, Operation Detail, and response pages remain useful for focused edits.</p>
     </div>
 
     <!-- Spec Detail -->
