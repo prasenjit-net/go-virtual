@@ -59,6 +59,7 @@ func (e *Executor) RunMappings(
 		}
 		if m.OutputKey != "" {
 			output[m.OutputKey] = injectStatus(result, execErr)
+			trace.Result = output[m.OutputKey]
 		}
 
 		traces = append(traces, trace)
@@ -140,6 +141,7 @@ func (e *Executor) RunOneMapping(
 	}
 	if m.OutputKey != "" {
 		output[m.OutputKey] = injectStatus(result, execErr)
+		trace.Result = output[m.OutputKey]
 	}
 	return output, trace, execErr
 }

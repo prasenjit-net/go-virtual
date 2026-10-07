@@ -23,6 +23,13 @@ type FileStorage struct {
 
 // NewFileStorage creates a new file-based storage
 func NewFileStorage(basePath string) (*FileStorage, error) {
+	absoluteBase, err := filepath.Abs(basePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := recoverWorkspaceSwap(absoluteBase); err != nil {
+		return nil, err
+	}
 	// Create directories if they don't exist
 	// Note: operations are in-memory only (derived from specs), no directory needed
 	dirs := []string{
@@ -699,7 +706,7 @@ func (f *FileStorage) DeleteResponseConfig(id string) error {
 	defer f.mu.Unlock()
 
 	// Cascade-delete response-level script bindings and collection mappings
-	f.memory.DeleteScriptBindingsByResponse(id)   //nolint:errcheck
+	f.memory.DeleteScriptBindingsByResponse(id)     //nolint:errcheck
 	f.memory.DeleteCollectionMappingsByResponse(id) //nolint:errcheck
 	os.Remove(f.responseScriptBindingsPath(id))
 	os.Remove(f.collectionMappingsPath(id))
@@ -726,7 +733,7 @@ func (f *FileStorage) DeleteResponseConfigsByOperation(opID string) error {
 
 	// Delete files (including any response-level script binding and mapping files)
 	for _, cfg := range cfgs {
-		f.memory.DeleteScriptBindingsByResponse(cfg.ID)   //nolint:errcheck
+		f.memory.DeleteScriptBindingsByResponse(cfg.ID)     //nolint:errcheck
 		f.memory.DeleteCollectionMappingsByResponse(cfg.ID) //nolint:errcheck
 		os.Remove(f.responseScriptBindingsPath(cfg.ID))
 		os.Remove(f.collectionMappingsPath(cfg.ID))
@@ -1006,8 +1013,6 @@ func (f *FileStorage) saveResponseScriptBindings(responseConfigID string) error 
 
 	return os.WriteFile(path, data, 0644)
 }
-
-
 
 // CreateScript creates a new script
 func (f *FileStorage) CreateScript(script *models.Script) error {

@@ -12,16 +12,16 @@ import (
 
 // MemoryStorage implements Storage interface with in-memory storage
 type MemoryStorage struct {
-	mu                  sync.RWMutex
-	specs               map[string]*models.Spec
-	operations          map[string]*models.Operation
-	responseConfigs     map[string]*models.ResponseConfig
-	tags                map[string]*models.Tag
-	scripts             map[string]*models.Script
-	aiScenarios         map[string]*models.AIScenario
-	scriptBindings      map[string]*models.ScriptBinding
-	collectionMappings  map[string]*models.CollectionMapping
-	validationRules     map[string]*models.ValidationRule
+	mu                 sync.RWMutex
+	specs              map[string]*models.Spec
+	operations         map[string]*models.Operation
+	responseConfigs    map[string]*models.ResponseConfig
+	tags               map[string]*models.Tag
+	scripts            map[string]*models.Script
+	aiScenarios        map[string]*models.AIScenario
+	scriptBindings     map[string]*models.ScriptBinding
+	collectionMappings map[string]*models.CollectionMapping
+	validationRules    map[string]*models.ValidationRule
 }
 
 // NewMemoryStorage creates a new in-memory storage
@@ -50,6 +50,43 @@ func NewMemoryStorage() *MemoryStorage {
 	}
 
 	return storage
+}
+
+// ApplySpecWorkspace stages the complete spec configuration in private maps,
+// then publishes the new map set under one lock so readers cannot observe a
+// half-applied designer save.
+func (m *MemoryStorage) ApplySpecWorkspace(workspace *models.SpecWorkspace) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	staged := &MemoryStorage{
+		specs:              copyPtrMap(m.specs),
+		operations:         copyPtrMap(m.operations),
+		responseConfigs:    copyPtrMap(m.responseConfigs),
+		tags:               m.tags,
+		scripts:            m.scripts,
+		aiScenarios:        m.aiScenarios,
+		scriptBindings:     copyPtrMap(m.scriptBindings),
+		collectionMappings: copyPtrMap(m.collectionMappings),
+		validationRules:    copyPtrMap(m.validationRules),
+	}
+	if err := applyWorkspaceRecords(staged, workspace); err != nil {
+		return err
+	}
+	m.specs = staged.specs
+	m.operations = staged.operations
+	m.responseConfigs = staged.responseConfigs
+	m.scriptBindings = staged.scriptBindings
+	m.collectionMappings = staged.collectionMappings
+	m.validationRules = staged.validationRules
+	return nil
+}
+
+func copyPtrMap[T any](source map[string]*T) map[string]*T {
+	result := make(map[string]*T, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 // CreateSpec creates a new spec
@@ -676,7 +713,6 @@ func (m *MemoryStorage) DeleteScriptBindingsByResponse(responseConfigID string) 
 	}
 	return nil
 }
-
 
 func (m *MemoryStorage) DeleteScriptBindingsByScript(scriptID string) error {
 	m.mu.Lock()

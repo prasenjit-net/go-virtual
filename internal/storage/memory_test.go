@@ -18,6 +18,97 @@ func TestNewMemoryStorage(t *testing.T) {
 	}
 }
 
+func TestMemoryStorageApplySpecWorkspaceReplacesScopedRecords(t *testing.T) {
+	s := NewMemoryStorage()
+	oldSpec := &models.Spec{ID: "spec-1", Name: "old"}
+	oldOperation := &models.Operation{ID: "operation-1", SpecID: oldSpec.ID, Path: "/old"}
+	oldResponse := &models.ResponseConfig{ID: "response-1", OperationID: oldOperation.ID, Name: "old"}
+	for _, create := range []func() error{
+		func() error { return s.CreateSpec(oldSpec) },
+		func() error { return s.CreateOperation(oldOperation) },
+		func() error { return s.CreateResponseConfig(oldResponse) },
+		func() error {
+			return s.CreateScriptBinding(&models.ScriptBinding{ID: "old-spec-binding", SpecID: oldSpec.ID})
+		},
+		func() error {
+			return s.CreateScriptBinding(&models.ScriptBinding{ID: "old-operation-binding", OperationID: oldOperation.ID})
+		},
+		func() error {
+			return s.CreateScriptBinding(&models.ScriptBinding{ID: "old-response-binding", ResponseConfigID: oldResponse.ID})
+		},
+		func() error {
+			return s.CreateCollectionMapping(&models.CollectionMapping{ID: "old-spec-mapping", SpecID: oldSpec.ID})
+		},
+		func() error {
+			return s.CreateCollectionMapping(&models.CollectionMapping{ID: "old-operation-mapping", OperationID: oldOperation.ID})
+		},
+		func() error {
+			return s.CreateCollectionMapping(&models.CollectionMapping{ID: "old-response-mapping", ResponseConfigID: oldResponse.ID})
+		},
+		func() error {
+			_, err := s.CreateValidationRule(&models.ValidationRule{ID: "old-spec-rule", SpecID: oldSpec.ID})
+			return err
+		},
+		func() error {
+			_, err := s.CreateValidationRule(&models.ValidationRule{ID: "old-operation-rule", OperationID: oldOperation.ID})
+			return err
+		},
+	} {
+		if err := create(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	workspace := &models.SpecWorkspace{
+		Spec:            &models.Spec{ID: oldSpec.ID, Name: "updated"},
+		SpecScripts:     []*models.ScriptBinding{{ID: "new-spec-binding", SpecID: oldSpec.ID}},
+		SpecMappings:    []*models.CollectionMapping{{ID: "new-spec-mapping", SpecID: oldSpec.ID}},
+		SpecValidations: []*models.ValidationRule{{ID: "new-spec-rule", SpecID: oldSpec.ID}},
+		Operations: []models.SpecWorkspaceOperation{{
+			Operation:   &models.Operation{ID: oldOperation.ID, SpecID: oldSpec.ID, Path: "/updated"},
+			Scripts:     []*models.ScriptBinding{{ID: "new-operation-binding", OperationID: oldOperation.ID}},
+			Mappings:    []*models.CollectionMapping{{ID: "new-operation-mapping", OperationID: oldOperation.ID}},
+			Validations: []*models.ValidationRule{{ID: "new-operation-rule", OperationID: oldOperation.ID}},
+			Responses: []models.SpecWorkspaceResponse{{
+				Response: &models.ResponseConfig{ID: "new-response", OperationID: oldOperation.ID, Name: "new"},
+				Scripts:  []*models.ScriptBinding{{ID: "new-response-binding", ResponseConfigID: "new-response"}},
+				Mappings: []*models.CollectionMapping{{ID: "new-response-mapping", ResponseConfigID: "new-response"}},
+			}},
+		}},
+	}
+	if err := s.ApplySpecWorkspace(workspace); err != nil {
+		t.Fatalf("ApplySpecWorkspace: %v", err)
+	}
+
+	if got, err := s.GetSpec(oldSpec.ID); err != nil || got.Name != "updated" {
+		t.Fatalf("updated spec = %#v, %v", got, err)
+	}
+	if got, err := s.GetOperation(oldOperation.ID); err != nil || got.Path != "/updated" {
+		t.Fatalf("updated operation = %#v, %v", got, err)
+	}
+	if _, err := s.GetResponseConfig(oldResponse.ID); err == nil {
+		t.Fatal("old response was not removed")
+	}
+	if _, err := s.GetResponseConfig("new-response"); err != nil {
+		t.Fatalf("new response: %v", err)
+	}
+	for _, id := range []string{"old-spec-binding", "old-operation-binding", "old-response-binding"} {
+		if err := s.DeleteScriptBinding(id); err == nil {
+			t.Fatalf("old binding %s was not removed", id)
+		}
+	}
+	for _, id := range []string{"old-spec-mapping", "old-operation-mapping", "old-response-mapping"} {
+		if _, err := s.GetCollectionMapping(id); err == nil {
+			t.Fatalf("old mapping %s was not removed", id)
+		}
+	}
+	for _, id := range []string{"old-spec-rule", "old-operation-rule"} {
+		if _, err := s.GetValidationRule(id); err == nil {
+			t.Fatalf("old validation rule %s was not removed", id)
+		}
+	}
+}
+
 // Spec tests
 func TestCreateSpec(t *testing.T) {
 	s := NewMemoryStorage()
@@ -1032,13 +1123,13 @@ func TestGetCollectionMappingsByResponse(t *testing.T) {
 func TestCreateValidationRule(t *testing.T) {
 	s := NewMemoryStorage()
 	rule := &models.ValidationRule{
-		ID:          "vr-1",
-		SpecID:      "spec-1",
-		Name:        "myRule",
-		Enabled:     true,
-		Order:       0,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:        "vr-1",
+		SpecID:    "spec-1",
+		Name:      "myRule",
+		Enabled:   true,
+		Order:     0,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	got, err := s.CreateValidationRule(rule)
 	if err != nil {

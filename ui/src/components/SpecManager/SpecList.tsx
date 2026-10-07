@@ -116,7 +116,7 @@ export default function SpecList() {
                                     </div>
                                     <div className="ml-4">
                                         <Link
-                                            to={`/specs/${spec.id}`}
+                                            to={`/specs/${spec.id}/designer`}
                                             className="text-lg font-semibold text-gray-900 dark:text-slate-100 hover:text-primary-600 flex items-center"
                                         >
                                             {spec.name}

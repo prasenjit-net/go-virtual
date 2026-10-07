@@ -69,6 +69,7 @@
       <div class="toc-title">On this page</div>
       <ul>
         <li><a href="#specs">Managing Specifications</a></li>
+        <li><a href="#workspace-designer">Spec Designer</a></li>
         <li><a href="#operations">Operations</a></li>
         <li><a href="#responses">Response Configurations</a></li>
         <li><a href="#priority">Priority &amp; Matching Order</a></li>
@@ -116,6 +117,7 @@ curl -X POST http://localhost:8080/_api/specs \
             <tr><td>tracing</td><td>bool</td><td>Whether requests to this spec are traced</td></tr>
             <tr><td>useExampleFallback</td><td>bool</td><td>Whether standard mode can fall back to OpenAPI examples/default responses</td></tr>
             <tr><td>mode</td><td>string</td><td>Execution mode: <code>standard</code>, <code>ai</code>, or <code>proxy</code></td></tr>
+            <tr><td>modePolicy</td><td>object</td><td>Conditional AI and proxy fallback settings. This is the current configuration model; <code>mode</code> remains for compatibility and provides the simple UI selector.</td></tr>
             <tr><td>backendUri</td><td>string</td><td>Upstream backend URL used by proxy fallback</td></tr>
           </tbody>
         </table>
@@ -135,6 +137,10 @@ curl -X PUT http://localhost:8080/_api/specs/spec_abc123/enable
   -H <span class="str">"Content-Type: application/json"</span> \
   -d <span class="str">'{"name": "My API v2", "content": "..."}'</span>
 </code></pre>
+
+      <h3 id="workspace-designer">Edit a complete workspace</h3>
+      <p>For coordinated changes across a spec, its operations, responses, and pipeline steps, click the spec name on the API Specs page to open the designer. The designer works on one draft and saves it atomically, so a request never sees a partially applied set of configuration changes.</p>
+      <p>The imported OpenAPI contract is deliberately protected in this view: paths, operations, schemas, examples, and spec content cannot be changed there. Upload a revised OpenAPI document when the contract itself changes. See the <a href="admin-ui.html#spec-designer">Spec Designer guide</a> and <a href="admin-api.html#workspace-api">workspace API reference</a> for the draft, recovery, and concurrency behavior.</p>
 
       <div class="callout warning">
         <span class="callout-icon">⚠️</span>

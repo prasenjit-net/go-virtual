@@ -1,3 +1,4 @@
+import { MappingHintsProvider, MappingHintControls, SuggestedFieldInput } from '../shared/MappingHints'
 import MappingDefaultInput from '../shared/MappingDefaultInput'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -140,7 +141,7 @@ function RuleEditor({ rules, onChange, label }: {
             <div className="space-y-1.5">
                 {rules.map((rule, i) => (
                     <div key={i} className="flex flex-wrap gap-1 items-center">
-                        <input
+                        <SuggestedFieldInput hintSource="document" topLevel
                             type="text"
                             value={rule.targetField}
                             placeholder="target field"
@@ -155,7 +156,7 @@ function RuleEditor({ rules, onChange, label }: {
                         >
                             {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
-                        <input
+                        <SuggestedFieldInput hintSource={rule.sourceType === 'literal' ? 'document' : rule.sourceType} valueKey={rule.sourceType === 'literal' ? rule.targetField : undefined}
                             type="text"
                             value={rule.sourceKey}
                             placeholder="value / key"
@@ -165,7 +166,7 @@ function RuleEditor({ rules, onChange, label }: {
                         <button type="button" onClick={() => remove(i)} className="p-0.5 text-gray-400 hover:text-red-500">
                             <X className="w-3 h-3" />
                         </button>
-                        {rule.sourceType !== 'literal' && <MappingDefaultInput value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
+                        {rule.sourceType !== 'literal' && <MappingDefaultInput hintSource={rule.sourceType} valueKey={rule.sourceKey} value={rule.defaultValue} skipWhenMissing={rule.skipWhenMissing} onChange={(defaultValue, skipWhenMissing) => update(i, { defaultValue, skipWhenMissing })} />}
                     </div>
                 ))}
             </div>
@@ -392,7 +393,7 @@ const EMPTY_VALIDATION_FORM: ValidationForm = {
     onSuccess: {}, onFailure: {},
 }
 
-export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
+function PipelinePanelContent({ scope, scopeId, operationId }: Props) {
     const queryClient = useQueryClient()
     const queryKey = ['pipeline', scope, scopeId]
 
@@ -871,12 +872,12 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">Condition</label>
                                 <div className="border border-gray-200 dark:border-slate-700 rounded-lg p-3">
-                                    <ConditionEditor
+                                    <MappingHintsProvider order={valForm.order} stepId={editingStep?.validation?.id} stepType="validation"><MappingHintControls /><ConditionEditor
                                         value={valForm.conditionTree}
                                         onChange={tree => setValForm(f => ({ ...f, conditionTree: tree }))}
                                         emptyHint="No conditions — this rule always passes."
                                         compact
-                                    />
+                                    /></MappingHintsProvider>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
@@ -963,6 +964,7 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
                                     {collForm.enabled ? <ToggleRight className="w-7 h-7 text-emerald-600" /> : <ToggleLeft className="w-7 h-7 text-gray-400 dark:text-slate-500" />}
                                 </button>
                             </div>
+                            <MappingHintsProvider collectionName={collForm.collectionName} order={collForm.order} stepId={editingStep?.collection?.id} stepType="collection"><MappingHintControls />
                             {showFilterRules(collForm.operation) && (
                                 <RuleEditor
                                     rules={collForm.filterRules}
@@ -977,6 +979,7 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
                                     label="Data Rules"
                                 />
                             )}
+                            </MappingHintsProvider>
                             {collError && <p className="text-sm text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 rounded-lg p-3">{collError}</p>}
                         </div>
                         <div className="flex gap-3 mt-6">
@@ -994,4 +997,8 @@ export default function PipelinePanel({ scope, scopeId, operationId }: Props) {
             )}
         </>
     )
+}
+
+export default function PipelinePanel(props: Props) {
+ return <MappingHintsProvider controls scope={props.scope} operationId={props.scope === "operation" ? props.scopeId : props.operationId} specId={props.scope === "spec" ? props.scopeId : undefined}><PipelinePanelContent {...props} /></MappingHintsProvider>
 }

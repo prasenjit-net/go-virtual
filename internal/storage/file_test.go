@@ -739,6 +739,118 @@ func TestFileStorage_DeleteTag_NotFound(t *testing.T) {
 	}
 }
 
+func TestFileStorage_CollectionMappingsPersistByScope(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+
+	mappings := []*models.CollectionMapping{
+		{ID: "spec-mapping", SpecID: "spec-1", CollectionName: "users", Operation: models.ColOpInsert, OutputKey: "spec", Order: 2, Enabled: true},
+		{ID: "operation-mapping", OperationID: "op-1", CollectionName: "users", Operation: models.ColOpFindOne, OutputKey: "operation", Order: 1, Enabled: true},
+		{ID: "response-mapping", ResponseConfigID: "response-1", CollectionName: "users", Operation: models.ColOpFindMany, OutputKey: "response", Order: 0, Enabled: true},
+	}
+	for _, mapping := range mappings {
+		if err := fs.CreateCollectionMapping(mapping); err != nil {
+			t.Fatalf("CreateCollectionMapping(%s): %v", mapping.ID, err)
+		}
+	}
+
+	for _, path := range []string{
+		filepath.Join(baseDir, "specs", "spec-1.mappings.json"),
+		filepath.Join(baseDir, "operations", "op-1.mappings.json"),
+		filepath.Join(baseDir, "responses", "response-1.mappings.json"),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("mapping file %s: %v", path, err)
+		}
+	}
+
+	mappings[0].CollectionName = "accounts"
+	if err := fs.UpdateCollectionMapping(mappings[0]); err != nil {
+		t.Fatalf("UpdateCollectionMapping: %v", err)
+	}
+	reloaded, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload NewFileStorage: %v", err)
+	}
+	got, err := reloaded.GetCollectionMapping("spec-mapping")
+	if err != nil || got.CollectionName != "accounts" {
+		t.Fatalf("reloaded spec mapping = %#v, %v", got, err)
+	}
+
+	if err := reloaded.DeleteCollectionMapping("response-mapping"); err != nil {
+		t.Fatalf("DeleteCollectionMapping: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "responses", "response-1.mappings.json")); !os.IsNotExist(err) {
+		t.Fatalf("expected empty mapping file to be removed, got %v", err)
+	}
+	if err := reloaded.DeleteCollectionMapping("missing"); err == nil {
+		t.Fatal("expected deleting a missing mapping to fail")
+	}
+}
+
+func TestFileStorage_DeleteCollectionMappingsByScope(t *testing.T) {
+	fs, err := NewFileStorage(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	for _, mapping := range []*models.CollectionMapping{
+		{ID: "spec", SpecID: "spec-1", CollectionName: "c", Operation: models.ColOpInsert},
+		{ID: "operation", OperationID: "op-1", CollectionName: "c", Operation: models.ColOpInsert},
+		{ID: "response", ResponseConfigID: "response-1", CollectionName: "c", Operation: models.ColOpInsert},
+	} {
+		if err := fs.CreateCollectionMapping(mapping); err != nil {
+			t.Fatalf("CreateCollectionMapping: %v", err)
+		}
+	}
+	if err := fs.DeleteCollectionMappingsBySpec("spec-1"); err != nil {
+		t.Fatalf("DeleteCollectionMappingsBySpec: %v", err)
+	}
+	if err := fs.DeleteCollectionMappingsByOperation("op-1"); err != nil {
+		t.Fatalf("DeleteCollectionMappingsByOperation: %v", err)
+	}
+	if err := fs.DeleteCollectionMappingsByResponse("response-1"); err != nil {
+		t.Fatalf("DeleteCollectionMappingsByResponse: %v", err)
+	}
+	for _, id := range []string{"spec", "operation", "response"} {
+		if _, err := fs.GetCollectionMapping(id); err == nil {
+			t.Fatalf("mapping %s still exists", id)
+		}
+	}
+}
+
+func TestFileStorage_ValidationRulesPersist(t *testing.T) {
+	baseDir := t.TempDir()
+	fs, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("NewFileStorage: %v", err)
+	}
+	rule := &models.ValidationRule{ID: "rule-1", SpecID: "spec-1", Name: "original", Enabled: true}
+	if _, err := fs.CreateValidationRule(rule); err != nil {
+		t.Fatalf("CreateValidationRule: %v", err)
+	}
+	rule.Name = "updated"
+	if _, err := fs.UpdateValidationRule(rule); err != nil {
+		t.Fatalf("UpdateValidationRule: %v", err)
+	}
+	reloaded, err := NewFileStorage(baseDir)
+	if err != nil {
+		t.Fatalf("reload NewFileStorage: %v", err)
+	}
+	got, err := reloaded.GetValidationRule("rule-1")
+	if err != nil || got.Name != "updated" {
+		t.Fatalf("reloaded validation rule = %#v, %v", got, err)
+	}
+	if err := reloaded.DeleteValidationRule("rule-1"); err != nil {
+		t.Fatalf("DeleteValidationRule: %v", err)
+	}
+	if err := reloaded.DeleteValidationRule("missing"); err == nil {
+		t.Fatal("expected deleting a missing validation rule to fail")
+	}
+}
+
 func TestFileStorage_UpdateTag_Rename(t *testing.T) {
 	baseDir := t.TempDir()
 	fs, err := NewFileStorage(baseDir)

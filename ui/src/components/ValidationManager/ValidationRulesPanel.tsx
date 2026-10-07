@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
     Plus, Trash2, Edit2, ToggleLeft, ToggleRight, ChevronDown, ChevronRight,
@@ -103,9 +104,12 @@ interface RuleModalProps {
     onClose: () => void
     isSaving: boolean
     saveError: string | null
+    embedded?: boolean
+    saveLabel?: string
+    autoSave?: boolean
 }
 
-function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProps) {
+function RuleModal({ rule, onSave, onClose, isSaving, saveError, embedded = false, saveLabel, autoSave = false }: RuleModalProps) {
     const [name, setName] = useState(rule?.name ?? '')
     const [description, setDescription] = useState(rule?.description ?? '')
     const [order, setOrder] = useState(rule?.order ?? 0)
@@ -114,6 +118,18 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
     const [onSuccess, setOnSuccess] = useState<Record<string, string>>(rule?.onSuccess ?? {})
     const [onFailure, setOnFailure] = useState<Record<string, string>>(rule?.onFailure ?? {})
     const [nameError, setNameError] = useState<string | null>(null)
+    const saveRef = useRef(onSave)
+    const draftInitializedRef = useRef(false)
+
+    useEffect(() => { saveRef.current = onSave }, [onSave])
+    useEffect(() => {
+        if (!autoSave) return
+        if (!draftInitializedRef.current) {
+            draftInitializedRef.current = true
+            return
+        }
+        saveRef.current({ name, description, order, enabled, conditionTree, onSuccess, onFailure })
+    }, [autoSave, conditionTree, description, enabled, name, onFailure, onSuccess, order])
 
     const handleSubmit = () => {
         if (!name.trim()) { setNameError('Name is required'); return }
@@ -123,8 +139,8 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-slate-700">
+        <div className={embedded ? 'w-full' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4'}>
+            <div className={clsx('bg-white dark:bg-slate-800 rounded-xl w-full flex flex-col border border-gray-200 dark:border-slate-700', embedded ? 'max-w-none shadow-sm' : 'max-w-2xl shadow-2xl max-h-[90vh]')}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-slate-700">
                     <div className="flex items-center gap-2">
@@ -207,12 +223,12 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                             When condition is <strong>true</strong> → onPass properties injected.
                             When <strong>false</strong> → onFail properties injected.
                         </p>
-                        <ConditionEditor
+                        <MappingHintsProvider order={order} stepId={rule?.id} stepType="validation"><MappingHintControls /><ConditionEditor
                             label="Condition (when does this rule pass?)"
                             value={conditionTree}
                             onChange={setConditionTree}
                             emptyHint="No condition — rule always passes."
-                        />
+                        /></MappingHintsProvider>
                     </div>
 
                     {/* OnSuccess / OnFailure */}
@@ -242,7 +258,7 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-slate-700">
+                {!autoSave && <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200 dark:border-slate-700">
                     <button
                         type="button"
                         onClick={onClose}
@@ -257,17 +273,35 @@ function RuleModal({ rule, onSave, onClose, isSaving, saveError }: RuleModalProp
                         className="px-4 py-2 text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-60 flex items-center gap-1.5"
                     >
                         {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                        {rule ? 'Update' : 'Create'}
+                        {saveLabel || (rule ? 'Update' : 'Create')}
                     </button>
                 </div>
+                }
             </div>
         </div>
     )
 }
 
+// The designer owns one complete draft, so this keeps the existing validation
+// editor while replacing its per-rule network save with an in-memory change.
+export function ValidationRuleDraftEditor({ rule, onChange }: {
+    rule: ValidationRule
+    onChange: (rule: ValidationRule) => void
+}) {
+    return <RuleModal
+        embedded
+        rule={rule}
+        onClose={() => undefined}
+        isSaving={false}
+        saveError={null}
+        autoSave
+        onSave={(input) => onChange({ ...rule, ...input })}
+    />
+}
+
 // ---- Main Panel ----
 
-export default function ValidationRulesPanel(props: Props) {
+function ValidationRulesPanelContent(props: Props) {
     const queryClient = useQueryClient()
     const [modalOpen, setModalOpen] = useState(false)
     const [editingRule, setEditingRule] = useState<ValidationRule | null>(null)
@@ -500,4 +534,8 @@ export default function ValidationRulesPanel(props: Props) {
             )}
         </div>
     )
+}
+
+export default function ValidationRulesPanel(props: Props) {
+ return <MappingHintsProvider controls scope={props.scope} operationId={props.scope === "operation" ? props.operationId : undefined} specId={props.scope === "spec" ? props.specId : undefined}><ValidationRulesPanelContent {...props} /></MappingHintsProvider>
 }

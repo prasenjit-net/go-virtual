@@ -1,3 +1,4 @@
+import { SuggestedFieldInput } from './MappingHints'
 /**
  * Shared condition tree editor.
  *
@@ -127,7 +128,8 @@ export function ConditionLeafRow({ cond, onChange, onRemove, sources = ALL_SOURC
             </select>
 
             {/* Key */}
-            <input
+            <SuggestedFieldInput
+                hintSource={cond.source}
                 type="text"
                 value={cond.key}
                 onChange={e => onChange({ key: e.target.value })}
@@ -170,15 +172,11 @@ export function ConditionLeafRow({ cond, onChange, onRemove, sources = ALL_SOURC
             </button>
 
             {/* Value — with date token autocomplete */}
-            {showDatePicker && (
-                <datalist id={`date-tokens-${depth}`}>
-                    {DATE_TOKENS.map(t => <option key={t.token} value={t.token}>{t.desc}</option>)}
-                </datalist>
-            )}
-            <input
+            <SuggestedFieldInput
+                hintSource={cond.source}
+                valueKey={cond.key}
+                suggestions={showDatePicker ? DATE_TOKENS.map(t => ({ value: t.token, description: t.desc })) : []}
                 type="text"
-                autoComplete="off"
-                list={showDatePicker ? `date-tokens-${depth}` : undefined}
                 value={cond.value}
                 onChange={e => onChange({ value: e.target.value })}
                 placeholder={

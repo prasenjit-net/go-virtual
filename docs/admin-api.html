@@ -68,6 +68,7 @@
       <ul>
         <li><a href="#auth">Authentication</a></li>
         <li><a href="#specs-api">Specs</a></li>
+        <li><a href="#workspace-api">Spec workspace</a></li>
         <li><a href="#operations-api">Operations</a></li>
         <li><a href="#responses-api">Responses</a></li>
         <li><a href="#scripts-api">Scripts</a></li>
@@ -197,6 +198,30 @@
           <div class="desc">Select the spec mode: <code>standard</code>, <code>ai</code>, or <code>proxy</code>.</div>
         </div>
       </div>
+    </div>
+
+    <!-- Spec workspace API -->
+    <div class="section" id="workspace-api">
+      <h2>Spec workspace</h2>
+      <p>The workspace API is the atomic editing interface used by the Spec Designer. A workspace contains one spec, its imported operations, manual and collection responses, script bindings, validation rules, and collection mappings. It is intended for clients that need to edit several related records as one save.</p>
+
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-get">GET</span></div>
+        <div><div class="path">/_api/specs/:id/workspace</div><div class="desc">Return the complete editable workspace snapshot. The response includes an <code>ETag</code> and is never cached.</div></div>
+      </div>
+      <div class="endpoint">
+        <div class="method"><span class="badge badge-put">PUT</span></div>
+        <div><div class="path">/_api/specs/:id/workspace</div><div class="desc">Atomically save a complete workspace draft. Supply the revision from the GET response in <code>If-Match</code> (or in the body's <code>revision</code> field).</div></div>
+      </div>
+      <pre><code><span class="cm"># Fetch, edit the returned JSON, then save it with optimistic concurrency</span>
+curl http://localhost:8080/_api/specs/spec_abc/workspace -o workspace.json
+curl -X PUT http://localhost:8080/_api/specs/spec_abc/workspace \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -H <span class="str">"If-Match: &lt;revision from GET&gt;"</span> \
+  --data-binary @workspace.json
+</code></pre>
+      <p>A successful save returns <code>{"workspace": ..., "idMap": ...}</code> and a new <code>ETag</code>. <code>idMap</code> maps client draft IDs to persistent IDs. A stale revision returns <code>409 Conflict</code> with the current revision; reload the workspace before retrying.</p>
+      <div class="callout warning"><span class="callout-icon">⚠️</span><div class="callout-body"><strong>OpenAPI contract fields are read-only here.</strong> The workspace can edit configuration around an imported contract, but cannot add/remove operations or change imported paths, schemas, examples, spec content, version, or creation metadata. Upload an updated OpenAPI document to change the contract.</div></div>
     </div>
 
     <!-- Operations API -->

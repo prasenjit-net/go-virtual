@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Outlet, NavLink } from 'react-router-dom'
+import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
     LayoutDashboard,
@@ -17,7 +17,7 @@ import {
     Bot,
     Menu,
 } from 'lucide-react'
-import { LogoFull } from './Logo'
+import { LogoFull, LogoIcon } from './Logo'
 import { brandingApi } from '../services/api'
 import type { Branding } from '../types'
 import clsx from 'clsx'
@@ -55,8 +55,10 @@ const applyThemeMode = (mode: ThemeMode) => {
 }
 
 export default function Layout() {
+    const { pathname } = useLocation()
     const [themeMode, setThemeMode] = useState<ThemeMode>(getInitialTheme)
     const [sidebarOpen, setSidebarOpen] = useState(false)
+    const isSpecDesigner = /^\/specs\/[^/]+\/designer(?:\/|$)/.test(pathname)
 
     // Fetch branding config — stale forever (only changes on server restart)
     const { data: branding } = useQuery<Branding>({
@@ -80,6 +82,10 @@ export default function Layout() {
             window.localStorage.setItem(themeStorageKey, themeMode)
         }
     }, [themeMode])
+
+    useEffect(() => {
+        if (isSpecDesigner) setSidebarOpen(false)
+    }, [isSpecDesigner])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -152,35 +158,38 @@ export default function Layout() {
 
             {/* Sidebar */}
             <aside className={clsx(
-                "fixed lg:relative inset-y-0 left-0 z-30 w-64 h-full bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col transition-transform duration-300",
+                "fixed lg:relative inset-y-0 left-0 z-30 w-64 h-full bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 flex flex-col transition-[transform,width] duration-300",
+                isSpecDesigner ? "lg:w-20" : "lg:w-64",
                 sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
             )}>
                 {/* Logo (desktop only) */}
-                <div className="hidden lg:flex h-16 items-center px-5 border-b border-gray-200 dark:border-slate-800">
-                    <LogoFull iconSize={36} title={branding?.appTitle} />
+                <div className={clsx('hidden lg:flex h-16 items-center border-b border-gray-200 dark:border-slate-800', isSpecDesigner ? 'justify-center px-2' : 'px-5')}>
+                    {isSpecDesigner ? <LogoIcon size={34} /> : <LogoFull iconSize={36} title={branding?.appTitle} />}
                 </div>
                 {/* Spacer for mobile top bar */}
                 <div className="h-14 lg:hidden" />
 
                 {/* Navigation */}
-                <nav className="flex-1 px-4 py-6 overflow-y-auto">
+                <nav className={clsx('flex-1 py-6 overflow-y-auto', isSpecDesigner ? 'px-4 lg:px-2' : 'px-4')}>
                     <ul className="space-y-1">
                         {navItems.map((item) => (
                             <li key={item.to}>
                                 <NavLink
                                     to={item.to}
                                     onClick={() => setSidebarOpen(false)}
+                                    title={item.label}
                                     className={({ isActive }) =>
                                         clsx(
                                             'flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                                            isSpecDesigner && 'lg:justify-center lg:px-2',
                                             isActive
                                                 ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-200'
                                                 : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100'
                                         )
                                     }
                                 >
-                                    <item.icon className="w-5 h-5 mr-3" />
-                                    {item.label}
+                                    <item.icon className={clsx('w-5 h-5 shrink-0', isSpecDesigner ? 'lg:mr-0' : 'mr-3')} />
+                                    <span className={isSpecDesigner ? 'lg:sr-only' : undefined}>{item.label}</span>
                                 </NavLink>
                             </li>
                         ))}
@@ -190,10 +199,11 @@ export default function Layout() {
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={() => setSidebarOpen(false)}
-                                className="flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                                title="Docs"
+                                className={clsx('flex items-center px-4 py-2.5 rounded-lg text-sm font-medium transition-colors text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100', isSpecDesigner && 'lg:justify-center lg:px-2')}
                             >
-                                <BookOpen className="w-5 h-5 mr-3" />
-                                Docs
+                                <BookOpen className={clsx('w-5 h-5 shrink-0', isSpecDesigner ? 'lg:mr-0' : 'mr-3')} />
+                                <span className={isSpecDesigner ? 'lg:sr-only' : undefined}>Docs</span>
                             </a>
                         </li>
                     </ul>
@@ -201,8 +211,8 @@ export default function Layout() {
 
                 <div className="mt-auto">
                     {/* Theme Toggle */}
-                    <div className="px-4 pb-4">
-                        <div className="text-xs font-semibold text-gray-500 dark:text-slate-400 mb-2">
+                    <div className={clsx('px-4 pb-4', isSpecDesigner && 'lg:px-2')}>
+                        <div className={clsx('text-xs font-semibold text-gray-500 dark:text-slate-400 mb-2', isSpecDesigner && 'lg:sr-only')}>
                             Theme
                         </div>
                         <div className="grid grid-cols-3 gap-1 bg-gray-100 dark:bg-slate-800 p-1 rounded-lg">
@@ -220,14 +230,14 @@ export default function Layout() {
                                     )}
                                 >
                                     <option.icon className="w-3.5 h-3.5" />
-                                    {option.label}
+                                    <span className={isSpecDesigner ? 'lg:sr-only' : undefined}>{option.label}</span>
                                 </button>
                             ))}
                         </div>
                     </div>
 
                     {/* Footer */}
-                    <div className="p-4 border-t border-gray-200 dark:border-slate-800">
+                    <div className={clsx('p-4 border-t border-gray-200 dark:border-slate-800', isSpecDesigner && 'lg:hidden')}>
                         <div className="text-xs text-gray-500 dark:text-slate-400">
                             <p className="font-medium">{branding?.appTitle?.trim() || 'go-virtual'}</p>
                             <p>{branding?.appSubtitle?.trim() || 'API Mock & Virtualization'}</p>

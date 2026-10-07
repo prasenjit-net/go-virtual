@@ -1,8 +1,11 @@
+import { SuggestedFieldInput } from './MappingHints'
 interface MappingDefaultInputProps {
     value: string | undefined
     skipWhenMissing?: boolean
     onChange: (value: string | undefined, skipWhenMissing: boolean) => void
     json?: boolean
+    hintSource?: string
+    valueKey?: string
 }
 
 export function isValidDefaultJSON(value: string | undefined): boolean {
@@ -10,7 +13,7 @@ export function isValidDefaultJSON(value: string | undefined): boolean {
     try { JSON.parse(value); return true } catch { return false }
 }
 
-export default function MappingDefaultInput({ value, onChange, skipWhenMissing = false, json = false }: MappingDefaultInputProps) {
+export default function MappingDefaultInput({ value, onChange, skipWhenMissing = false, json = false, hintSource = "", valueKey = "" }: MappingDefaultInputProps) {
     const invalid = json && !isValidDefaultJSON(value)
     return <div className="w-full space-y-1 text-xs text-gray-600 dark:text-slate-300">
         <label className="flex items-center gap-2">
@@ -29,7 +32,7 @@ export default function MappingDefaultInput({ value, onChange, skipWhenMissing =
         {value !== undefined && <>
             <label className="flex items-center gap-2">
                 <span className="shrink-0">Default value{json ? ' (JSON)' : ''}</span>
-                <input type="text" value={value} aria-invalid={invalid}
+                <SuggestedFieldInput hintSource={hintSource} valueKey={valueKey} jsonValue={json} type="text" value={value} aria-invalid={invalid}
                     onChange={(event) => onChange(event.target.value, false)}
                     placeholder={json ? '"text", true, 0, null, {}, []' : 'Default text (empty is allowed)'}
                     className="min-w-0 flex-1 px-2 py-1.5 border border-gray-300 dark:border-slate-700 rounded bg-white dark:bg-slate-950 text-gray-900 dark:text-slate-100 font-mono focus:ring-2 focus:ring-primary-500" />

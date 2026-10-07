@@ -44,8 +44,8 @@ const (
 // genericDoc is the BSON wrapper stored for each entity.
 // _id holds the entity's natural key; data holds the JSON-encoded model.
 type genericDoc struct {
-	ID      string `bson:"_id"`
-	Data    string `bson:"data"`
+	ID   string `bson:"_id"`
+	Data string `bson:"data"`
 	// Relationship fields for indexed queries:
 	SpecID           string `bson:"spec_id,omitempty"`
 	OperationID      string `bson:"operation_id,omitempty"`

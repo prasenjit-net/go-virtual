@@ -1,9 +1,9 @@
+import { MappingHintsProvider, MappingHintControls, SuggestedFieldInput, shapeHints } from '../shared/MappingHints'
 import MappingDefaultInput, { isValidDefaultJSON } from '../shared/MappingDefaultInput'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
     AlertCircle,
-    ArrowLeft,
     Database,
     FileJson,
     GitBranch,
@@ -37,6 +37,8 @@ interface CollectionResponseEditorProps {
     operationId: string
     config: ResponseConfig | null
     onClose: () => void
+    /** Keep this editor's changes in the designer workspace draft. */
+    onDraftChange?: (config: ResponseConfig) => void
 }
 
 // ── Binding row editing state ───────────────────────────────────────────────
@@ -99,7 +101,7 @@ function rowToBinding(row: BindingRowState): ValueBinding {
     if (row.source === 'literal') {
         return { source: 'literal', value: parseLiteralInput(row.literal) }
     }
-    return { skipWhenMissing: row.skipWhenMissing || undefined, source: row.source || 'path', key: row.key.trim(), ...(row.defaultText !== undefined ? { defaultValue: JSON.parse(row.defaultText) } : {}) }
+    return { skipWhenMissing: row.skipWhenMissing || undefined, source: row.source || 'path', key: row.key.trim(), ...(row.defaultText !== undefined && isValidDefaultJSON(row.defaultText) ? { defaultValue: JSON.parse(row.defaultText) } : {}) }
 }
 
 interface MapperRowState {
@@ -147,16 +149,19 @@ const labelClass = 'block text-sm font-medium text-gray-700 dark:text-slate-300 
 
 // ── Binding row component ───────────────────────────────────────────────────
 
-function BindingRow({
+function BindingRowContent({
     row,
     sources,
     keyPlaceholder,
     targetPathLabel,
     targetPathPlaceholder,
+    topLevel,
     onChange,
     onRemove,
 }: {
     row: BindingRowState
+    collectionName?: string
+    topLevel?: boolean
     sources: { value: ValueSource; label: string }[]
     keyPlaceholder: (source: ValueSource | '') => string
     targetPathLabel: string
@@ -167,7 +172,7 @@ function BindingRow({
     return (
         <div className="flex flex-wrap items-start gap-2 bg-gray-50 dark:bg-slate-900 rounded-lg p-2.5">
             <div className="w-40 flex-shrink-0">
-                <input
+                <SuggestedFieldInput hintSource={targetPathLabel === 'Collection field' ? 'document' : 'target'} topLevel={topLevel || targetPathLabel === 'Collection field'}
                     value={row.targetPath}
                     onChange={(e) => onChange({ ...row, targetPath: e.target.value })}
                     placeholder={targetPathPlaceholder}
@@ -189,14 +194,14 @@ function BindingRow({
             </div>
             <div className="min-w-[10rem] flex-1">
                 {row.source === 'literal' ? (
-                    <input
+                    <SuggestedFieldInput hintSource={targetPathLabel === 'Collection field' ? 'document' : 'target'} valueKey={row.targetPath} jsonValue
                         value={row.literal}
                         onChange={(e) => onChange({ ...row, literal: e.target.value })}
                         placeholder='true, 42, "text", null'
                         className={`${inputClass} font-mono`}
                     />
                 ) : (
-                    <input
+                    <SuggestedFieldInput hintSource={row.source}
                         value={row.key}
                         onChange={(e) => onChange({ ...row, key: e.target.value })}
                         placeholder={keyPlaceholder(row.source)}
@@ -212,9 +217,13 @@ function BindingRow({
             >
                 <Trash2 className="w-4 h-4" />
             </button>
-            {row.source !== 'literal' && <MappingDefaultInput json value={row.defaultText} skipWhenMissing={row.skipWhenMissing} onChange={(defaultText, skipWhenMissing) => onChange({ ...row, defaultText, skipWhenMissing })} />}
+            {row.source !== 'literal' && <MappingDefaultInput hintSource={row.source} valueKey={row.key} json value={row.defaultText} skipWhenMissing={row.skipWhenMissing} onChange={(defaultText, skipWhenMissing) => onChange({ ...row, defaultText, skipWhenMissing })} />}
         </div>
     )
+}
+
+function BindingRow(props: Parameters<typeof BindingRowContent>[0]) {
+    return <MappingHintsProvider collectionName={props.collectionName}><BindingRowContent {...props} /></MappingHintsProvider>
 }
 
 function filterKeyPlaceholder(source: ValueSource | ''): string {
@@ -232,7 +241,8 @@ function filterKeyPlaceholder(source: ValueSource | ''): string {
 
 const writesData = (mode: CollectionOpType) => ['insert', 'update', 'upsert'].includes(mode)
 
-function DataRulesEditor({ rows, onChange, allowPrimary }: {
+function DataRulesEditor({ rows, onChange, allowPrimary, collectionName }: {
+    collectionName?: string
     rows: BindingRowState[]
     onChange: (rows: BindingRowState[]) => void
     allowPrimary: boolean
@@ -243,7 +253,7 @@ function DataRulesEditor({ rows, onChange, allowPrimary }: {
             <button type="button" onClick={() => onChange([...rows, emptyRow('body')])} className="text-xs text-primary-700 dark:text-primary-300 hover:underline">+ Add field</button>
         </div>
         {rows.length === 0 && <p className="text-xs text-gray-500 dark:text-slate-400">Add the fields this operation writes.</p>}
-        {rows.map((row, i) => <BindingRow key={i} row={row}
+        {rows.map((row, i) => <BindingRow key={i} row={row} collectionName={collectionName} topLevel
             sources={allowPrimary ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
             keyPlaceholder={filterKeyPlaceholder} targetPathLabel="Collection field" targetPathPlaceholder="status"
             onChange={(next) => onChange(rows.map((r, j) => j === i ? next : r))}
@@ -253,8 +263,9 @@ function DataRulesEditor({ rows, onChange, allowPrimary }: {
 
 type EditorTab = 'metadata' | 'conditions' | 'query' | 'mappers' | 'headers' | 'output'
 
-export default function CollectionResponseEditor({ operationId, config, onClose }: CollectionResponseEditorProps) {
+export default function CollectionResponseEditor({ operationId, config, onClose, onDraftChange }: CollectionResponseEditorProps) {
     const cr = config?.collectionResponse
+    const isWorkspaceDraft = Boolean(onDraftChange)
 
     const [activeTab, setActiveTab] = useState<EditorTab>('metadata')
 
@@ -286,11 +297,17 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     const [overrides, setOverrides] = useState<BindingRowState[]>(() => rowsFromOverrides(cr?.overrides))
 
     const [error, setError] = useState('')
+    const draftChangeRef = useRef(onDraftChange)
+    const draftConfigRef = useRef(config)
+    const draftInitializedRef = useRef(false)
 
     const queryClient = useQueryClient()
 
     const { data: tags } = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list })
     const tagOptions = (tags && tags.length > 0) ? tags : [{ name: 'default' }]
+
+    useEffect(() => { draftChangeRef.current = onDraftChange }, [onDraftChange])
+    useEffect(() => { draftConfigRef.current = config }, [config])
 
     const { data: specExamples, isPending: examplesLoading, isError: examplesError } = useQuery<SpecExample[]>({
         queryKey: ['specExamples', operationId],
@@ -343,6 +360,37 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
         matchOnEmpty,
         fallbackToExample,
     })
+
+    useEffect(() => {
+        if (!isWorkspaceDraft || examplesLoading || exampleSelection === null && !chosenExample) return
+        if (!draftInitializedRef.current) {
+            draftInitializedRef.current = true
+            return
+        }
+        const current = draftConfigRef.current
+        const nextDraft: ResponseConfig = {
+            ...(current || {} as ResponseConfig),
+            id: current?.id || '',
+            operationId,
+            name,
+            description,
+            tag,
+            statusCode: chosenExample?.statusCode || current?.statusCode || 200,
+            priority,
+            delay,
+            enabled,
+            conditions: current?.conditions || [],
+            conditionTree,
+            headers,
+            body: '',
+            kind: 'collection',
+            collectionResponse: buildCollectionResponse(),
+            recorded: current?.recorded || false,
+            origin: current?.origin || 'manual',
+        }
+        if (current && JSON.stringify(nextDraft) === JSON.stringify(current)) return
+        draftChangeRef.current?.(nextDraft)
+    }, [chosenExample?.statusCode, conditionTree, delay, description, enabled, exampleSelection, examplesLoading, fallbackToExample, headers, isWorkspaceDraft, manualRootKind, matchOnEmpty, mappers, name, operationId, overrides, primaryCollectionName, primaryData, primaryFilters, primaryMode, priority, tag])
 
     const createMutation = useMutation({
         mutationFn: (data: ResponseConfigInput) => responsesApi.create(operationId, data),
@@ -420,7 +468,28 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
             }
         }
 
-        if (config) {
+        if (onDraftChange) {
+            onDraftChange({
+                ...(config || {} as ResponseConfig),
+                id: config?.id || '',
+                operationId,
+                name: name.trim(),
+                description: description.trim(),
+                tag,
+                statusCode,
+                priority,
+                delay,
+                enabled,
+                conditions: [],
+                conditionTree,
+                headers,
+                body: '',
+                kind: 'collection',
+                collectionResponse,
+                recorded: config?.recorded || false,
+                origin: config?.origin || 'manual',
+            })
+        } else if (config) {
             updateMutation.mutate({
                 collectionResponse,
                 name: name.trim(),
@@ -478,17 +547,15 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
     ]
 
     return (
+        <MappingHintsProvider operationId={operationId} scope="response" collectionName={primaryCollectionName} statusCode={chosenExample?.statusCode} templateRef={chosenExample?.exampleName} responseId={config?.id}
+            extra={shapeHints(templateValue, 'target')}
+            collections={[
+                { name: primaryCollectionName, source: 'primary' },
+                ...mappers.map(m => ({ name: m.collectionName, source: 'mapper', prefix: m.outputKey, array: m.mode === 'find-many' })),
+            ]}>
         <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-slate-950">
             {/* ── Top bar ───────────────────────────────────────────────────── */}
             <div className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 flex items-center gap-2 px-3 h-12 flex-shrink-0">
-                <button
-                    onClick={onClose}
-                    className="p-1.5 rounded-md text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Back"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                </button>
-                <div className="w-px h-5 bg-gray-200 dark:bg-slate-700" />
                 <Database className="w-4 h-4 text-teal-600 dark:text-teal-400 flex-shrink-0" />
                 <span className="text-sm font-semibold text-gray-800 dark:text-slate-200 truncate max-w-xs">
                     {name || (config ? 'Collection Response' : 'New Collection Response')}
@@ -498,7 +565,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                 </span>
 
                 <div className="ml-auto flex items-center gap-2">
-                    <button
+                    {!isWorkspaceDraft && <button
                         onClick={handleSave}
                         disabled={isSaving}
                         title="Save"
@@ -506,7 +573,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                     >
                         {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                         {isSaving ? 'Saving…' : 'Save'}
-                    </button>
+                    </button>}
                 </div>
             </div>
 
@@ -539,7 +606,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                     <div className="flex-1 min-h-0 overflow-y-auto">
                         {activeTab === 'metadata' && (
-                            <div className="p-4 space-y-4 max-w-2xl">
+                            <div className="p-4 space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClass}>Name *</label>
@@ -618,8 +685,8 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                         )}
 
                         {activeTab === 'conditions' && (
-                            <div className="p-4 space-y-4 max-w-2xl">
-                                <ConditionEditor
+                            <div className="p-4 space-y-4">
+                                <MappingHintControls /><ConditionEditor
                                     label="Conditions"
                                     value={conditionTree}
                                     onChange={setConditionTree}
@@ -641,7 +708,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
 
                         {activeTab === 'query' && (
                             <div className="p-4 space-y-4">
-                                <div className="grid grid-cols-2 gap-4 max-w-2xl">
+                                <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className={labelClass}>Collection *</label>
                                         <input value={primaryCollectionName} onChange={(e) => setPrimaryCollectionName(e.target.value)} className={`${inputClass} font-mono`} placeholder="users" />
@@ -669,7 +736,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                 </div>
 
                                 {isIdentityMode && (
-                                    <div className="max-w-2xl">
+                                    <div>
                                         <label className={labelClass}>Root shape</label>
                                         <div className="flex gap-2">
                                             {(['object', 'array'] as RootKind[]).map((k) => (
@@ -788,7 +855,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                         <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
-                                                {writesData(m.mode) && <DataRulesEditor rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
+                                                {writesData(m.mode) && <DataRulesEditor collectionName={m.collectionName} rows={m.data} allowPrimary={derivedRootKind === 'object'} onChange={(data) => setMappers(mappers.map((mm, j) => j === i ? { ...mm, data } : mm))} />}
                                                 {m.mode !== 'insert' && <div>
                                                     <div className="flex items-center justify-between mb-1">
                                                         <span className="text-xs font-medium text-gray-500 dark:text-slate-400">Filters</span>
@@ -803,6 +870,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                                                     <div className="space-y-2">
                                                         {m.filters.map((row, k) => (
                                                             <BindingRow
+                                                                collectionName={m.collectionName}
                                                                 key={k}
                                                                 row={row}
                                                                 sources={derivedRootKind === 'object' ? MAPPER_FILTER_SOURCES : FILTER_SOURCES}
@@ -823,7 +891,7 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                         )}
 
                         {activeTab === 'headers' && (
-                            <div className="p-4 space-y-2 max-w-2xl">
+                            <div className="p-4 space-y-2">
                                 <div className="flex gap-2 mb-2">
                                     <input value={headerKey} onChange={(e) => setHeaderKey(e.target.value)} placeholder="Header name" className={`${inputClass} flex-1`} />
                                     <input value={headerValue} onChange={(e) => setHeaderValue(e.target.value)} placeholder="Header value" className={`${inputClass} flex-1`} />
@@ -879,5 +947,6 @@ export default function CollectionResponseEditor({ operationId, config, onClose 
                 </div>
             </div>
         </div>
+        </MappingHintsProvider>
     )
 }

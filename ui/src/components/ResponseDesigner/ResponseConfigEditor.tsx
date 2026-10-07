@@ -1,6 +1,7 @@
+import { MappingHintsProvider, MappingHintControls } from '../shared/MappingHints'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { X, Trash2, AlertCircle, Wand2, Zap } from 'lucide-react'
+import { X, Trash2, AlertCircle, FileJson, GitBranch, List, Save, Settings, Wand2, Zap } from 'lucide-react'
 import type * as Monaco from 'monaco-editor'
 import { responsesApi, scriptBindingsApi, tagsApi, templatesApi } from '../../services/api'
 import type { ConditionNode, ResponseConfig, ResponseConfigInput, ScriptBinding, SpecExample } from '../../types'
@@ -16,6 +17,8 @@ interface ResponseConfigEditorProps {
     onClose: () => void
     variant?: 'modal' | 'page'
     readOnly?: boolean
+    /** Keep changes in a parent workspace draft instead of calling response APIs. */
+    onDraftChange?: (config: ResponseConfig) => void
 }
 
 const templateDocs = {
@@ -160,12 +163,13 @@ const templateDocs = {
     ],
 }
 
-export default function ResponseConfigEditor({
+function ResponseConfigEditorContent({
     operationId,
     config,
     onClose,
     variant = 'modal',
     readOnly = false,
+    onDraftChange,
 }: ResponseConfigEditorProps) {
     const [name, setName] = useState(config?.name || '')
     const [description, setDescription] = useState(config?.description || '')
@@ -185,6 +189,7 @@ export default function ResponseConfigEditor({
     const [headerKey, setHeaderKey] = useState('')
     const [headerValue, setHeaderValue] = useState('')
     const [showExamplePicker, setShowExamplePicker] = useState(false)
+    const [activeTab, setActiveTab] = useState<'metadata' | 'conditions' | 'headers' | 'body'>('metadata')
     const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null)
     const monacoRef = useRef<typeof Monaco | null>(null)
     const validationTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -363,8 +368,8 @@ export default function ResponseConfigEditor({
         setBody(config.body || '')
     }, [config])
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault()
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault()
         setError('')
 
         if (!name.trim()) {
@@ -396,6 +401,19 @@ export default function ResponseConfigEditor({
             body,
         }
 
+        if (onDraftChange) {
+            onDraftChange({
+                ...(config || {} as ResponseConfig),
+                id: config?.id || '',
+                operationId,
+                ...data,
+                kind: config?.kind || 'manual',
+                collectionResponse: config?.collectionResponse,
+                recorded: config?.recorded || false,
+                origin: config?.origin || 'manual',
+            })
+            return
+        }
         if (config) {
             updateMutation.mutate(data)
         } else {
@@ -424,26 +442,52 @@ export default function ResponseConfigEditor({
     const containerClass = isModal
         ? 'bg-white dark:bg-slate-900 rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col'
         : 'bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-gray-200 dark:border-slate-800 w-full flex flex-col'
+    const tabs = [
+        { id: 'metadata' as const, label: 'Metadata', icon: Settings },
+        { id: 'conditions' as const, label: 'Conditions', icon: GitBranch },
+        { id: 'headers' as const, label: 'Headers', icon: List },
+        { id: 'body' as const, label: 'Body', icon: FileJson },
+    ]
 
     return (
         <>
         <div className={wrapperClass}>
             <div className={containerClass}>
-                <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-800">
-                    <h2 className="text-xl font-semibold text-gray-900 dark:text-slate-100">
-                        {config ? 'Edit Response Configuration' : 'New Response Configuration'}
-                    </h2>
+                <div className="flex h-12 items-center gap-2 border-b border-gray-200 bg-white px-3 dark:border-slate-800 dark:bg-slate-900">
+                    <FileJson className="h-4 w-4 shrink-0 text-primary-600 dark:text-primary-400" />
+                    <span className="max-w-xs truncate text-sm font-semibold text-gray-800 dark:text-slate-200">
+                        {name || (config ? 'Response configuration' : 'New response')}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-primary-100 px-2 py-0.5 text-xs text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">
+                        Manual
+                    </span>
+                    <div className="ml-auto flex items-center gap-2">
+                    {readOnly ? (
+                        <button type="button" onClick={onClose} className="rounded-md px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-slate-300 dark:hover:bg-slate-800">Close</button>
+                    ) : !onDraftChange ? (
+                        <button
+                            type="button"
+                            onClick={() => void handleSubmit()}
+                            disabled={createMutation.isPending || updateMutation.isPending}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1 text-xs text-white hover:bg-primary-700 disabled:opacity-50"
+                        >
+                            <Save className="h-3.5 w-3.5" />
+                            {createMutation.isPending || updateMutation.isPending ? 'Saving…' : 'Save'}
+                        </button>
+                    ) : null}
                     {isModal && (
                         <button
                             onClick={onClose}
-                            className="p-2 text-gray-400 hover:text-gray-600 dark:text-slate-500 dark:hover:text-slate-200 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-800"
+                            className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                            aria-label="Close response editor"
                         >
-                            <X className="w-5 h-5" />
+                            <X className="h-4 w-4" />
                         </button>
                     )}
+                    </div>
                 </div>
 
-                <form onSubmit={readOnly ? (e) => e.preventDefault() : handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6">
+                <form onSubmit={readOnly ? (e) => e.preventDefault() : handleSubmit} className="flex min-h-0 flex-1 flex-col">
                     {readOnly && (
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start dark:bg-amber-950/40 dark:border-amber-900/40">
                             <AlertCircle className="w-5 h-5 text-amber-600 mr-3 flex-shrink-0 mt-0.5" />
@@ -463,6 +507,15 @@ export default function ResponseConfigEditor({
                         </div>
                     )}
 
+                    <div className="flex shrink-0 items-center overflow-x-auto border-b border-gray-200 bg-white px-1 dark:border-slate-800 dark:bg-slate-900">
+                        {tabs.map(({ id, label, icon: Icon }) => (
+                            <button key={id} type="button" onClick={() => setActiveTab(id)} className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-xs font-medium transition-colors ${activeTab === id ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-300'}`}>
+                                <Icon className="h-3 w-3" />{label}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-y-auto">
+                    {activeTab === 'metadata' && <div className="space-y-6 p-4">
                     {/* Basic Info */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -574,14 +627,19 @@ export default function ResponseConfigEditor({
                         </div>
                     </div>
 
+                    </div>}
+
+                    {activeTab === 'conditions' && <div className="space-y-4 p-4">
                     {/* Conditions */}
-                    <ConditionEditor
+                    <MappingHintControls /><ConditionEditor
                         label="Conditions"
                         value={conditionTree}
                         onChange={readOnly ? () => {} : setConditionTree}
                         emptyHint="No conditions — this response matches all requests (AND logic)."
                     />
+                    </div>}
 
+                    {activeTab === 'headers' && <div className="space-y-4 p-4">
                     {/* Headers */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-2">
@@ -633,7 +691,9 @@ export default function ResponseConfigEditor({
                             </div>
                         )}
                     </div>
+                    </div>}
 
+                    {activeTab === 'body' && <div className="space-y-4 p-4">
                     {/* Body */}
                     <div>
                         <div className="flex items-center justify-between mb-2">
@@ -701,35 +761,12 @@ export default function ResponseConfigEditor({
                             </div>
                         )}
                     </div>
-
+                    </div>}
+                    </div>
                 </form>
 
-                {/* Actions */}
-                <div className="flex justify-end gap-4 p-6 border-t border-gray-200 dark:border-slate-800">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 text-gray-700 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-                    >
-                        {readOnly ? 'Close' : 'Cancel'}
-                    </button>
-                    {!readOnly && (
-                        <button
-                            onClick={handleSubmit}
-                            disabled={createMutation.isPending || updateMutation.isPending}
-                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
-                        >
-                            {createMutation.isPending || updateMutation.isPending
-                                ? 'Saving...'
-                                : config
-                                    ? 'Update'
-                                    : 'Create'}
-                        </button>
-                    )}
-                </div>
-
                 {/* Template Documentation */}
-                <div className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-indigo-100 dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 rounded-xl p-5 shadow-sm mx-6 mb-6">
+                {activeTab === 'body' && <div className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 border border-indigo-100 dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-900 rounded-xl p-5 shadow-sm mx-4 mb-4">
                     <details className="group">
                         <summary className="cursor-pointer text-sm font-semibold text-indigo-700 dark:text-slate-200 flex items-center justify-between">
                             Template variables reference
@@ -881,11 +918,11 @@ export default function ResponseConfigEditor({
                             )}
                         </div>
                     </details>
-                </div>
+                </div>}
             </div>
         </div>
         {/* Response-scope pipeline: scripts + collections interleaved */}
-        {!isModal && config?.id && !readOnly && (
+        {!isModal && config?.id && !readOnly && !onDraftChange && (
             <PipelinePanel
                 scope="response"
                 scopeId={config.id}
@@ -901,4 +938,8 @@ export default function ResponseConfigEditor({
         )}
         </>
     )
+}
+
+export default function ResponseConfigEditor(props: ResponseConfigEditorProps) {
+ return <MappingHintsProvider operationId={props.operationId} scope="response"><ResponseConfigEditorContent {...props} /></MappingHintsProvider>
 }

@@ -12,6 +12,7 @@ type Storage interface {
 	GetAllSpecs() ([]*models.Spec, error)
 	GetEnabledSpecs() ([]*models.Spec, error)
 	UpdateSpec(spec *models.Spec) error
+	ApplySpecWorkspace(workspace *models.SpecWorkspace) error
 	DeleteSpec(id string) error
 
 	// Tag operations
