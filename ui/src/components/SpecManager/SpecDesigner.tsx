@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Bot, Braces, ChevronDown, ChevronRight, Database, FileCode2, FileCog, Fingerprint, Loader2, Network, Plus, Redo2, Reply, Route, Save, Search, Settings2, ShieldCheck, Trash2, Undo2, Workflow, X } from 'lucide-react'
+import { ArrowLeft, Bot, Braces, ChevronDown, ChevronRight, Database, FileCode2, FileCog, FileText, Fingerprint, Loader2, Network, Plus, Redo2, Reply, Route, Save, Search, Settings2, ShieldCheck, Trash2, Undo2, Workflow, X } from 'lucide-react'
 import clsx from 'clsx'
 import { scriptsApi, specsApi } from '../../services/api'
 import type { CollectionMapping, Operation, ResponseConfig, Script, ScriptBinding, SignatureConfig, SpecMode, SpecWorkspace, ValidationRule } from '../../types'
@@ -420,6 +420,14 @@ export default function SpecDesigner() {
         setRestorePrompt(false)
         setRecovery(null)
     }
+    const discardChanges = () => {
+        if (!baseline) return
+        dispatch({ type: 'replace', workspace: clone(JSON.parse(baseline) as SpecWorkspace) })
+        setError('')
+        setRecovery(null)
+        void clearRecovery(specId).catch(() => undefined)
+        setToast({ tone: 'success', message: 'Unsaved changes discarded.' })
+    }
 
     if (workspaceQuery.isError) return <div className="m-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">{(workspaceQuery.error as Error).message}</div>
     if (workspaceQuery.isLoading || initializedSpec !== specId || !workspace) return <div className="h-full grid place-items-center"><div className="flex items-center gap-3 text-sm text-gray-500 dark:text-slate-400"><Loader2 className="h-5 w-5 animate-spin" />Loading spec workspace…</div></div>
@@ -438,7 +446,7 @@ export default function SpecDesigner() {
                 : node.kind === 'operation'
                     ? Route
                         : node.kind === 'response'
-                            ? (node.detail?.includes('collection') ? Database : Reply)
+                            ? (node.detail?.includes('collection') ? Database : FileText)
                             : node.kind === 'validation'
                                 ? ShieldCheck
                                 : node.kind === 'script'
@@ -460,7 +468,7 @@ export default function SpecDesigner() {
                     <span className="flex items-center gap-2 truncate">{node.kind === 'group' && <ChevronDown className={clsx('h-3 w-3 shrink-0 transition-transform', isCollapsed && '-rotate-90')} />}<NodeIcon className={clsx('h-3.5 w-3.5 shrink-0', iconClass)} /><span className="truncate">{node.label}</span></span>
                     {node.detail && <span className="ml-4 block truncate text-[10px] opacity-60">{node.detail}</span>}
                 </button>
-                {node.kind === 'group' && <div className="relative" ref={addMenu === node.key ? addMenuRef : undefined}><button type="button" title={`Add to ${node.label.toLowerCase()}`} onClick={() => setAddMenu(current => current === node.key ? null : node.key)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-slate-700"><Plus className="h-3.5 w-3.5" /></button>{addMenu === node.key && <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-gray-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">{node.group === 'pipeline' ? <><button type="button" onClick={() => { setAddMenu(null); addValidation(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><ShieldCheck className="h-3.5 w-3.5 text-violet-500" />Validation</button><button type="button" onClick={() => { setAddMenu(null); addMapping(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection mapper</button><button type="button" onClick={() => { setAddMenu(null); addScript(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><FileCode2 className="h-3.5 w-3.5 text-indigo-500" />Script</button></> : <><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Reply className="h-3.5 w-3.5 text-primary-500" />Manual response</button><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!, 'collection') }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection response</button></>}</div>}</div>}
+                {node.kind === 'group' && <div className="relative" ref={addMenu === node.key ? addMenuRef : undefined}><button type="button" title={`Add to ${node.label.toLowerCase()}`} onClick={() => setAddMenu(current => current === node.key ? null : node.key)} className="rounded p-1 opacity-0 hover:bg-gray-200 group-hover:opacity-100 dark:hover:bg-slate-700"><Plus className="h-3.5 w-3.5" /></button>{addMenu === node.key && <div className="absolute right-0 z-20 mt-1 w-44 rounded-md border border-gray-200 bg-white p-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">{node.group === 'pipeline' ? <><button type="button" onClick={() => { setAddMenu(null); addValidation(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><ShieldCheck className="h-3.5 w-3.5 text-violet-500" />Validation</button><button type="button" onClick={() => { setAddMenu(null); addMapping(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection mapper</button><button type="button" onClick={() => { setAddMenu(null); addScript(node.ref.operationId) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><FileCode2 className="h-3.5 w-3.5 text-indigo-500" />Script</button></> : <><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!) }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><FileText className="h-3.5 w-3.5 text-primary-500" />Manual response</button><button type="button" onClick={() => { setAddMenu(null); addResponse(node.ref.operationId!, 'collection') }} className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-gray-100 dark:hover:bg-slate-800"><Database className="h-3.5 w-3.5 text-teal-500" />Collection response</button></>}</div>}</div>}
                 {['response', 'validation', 'script', 'mapping'].includes(node.kind) && <button type="button" onClick={() => removeNode(node)} title={`Delete ${node.label} from draft`} className="rounded p-1 text-gray-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:text-slate-500 dark:hover:bg-red-950/40 dark:hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>}
             </div>
             {hasChildren && !isCollapsed && <div className="ml-2 border-l border-gray-200 dark:border-slate-800">{node.children!.map(child => renderTree(child, depth + 1))}</div>}
@@ -476,6 +484,7 @@ export default function SpecDesigner() {
             {contextAvailable && <button onClick={() => { setContextOpen(v => !v); localStorage.setItem('spec-designer-context-open', String(!contextOpen)) }} className="hidden rounded p-2 hover:bg-gray-100 dark:hover:bg-slate-800 lg:block" title="Toggle context panel"><Settings2 className="h-4 w-4" /></button>}
             <button onClick={() => { if (treeCollapsed) { setTreeCollapsed(false); localStorage.setItem('spec-designer-tree-collapsed', 'false') } setMobilePane('tree') }} className="rounded px-2 py-1 text-xs lg:hidden">Navigate</button>
             {contextAvailable && <button onClick={() => { setContextOpen(true); setMobilePane('context') }} className="rounded px-2 py-1 text-xs lg:hidden">Context</button>}
+            <button disabled={!dirty || saveMutation.isPending} onClick={discardChanges} className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-950/70">Reset</button>
             <button disabled={!dirty || saveMutation.isPending} onClick={() => saveMutation.mutate()} className="flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"><Save className="h-4 w-4" />{saveMutation.isPending ? 'Saving…' : 'Save'}</button>
         </header>
         {error && <div role="alert" className="flex items-center justify-between border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"><span>{error}</span><button onClick={() => setError('')}><X className="h-4 w-4" /></button></div>}
